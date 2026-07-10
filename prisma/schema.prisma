@@ -1,0 +1,196 @@
+// Depanel — control panel for auto start/stop of depa VPS
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Team members who can log into the panel.
+model User {
+  id           String        @id @default(cuid())
+  name         String
+  email        String        @unique
+  passwordHash String
+  role         String        @default("member") // "admin" | "member"
+  uiLayout     String        @default("topbar") // "topbar" | "sidebar"
+  lastTeamId   String? // tim terakhir yang dipakai — dipulihkan saat login berikutnya
+  active       Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  activityLogs ActivityLog[]
+  teams        TeamMember[]
+}
+
+/// A workspace: every user has one personal team; shared teams are created freely.
+/// All depa accounts (and their servers), db-backup connections, and logs live inside a team.
+model Team {
+  id            String         @id @default(cuid())
+  name          String
+  isPersonal    Boolean        @default(false) // auto-created per user, cannot be deleted
+  createdAt     DateTime       @default(now())
+  members       TeamMember[]
+  accounts      DepaAccount[]
+  dbConnections DbConnection[]
+  activityLogs  ActivityLog[]
+}
+
+model TeamMember {
+  id             String             @id @default(cuid())
+  teamId         String
+  team           Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String             @default("member") // "owner" (tepat 1) | "admin" | "member"
+  canViewBilling Boolean            @default(false) // owner/admin selalu boleh; member sesuai flag
+  canSchedule    Boolean            @default(true) // boleh mengatur jadwal nyala-mati
+  canBackup      Boolean            @default(true) // boleh membuka/mengelola tab Backup
+  serverHides    MemberServerHide[]
+
+  @@unique([teamId, userId])
+}
+
+/// Server yang DISEMBUNYIKAN dari member tertentu (default: semua server tim terlihat).
+model MemberServerHide {
+  id       String     @id @default(cuid())
+  memberId String
+  member   TeamMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  serverId String
+  server   Server     @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, serverId])
+}
+
+/// A depa cloud account, identified by its API key (stored encrypted).
+/// Belongs to a team; the same key may be registered in several teams.
+model DepaAccount {
+  id           String   @id @default(cuid())
+  teamId       String? // di-backfill lalu diwajibkan oleh kode (nullable demi migrasi SQLite)
+  team         Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name         String // friendly label, e.g. "Depa Utama"
+  apiKeyEnc    String // AES-256-GCM encrypted x-apikey
+  active       Boolean  @default(true)
+  lastSyncedAt DateTime?
+  createdAt    DateTime @default(now())
+  servers      Server[]
+}
+
+/// A VPS instance synced from the depa API.
+model Server {
+  id            String        @id @default(cuid())
+  accountId     String
+  account       DepaAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  uuid          String // depa instance uuid
+  hostname      String
+  status        String        @default("unknown") // running | stopped | ...
+  location      String?
+  tier          String?
+  ipAddress     String?
+  cpu           Int?
+  memoryMb      Int?
+  storageGb     Int?
+  managed       Boolean       @default(false) // eligible for panel control + scheduling
+  isProduction  Boolean       @default(false) // safety flag: never auto-stopped
+  sortOrder     Int           @default(0) // urutan tampil di daftar (diatur owner/admin)
+  raw           String? // last raw JSON from depa (list endpoint)
+  detailJson    String? // cached JSON from depa /detail endpoint
+  detailSyncedAt DateTime? // when detailJson was fetched
+  lastSyncedAt  DateTime?
+  createdAt     DateTime      @default(now())
+  schedule      Schedule?
+  activityLogs  ActivityLog[]
+  hiddenFor     MemberServerHide[]
+
+  @@unique([accountId, uuid])
+}
+
+/// On/off schedule for a server (reconciliation-based).
+model Schedule {
+  id        String           @id @default(cuid())
+  serverId  String           @unique
+  server    Server           @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  enabled   Boolean          @default(true)
+  timezone  String           @default("Asia/Jakarta")
+  createdAt DateTime         @default(now())
+  actions   ScheduleAction[]
+}
+
+/// A single weekly action: on the given days, at the given time, start or stop.
+/// Desired state at any moment = the action most recently passed in the week.
+model ScheduleAction {
+  id         String   @id @default(cuid())
+  scheduleId String
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  days       String // comma-separated 0-6 (0=Sunday), e.g. "1,2,3,4,5"
+  time       String // "HH:MM" local to schedule.timezone
+  action     String // "start" | "stop"
+}
+
+/// A saved MySQL connection (credentials encrypted at rest). Team-scoped.
+model DbConnection {
+  id          String        @id @default(cuid())
+  teamId      String?
+  team        Team?         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name        String
+  host        String
+  port        Int           @default(3306)
+  username    String
+  passwordEnc String // AES-256-GCM encrypted
+  createdAt   DateTime      @default(now())
+  jobs        DbBackupJob[]
+}
+
+/// A scheduled MySQL backup job.
+model DbBackupJob {
+  id           String       @id @default(cuid())
+  connectionId String
+  connection   DbConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  name         String
+  databases    String // JSON array of database names
+  scheduleType String // "daily" | "weekly" | "monthly" | "cron"
+  timeAt       String? // "HH:MM" for daily/weekly/monthly
+  dayOn        Int? // weekly: 0-6 (0=Sunday); monthly: 1-28 (tanggal)
+  cronExpr     String? // for scheduleType "cron"
+  timezone     String       @default("Asia/Jakarta")
+  destType     String // "local" | "ftp" | "s3" (SMB = mount ke path lokal)
+  destConfig   String // JSON config; secret fields encrypted
+  enabled      Boolean      @default(true)
+  lastRunAt    DateTime?
+  lastStatus   String? // "success" | "failed" | "running"
+  createdAt    DateTime     @default(now())
+  runs         DbBackupRun[]
+}
+
+/// One execution of a backup job.
+model DbBackupRun {
+  id        String      @id @default(cuid())
+  jobId     String
+  job       DbBackupJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  status    String      @default("running") // running | success | failed
+  message   String?
+  sizeBytes Int?
+  location  String? // final path/URL of the backup file
+  startedAt DateTime    @default(now())
+  endedAt   DateTime?
+
+  @@index([jobId, startedAt])
+}
+
+/// Audit trail: who did what, when (userId null = scheduler/system). Team-scoped.
+model ActivityLog {
+  id        String   @id @default(cuid())
+  teamId    String?
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  serverId  String?
+  server    Server?  @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  action    String // start | stop | restart | sync | schedule_apply | login
+  source    String   @default("web") // web | scheduler
+  status    String   @default("success") // success | failed
+  message   String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
