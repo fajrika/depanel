@@ -106,7 +106,19 @@ docker run -d --name depanel \
   depanel
 ```
 
-Create the first admin (becomes super admin):
+**Default login (first boot only).** On the very first start with an empty
+database, a default admin is created automatically — the first account, so it
+becomes the **super admin**:
+
+| Email | Password |
+|---|---|
+| `admin@depanel.local` | `admin` |
+
+> ⚠️ **Change the password immediately** after logging in (Profile → Ganti password).
+> The seed only runs when there are no users yet; on later boots it does nothing.
+
+You can override the seed via env vars (`SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`,
+`SEED_ADMIN_NAME`) before the first boot, or create additional admins any time:
 
 ```bash
 docker exec depanel node dist/create-user.cjs you@example.com "your-password" "Your Name" admin
@@ -126,6 +138,9 @@ automatically.
 | `ENCRYPTION_KEY` | 64 hex chars (32 bytes) — encrypts depa API keys & DB passwords |
 | `DEPA_API_BASE` | depa API base, default `https://api.depa.id/v1` |
 | `RECONCILE_CRON` | optional, worker reconcile cadence (default `*/5 * * * *`) |
+| `SEED_ADMIN_EMAIL` | optional, first-boot default admin email (default `admin@depanel.local`) |
+| `SEED_ADMIN_PASSWORD` | optional, first-boot default admin password (default `admin`) |
+| `SEED_ADMIN_NAME` | optional, first-boot default admin name (default `Administrator`) |
 
 > Keep `.env` and your SQLite database out of version control (already covered by `.gitignore`). If `ENCRYPTION_KEY` is lost or changed, previously stored API keys can no longer be decrypted and must be re-entered.
 

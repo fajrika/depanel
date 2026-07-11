@@ -12,7 +12,7 @@
     "all": "node scripts/run-all.mjs dev",
     "all:prod": "node scripts/run-all.mjs prod",
     "db:push": "prisma db push",
-    "build:server": "esbuild worker/index.ts --bundle --platform=node --target=node22 --format=cjs --packages=external --outfile=dist/worker.cjs && esbuild scripts/create-user.ts --bundle --platform=node --target=node22 --format=cjs --packages=external --outfile=dist/create-user.cjs"
+    "build:server": "esbuild worker/index.ts --bundle --platform=node --target=node22 --format=cjs --packages=external --outfile=dist/worker.cjs && esbuild scripts/create-user.ts --bundle --platform=node --target=node22 --format=cjs --packages=external --outfile=dist/create-user.cjs && esbuild scripts/seed.ts --bundle --platform=node --target=node22 --format=cjs --packages=external --outfile=dist/seed.cjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1084.0",

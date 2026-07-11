@@ -10,5 +10,8 @@ echo "→ Syncing database schema..."
 node /opt/prisma/node_modules/prisma/build/index.js db push \
   --schema=/app/prisma/schema.prisma --skip-generate
 
+# Seed a default admin on the very first boot (no-op once any user exists).
+node dist/seed.cjs
+
 # Launch web + worker.
 exec node scripts/docker-start.mjs
