@@ -1,6 +1,8 @@
 // Depanel — control panel for auto start/stop of depa VPS
 generator client {
   provider = "prisma-client-js"
+  // "native" for local dev; the musl target is for the Alpine Docker image.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {

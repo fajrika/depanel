@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Emit a self-contained server with only traced deps — keeps the Docker image small.
+  output: "standalone",
   // Allow team members on the LAN to reach the dev server via the Mac Mini's IP,
   // not just localhost (Next.js blocks unrecognized cross-origin dev requests by default).
   // Next.js matches these per dot-separated segment ("*" = one segment) — CIDR notation

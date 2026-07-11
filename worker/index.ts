@@ -1,7 +1,12 @@
 // Standalone scheduler worker. Runs independently of the Next.js web process.
 // - Every 5 minutes: reconcile managed servers to their on/off schedule.
 // - Every minute: run MySQL backup jobs that are due.
-process.loadEnvFile(".env");
+// Local dev reads .env; in containers env vars are injected (no file), so this is best-effort.
+try {
+  process.loadEnvFile(".env");
+} catch {
+  /* no .env file (e.g. Docker) — rely on process.env */
+}
 import cron from "node-cron";
 import { reconcileAll } from "../src/lib/power";
 import { runDueJobs } from "../src/lib/dbbackup";

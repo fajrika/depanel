@@ -90,6 +90,33 @@ npm run worker       # scheduler only (reconcile every 5 min + MySQL backups eve
 
 For an always-on deployment, wrap `npm run all:prod` in `pm2`, `systemd`, or `launchd`.
 
+### Docker / Coolify
+
+A multi-stage Alpine `Dockerfile` is included. It runs the web app **and** the
+scheduler worker in one container, and applies the database schema on boot.
+
+```bash
+docker build -t depanel .
+docker run -d --name depanel \
+  -e DATABASE_URL="file:/app/data/depanel.db" \
+  -e APP_SECRET="…" \
+  -e ENCRYPTION_KEY="…" \
+  -v depanel-data:/app/data \
+  -p 3000:3000 \
+  depanel
+```
+
+Create the first admin (becomes super admin):
+
+```bash
+docker exec depanel node dist/create-user.cjs you@example.com "your-password" "Your Name" admin
+```
+
+**On Coolify:** deploy from this repository (Dockerfile build pack), set the
+environment variables above, and **mount a persistent volume at `/app/data`**
+so the SQLite database survives restarts. Coolify's assigned `PORT` is honored
+automatically.
+
 ## Environment variables
 
 | Variable | Purpose |

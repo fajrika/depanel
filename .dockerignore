@@ -1,0 +1,31 @@
+# deps & build artifacts (rebuilt inside the image)
+node_modules
+.next
+dist
+out
+build
+
+# local state & secrets — never bake into the image
+.env
+.env.*
+!.env.example
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data
+
+# vcs & tooling
+.git
+.gitignore
+.github
+.claude
+.vscode
+.idea
+
+# docs / os
+README.md
+*.md
+.DS_Store
+Thumbs.db
+npm-debug.log*

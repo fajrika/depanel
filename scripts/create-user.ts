@@ -1,6 +1,10 @@
 // Create or update a team member.
 // Usage: npm run user -- <email> <password> "<name>" [admin|member]
-process.loadEnvFile(".env");
+try {
+  process.loadEnvFile(".env");
+} catch {
+  /* no .env file (e.g. Docker) — rely on process.env */
+}
 import { prisma } from "../src/lib/db";
 import bcrypt from "bcryptjs";
 
