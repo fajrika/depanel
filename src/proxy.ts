@@ -10,6 +10,20 @@ function secret(): Uint8Array {
   return new TextEncoder().encode(process.env.APP_SECRET || "");
 }
 
+/**
+ * Build an absolute redirect URL using the EXTERNAL host/proto.
+ * Behind a reverse proxy (Cloudflare Tunnel, Nginx, …) the origin connection is
+ * often plain HTTP with a rewritten Host, so `request.url` would redirect to the
+ * wrong scheme/host. Prefer the X-Forwarded-* headers the proxy sends.
+ */
+function externalRedirect(request: NextRequest, pathname: string): URL {
+  const first = (v: string | null) => v?.split(",")[0]?.trim();
+  const proto = first(request.headers.get("x-forwarded-proto")) || request.nextUrl.protocol.replace(":", "") || "http";
+  const host =
+    first(request.headers.get("x-forwarded-host")) || request.headers.get("host") || request.nextUrl.host;
+  return new URL(`${proto}://${host}${pathname}`);
+}
+
 export async function proxy(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   let valid = false;
@@ -26,11 +40,10 @@ export async function proxy(request: NextRequest) {
   const isLogin = pathname === "/login";
 
   if (!valid && !isLogin) {
-    const url = new URL("/login", request.url);
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(externalRedirect(request, "/login"));
   }
   if (valid && isLogin) {
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(externalRedirect(request, "/"));
   }
   return NextResponse.next();
 }
