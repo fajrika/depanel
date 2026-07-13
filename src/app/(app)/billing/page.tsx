@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import TopupPanel from "@/components/TopupPanel";
 
 type BillingSummary = {
   current_balance?: number;
@@ -147,6 +148,9 @@ export default function BillingPage() {
                 ))}
               </div>
             )}
+
+            {/* top up (F14) */}
+            {selected && <TopupPanel accountId={selected} />}
 
             {/* laporan tagihan */}
             <div className={card}>

@@ -4,6 +4,7 @@ import { prisma } from "./db";
 import { decryptSecret } from "./crypto";
 import { depaClient } from "./depa";
 import { desiredState, type Action } from "./schedule";
+import { notifyTeam } from "./notify";
 
 export type PowerAction = "start" | "stop" | "restart";
 
@@ -179,6 +180,10 @@ export async function powerServer(
       status: "success",
       message: `${action} ${server.hostname}`,
     });
+    if (opts.source === "scheduler") {
+      const verb = action === "start" ? "dinyalakan" : action === "stop" ? "dimatikan" : "di-restart";
+      await notifyTeam(teamId, "power", `⏰ Server "${server.hostname}" ${verb} otomatis oleh jadwal.`);
+    }
     return { ok: true, message: `${action} berhasil` };
   } catch (e) {
     const message = (e as Error).message;

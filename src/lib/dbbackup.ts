@@ -14,6 +14,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { CronExpressionParser } from "cron-parser";
 import { prisma } from "./db";
 import { decryptSecret } from "./crypto";
+import { notifyTeam } from "./notify";
 
 export interface ConnCfg {
   host: string;
@@ -232,16 +233,90 @@ export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "m
       data: { status: "success", sizeBytes: size, location, endedAt: new Date(), message: `${databases.length} database` },
     });
     await prisma.dbBackupJob.update({ where: { id: jobId }, data: { lastStatus: "success", lastRunAt: new Date() } });
+    if (trigger === "scheduler") {
+      await notifyTeam(job.connection.teamId, "backup", `💾 Backup DB "${job.name}" sukses (${databases.length} database).`);
+    }
   } catch (e) {
+    const msg = (e as Error).message;
     await prisma.dbBackupRun.update({
       where: { id: run.id },
-      data: { status: "failed", message: (e as Error).message, endedAt: new Date() },
+      data: { status: "failed", message: msg, endedAt: new Date() },
     });
     await prisma.dbBackupJob.update({ where: { id: jobId }, data: { lastStatus: "failed", lastRunAt: new Date() } });
+    await notifyTeam(job.connection.teamId, "backup", `❌ Backup DB "${job.name}" GAGAL: ${msg}`);
   } finally {
     if (tmpFile) await fsp.rm(tmpFile, { force: true }).catch(() => {});
     runningJobs.delete(jobId);
   }
+}
+
+// ---------- restore ----------
+
+/**
+ * Restore a completed run's dump back into its connection's MySQL server.
+ * Only supported for the "local" destination (file readable on disk). The dump
+ * carries CREATE DATABASE/USE, so it restores into the original database names.
+ */
+export async function restoreRun(runId: string): Promise<{ ok: boolean; message: string }> {
+  const run = await prisma.dbBackupRun.findUnique({
+    where: { id: runId },
+    include: { job: { include: { connection: true } } },
+  });
+  if (!run) return { ok: false, message: "Run tidak ditemukan" };
+  if (run.status !== "success" || !run.location) return { ok: false, message: "Run ini tidak punya arsip yang valid" };
+  if (run.job.destType !== "local") {
+    return { ok: false, message: "Restore otomatis hanya untuk tujuan Lokal. Untuk FTP/S3, unduh arsip lalu restore manual." };
+  }
+
+  const file = run.location;
+  try {
+    await fsp.access(file);
+  } catch {
+    return { ok: false, message: "File arsip tidak ditemukan di path lokal" };
+  }
+
+  const cfg: ConnCfg = {
+    host: run.job.connection.host,
+    port: run.job.connection.port,
+    username: run.job.connection.username,
+    password: decryptSecret(run.job.connection.passwordEnc),
+  };
+
+  // stream-gunzip the dump into a string, then execute (allowing multi statements)
+  const gunzip = zlib.createGunzip();
+  const chunks: Buffer[] = [];
+  await pipeline(fs.createReadStream(file), gunzip, async function* (source) {
+    for await (const c of source) chunks.push(c as Buffer);
+    yield; // satisfy pipeline sink
+  });
+  const sql = Buffer.concat(chunks).toString("utf8");
+
+  const conn = await mysql.createConnection({
+    host: cfg.host,
+    port: cfg.port,
+    user: cfg.username,
+    password: cfg.password,
+    multipleStatements: true,
+    connectTimeout: 15_000,
+  });
+  try {
+    await conn.query(sql);
+    return { ok: true, message: "Restore selesai" };
+  } catch (e) {
+    return { ok: false, message: (e as Error).message };
+  } finally {
+    await conn.end();
+  }
+}
+
+/** Delete a run row and, for local destinations, its file. */
+export async function deleteRun(runId: string): Promise<void> {
+  const run = await prisma.dbBackupRun.findUnique({ where: { id: runId }, include: { job: true } });
+  if (!run) return;
+  if (run.job.destType === "local" && run.location) {
+    await fsp.rm(run.location, { force: true }).catch(() => {});
+  }
+  await prisma.dbBackupRun.delete({ where: { id: runId } }).catch(() => {});
 }
 
 // ---------- schedule matching (dipanggil worker tiap menit) ----------

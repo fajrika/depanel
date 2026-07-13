@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import TwoFactorSection from "@/components/TwoFactorSection";
 
 const input =
   "mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300";
@@ -202,6 +203,9 @@ export default function ProfilePage() {
           </button>
         </div>
       </form>
+
+      {/* 2FA (F6) */}
+      <TwoFactorSection />
     </div>
   );
 }

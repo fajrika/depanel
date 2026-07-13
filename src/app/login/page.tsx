@@ -7,6 +7,8 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [need2fa, setNeed2fa] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -18,10 +20,15 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, code: code || undefined }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
+        if (data.need2fa) {
+          setNeed2fa(true);
+          setError(code ? "Kode 2FA salah — coba lagi." : "Akun ini butuh kode 2FA.");
+          return;
+        }
         setError(data.message ?? "Gagal login");
         return;
       }
@@ -57,6 +64,20 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
           className="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm outline-none focus:border-slate-900"
         />
+
+        {need2fa && (
+          <>
+            <label className="mt-4 block text-sm font-medium">Kode 2FA</label>
+            <input
+              inputMode="numeric"
+              autoFocus
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="123456"
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm tracking-widest outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </>
+        )}
 
         {error && <p className="mt-3 rounded-md bg-red-50 dark:bg-red-950/50 px-3 py-2 text-sm text-red-700 dark:text-red-300">{error}</p>}
 

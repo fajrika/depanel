@@ -399,17 +399,41 @@ export default function DbBackupPage() {
 
                 {j.runs.length > 0 && (
                   <div className="mt-3 space-y-1 border-t border-slate-100 pt-3 dark:border-slate-800">
-                    {j.runs.map((r) => (
-                      <p key={r.id} className="flex flex-wrap items-center gap-x-3 text-[11px] text-slate-500 dark:text-slate-400">
+                    {j.runs.map((r) => {
+                      const localOk = j.destType === "local" && r.status === "success";
+                      return (
+                      <p key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
                         <span className={r.status === "success" ? "text-emerald-600" : r.status === "running" ? "text-sky-600" : "text-red-500"}>
                           {r.status === "success" ? "✓" : r.status === "running" ? "⟳" : "✕"} {r.status}
                         </span>
                         <span>{new Date(r.startedAt).toLocaleString("id-ID")}</span>
                         <span>{fmtSize(r.sizeBytes)}</span>
-                        {r.location && <span className="truncate font-mono">{r.location}</span>}
+                        {r.location && <span className="max-w-[240px] truncate font-mono">{r.location}</span>}
                         {r.message && r.status === "failed" && <span className="text-red-500">{r.message}</span>}
+                        <span className="ml-auto flex items-center gap-2">
+                          {localOk && (
+                            <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline dark:text-sky-400">Unduh</a>
+                          )}
+                          {localOk && (
+                            <button
+                              onClick={() => { if (confirm("Restore backup ini ke database tujuan? Data saat ini akan ditimpa.")) api(`/api/db/runs/${r.id}/restore`, "POST"); }}
+                              disabled={busy}
+                              className="text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400"
+                            >
+                              Restore
+                            </button>
+                          )}
+                          <button
+                            onClick={() => { if (confirm("Hapus catatan backup ini beserta filenya?")) api(`/api/db/runs/${r.id}`, "DELETE"); }}
+                            disabled={busy}
+                            className="text-red-500 hover:underline disabled:opacity-50"
+                          >
+                            Hapus
+                          </button>
+                        </span>
                       </p>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

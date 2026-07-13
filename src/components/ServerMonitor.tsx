@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import MetricChart from "@/components/MetricChart";
 import ScheduleForm from "@/components/ScheduleForm";
 import BackupPanel from "@/components/BackupPanel";
+import FirewallPanel from "@/components/FirewallPanel";
+import ManagePanel from "@/components/ManagePanel";
+import ConsolePanel from "@/components/ConsolePanel";
 
 type Rrd = {
   cpu?: { time: string; cpu: number }[];
@@ -30,7 +33,7 @@ type Detail = Record<string, unknown> & {
   public_ip?: { ip_address?: string };
 };
 
-export type PanelTab = "monitoring" | "jadwal" | "backup";
+export type PanelTab = "monitoring" | "jadwal" | "backup" | "firewall" | "kelola" | "console";
 
 const PERIODS = [
   { v: "hour", l: "1 Jam" },
@@ -75,6 +78,7 @@ export default function ServerMonitor({
   initialTab = "monitoring",
   canSchedule = true,
   canBackup = true,
+  isStaff = false,
   onScheduleSaved,
 }: {
   serverId: string;
@@ -83,9 +87,11 @@ export default function ServerMonitor({
   initialTab?: PanelTab;
   canSchedule?: boolean;
   canBackup?: boolean;
+  isStaff?: boolean;
   onScheduleSaved?: () => void;
 }) {
   const [tab, setTab] = useState<PanelTab>(initialTab);
+  const [uptime, setUptime] = useState<number | null>(null);
   const [periode, setPeriode] = useState("hour");
   const [rrd, setRrd] = useState<Rrd | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -94,6 +100,15 @@ export default function ServerMonitor({
   const [metricsAt, setMetricsAt] = useState<Date | null>(null);
 
   useEffect(() => setTab(initialTab), [initialTab, serverId]);
+
+  // F4: uptime 7 hari dari sampel metrik milik Depanel sendiri.
+  useEffect(() => {
+    setUptime(null);
+    fetch(`/api/servers/${serverId}/history?hours=168`)
+      .then((r) => r.json())
+      .then((d) => { if (d.ok && typeof d.data.uptimePct === "number") setUptime(d.data.uptimePct); })
+      .catch(() => {});
+  }, [serverId]);
 
   // Detail: sekali per server (cache 10 menit di sisi server juga).
   useEffect(() => {
@@ -143,6 +158,9 @@ export default function ServerMonitor({
     { v: "monitoring", l: "📊 Monitoring" },
     ...(canSchedule ? [{ v: "jadwal" as PanelTab, l: "🕒 Jadwal" }] : []),
     ...(canBackup ? [{ v: "backup" as PanelTab, l: "💾 Backup" }] : []),
+    ...(isStaff ? [{ v: "firewall" as PanelTab, l: "🛡️ Firewall" }] : []),
+    ...(isStaff ? [{ v: "console" as PanelTab, l: "🖥️ Console" }] : []),
+    ...(isStaff ? [{ v: "kelola" as PanelTab, l: "⚙️ Kelola" }] : []),
   ];
 
   return (
@@ -217,6 +235,19 @@ export default function ServerMonitor({
               <Info label="Biaya berjalan" value={<span className="text-amber-600 dark:text-amber-400">{rupiah(detail.cost)}</span>} />
               <Info label="Terakhir dinyalakan" value={detail.last_started_at} />
               <Info label="Backup terakhir" value={detail.last_backup_at} />
+              <Info
+                label="Uptime 7 hari"
+                value={
+                  uptime === null ? (
+                    "—"
+                  ) : (
+                    <span className={uptime >= 99 ? "text-emerald-600 dark:text-emerald-400" : uptime >= 90 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}>
+                      {uptime.toFixed(2)}%
+                    </span>
+                  )
+                }
+              />
+              <Info label="Sumber uptime" value={<span className="text-xs text-slate-400">sampel Depanel /15 mnt</span>} />
             </div>
           ) : (
             <div className="mb-5 h-32 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
@@ -306,6 +337,15 @@ export default function ServerMonitor({
 
       {/* ===== TAB: BACKUP ===== */}
       {tab === "backup" && canBackup && <BackupPanel serverId={serverId} hostname={serverName} />}
+
+      {/* ===== TAB: FIREWALL (F7) ===== */}
+      {tab === "firewall" && isStaff && <FirewallPanel serverId={serverId} isStaff={isStaff} />}
+
+      {/* ===== TAB: CONSOLE (F8) ===== */}
+      {tab === "console" && isStaff && <ConsolePanel serverId={serverId} hostname={serverName} />}
+
+      {/* ===== TAB: KELOLA — resize/tier/reinstall/hapus (F9/F10/F11) ===== */}
+      {tab === "kelola" && isStaff && <ManagePanel serverId={serverId} hostname={serverName} onChanged={onScheduleSaved} />}
     </div>
   );
 }

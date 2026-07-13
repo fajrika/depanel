@@ -88,6 +88,39 @@ export default function Dashboard() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>("monitoring");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [picked, setPicked] = useState<Set<string>>(new Set()); // F5: seleksi aksi masal
+
+  function togglePick(id: string) {
+    setPicked((p) => {
+      const n = new Set(p);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
+
+  async function bulkPower(action: "start" | "stop" | "restart") {
+    const ids = [...picked];
+    if (!ids.length) return;
+    if (action === "stop" && !confirm(`Matikan ${ids.length} server terpilih?`)) return;
+    setBusy("bulk");
+    setMsg(null);
+    const res = await fetch("/api/servers/bulk-power", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, action }),
+    });
+    const d = await res.json();
+    setBusy(null);
+    if (d.ok) {
+      const okN = (d.data ?? []).filter((r: { ok: boolean }) => r.ok).length;
+      setMsg({ text: `Aksi masal ${action}: ${okN}/${ids.length} berhasil.`, ok: okN === ids.length });
+      setPicked(new Set());
+    } else {
+      setMsg({ text: `Aksi masal gagal: ${d.message}`, ok: false });
+    }
+    load();
+  }
 
   function toggleGroup(name: string) {
     setCollapsed((c) => {
@@ -99,12 +132,17 @@ export default function Dashboard() {
   }
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/servers");
-    if (res.ok) {
-      const d = await res.json();
-      setServers(d.data ?? []);
+    try {
+      const res = await fetch("/api/servers");
+      if (res.ok) {
+        const d = await res.json();
+        setServers(d.data ?? []);
+      }
+    } catch {
+      // jaringan sesaat tak tersambung (dev recompile / tunnel) — biarkan data lama, jangan crash UI
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -249,6 +287,19 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* F5: bar aksi masal */}
+      {isStaff && picked.size > 0 && (
+        <div className="mb-5 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 dark:border-indigo-900 dark:bg-indigo-950/40">
+          <span className="text-sm font-medium text-indigo-800 dark:text-indigo-300">{picked.size} server terpilih</span>
+          <div className="ml-auto flex flex-wrap gap-1.5">
+            <button onClick={() => bulkPower("start")} disabled={!!busy} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50">▶ Start semua</button>
+            <button onClick={() => bulkPower("stop")} disabled={!!busy} className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-600 disabled:opacity-50 dark:bg-slate-700">■ Stop semua</button>
+            <button onClick={() => bulkPower("restart")} disabled={!!busy} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">↻ Restart semua</button>
+            <button onClick={() => setPicked(new Set())} className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200">Batal</button>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex gap-6">
           <div className="w-full space-y-4 lg:w-[400px]">
@@ -310,7 +361,18 @@ export default function Dashboard() {
                         style={{ animationDelay: `${i * 60}ms` }}
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
+                          <div className="flex min-w-0 items-start gap-2">
+                            {isStaff && (
+                              <input
+                                type="checkbox"
+                                checked={picked.has(s.id)}
+                                onChange={() => togglePick(s.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                title="Pilih untuk aksi masal"
+                                className="mt-1 h-3.5 w-3.5 accent-indigo-600"
+                              />
+                            )}
+                            <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="truncate text-[15px] font-semibold text-slate-900 dark:text-slate-100">{s.hostname}</span>
                               <StatusBadge status={s.status} />
@@ -323,6 +385,7 @@ export default function Dashboard() {
                             <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
                               {[s.ipAddress, s.location].filter(Boolean).join(" · ") || s.uuid}
                             </p>
+                            </div>
                           </div>
                           {isStaff && (
                             <div className="flex shrink-0 items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -440,6 +503,7 @@ export default function Dashboard() {
                   initialTab={panelTab}
                   canSchedule={canSchedule}
                   canBackup={canBackup}
+                  isStaff={isStaff}
                   onClose={() => setSelectedId(null)}
                   onScheduleSaved={load}
                 />

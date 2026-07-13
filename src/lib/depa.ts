@@ -216,6 +216,124 @@ export function depaClient(apiKey: string) {
     async billingReports(page = 1) {
       return call<Record<string, unknown>>("/billing/reports", { query: { page } });
     },
+
+    // ---- top-up (creates a payment invoice; the user pays manually) ----
+    async topupMethods(amount: number) {
+      return call<Record<string, unknown>>("/billing/v2/methods", { query: { amount } });
+    },
+    async topupCreate(body: { amount: number; payment_method: string; phone_number?: string; code?: string }) {
+      return call<Record<string, unknown>>("/billing/v2/topup", { method: "POST", body: JSON.stringify(body) });
+    },
+    async topupStatus(invoiceId: string) {
+      return call<Record<string, unknown>>(`/billing/v2/topup/${invoiceId}/status`);
+    },
+
+    // ---- resize / tier ----
+    async resize(uuid: string, body: { cpu: number; memory: number; storage: number; use_dedicated_cpu?: boolean }) {
+      return call(`/instance/${uuid}/resize`, { method: "PATCH", body: JSON.stringify(body) });
+    },
+    async changeTier(uuid: string, tierId: number) {
+      return call(`/instance/${uuid}/change-tier`, { method: "PATCH", body: JSON.stringify({ tier_id: tierId }) });
+    },
+    async changeTierPrice(uuid: string, tierId: number) {
+      return call<Record<string, unknown>>(`/instance/${uuid}/change-tier/price`, { query: { tier_id: tierId } });
+    },
+    async tiers() {
+      return call<Record<string, unknown>[]>("/tiers");
+    },
+
+    // ---- reinstall ----
+    async reinstall(uuid: string, body: { template_id: number; username: string; password: string }) {
+      return call(`/instance/${uuid}/reinstall`, { method: "PATCH", body: JSON.stringify(body) });
+    },
+    async systems() {
+      return call<Record<string, unknown>[]>("/systems");
+    },
+    async updateHostname(uuid: string, hostname: string) {
+      return call(`/instance/${uuid}/update-hostname`, { method: "PATCH", body: JSON.stringify({ hostname }) });
+    },
+
+    // ---- create / delete instance ----
+    async locations() {
+      return call<Record<string, unknown>[]>("/locations");
+    },
+    async sizeTemplate() {
+      return call<Record<string, unknown>[]>("/instance/size-template");
+    },
+    async instanceCreate(body: Record<string, unknown>) {
+      return call("/instance/create", { method: "POST", body: JSON.stringify(body) });
+    },
+    async instanceDelete(uuid: string, body: { remove_ip?: boolean; remove_block_storage?: boolean } = {}) {
+      return call(`/instance/${uuid}`, { method: "DELETE", body: JSON.stringify(body) });
+    },
+
+    // ---- console ----
+    async console(uuid: string) {
+      return call<Record<string, unknown>>(`/instance/${uuid}/console-websocket`, { method: "POST" });
+    },
+
+    // ---- firewall ----
+    async firewallRules(uuid: string, page = 1, limit = 50) {
+      return call<Record<string, unknown>>(`/instance/${uuid}/firewall/rules`, { query: { page, limit } });
+    },
+    async firewallRuleTypes() {
+      return call<Record<string, unknown>>("/firewall-rule-types");
+    },
+    async firewallDefault(uuid: string) {
+      return call<Record<string, unknown>>(`/instance/${uuid}/firewall/default`);
+    },
+    async firewallDefaultUpdate(uuid: string, action: string) {
+      return call(`/instance/${uuid}/firewall/default/update`, { method: "PATCH", body: JSON.stringify({ action }) });
+    },
+    async firewallCreate(uuid: string, body: Record<string, unknown>) {
+      return call(`/instance/${uuid}/firewall/create`, { method: "POST", body: JSON.stringify(body) });
+    },
+    async firewallUpdate(uuid: string, ruleId: string, body: Record<string, unknown>) {
+      return call(`/instance/${uuid}/firewall/${ruleId}/update`, { method: "PATCH", body: JSON.stringify(body) });
+    },
+    async firewallUpdateStatus(uuid: string, ruleId: string, body: Record<string, unknown>) {
+      return call(`/instance/${uuid}/firewall/${ruleId}/update-status`, { method: "PATCH", body: JSON.stringify(body) });
+    },
+    async firewallDelete(uuid: string, ruleId: string) {
+      return call(`/instance/${uuid}/firewall/${ruleId}/delete`, { method: "DELETE" });
+    },
+
+    // ---- block storage ----
+    async blocks(query: Record<string, string | number | undefined> = {}) {
+      return call<Record<string, unknown>>("/storage/blocks", { query });
+    },
+    async blockTypes(locationId: number) {
+      return call<Record<string, unknown>>("/storage/blocks/types", { query: { location_id: locationId } });
+    },
+    async blockOptions(locationId: number) {
+      return call<Record<string, unknown>>("/storage/blocks/options", { query: { location_id: locationId } });
+    },
+    async blockCreate(body: { name: string; location_id: number; storage_type: number; size: string }) {
+      return call("/storage/blocks/create", { method: "POST", body: JSON.stringify(body) });
+    },
+    async blockAttach(blockUuid: string, instanceId: string) {
+      return call(`/storage/blocks/${blockUuid}/attach`, { method: "PATCH", body: JSON.stringify({ instance_id: instanceId }) });
+    },
+    async blockDetach(blockUuid: string) {
+      return call(`/storage/blocks/${blockUuid}/detach`, { method: "PATCH" });
+    },
+    async blockResize(blockUuid: string, size: number) {
+      return call(`/storage/blocks/${blockUuid}/resize`, { method: "PATCH", body: JSON.stringify({ size }) });
+    },
+    async blockDelete(blockUuid: string) {
+      return call(`/storage/blocks/${blockUuid}`, { method: "DELETE" });
+    },
+
+    // ---- ssh keys ----
+    async sshKeys() {
+      return call<Record<string, unknown>>("/credential/ssh");
+    },
+    async sshKeyCreate(body: { title: string; key: string }) {
+      return call("/credential/ssh", { method: "POST", body: JSON.stringify(body) });
+    },
+    async sshKeyDelete(id: string) {
+      return call(`/credential/ssh/${id}`, { method: "DELETE" });
+    },
   };
 }
 

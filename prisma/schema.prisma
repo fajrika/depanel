@@ -20,6 +20,8 @@ model User {
   uiLayout     String        @default("topbar") // "topbar" | "sidebar"
   lastTeamId   String? // tim terakhir yang dipakai — dipulihkan saat login berikutnya
   active       Boolean       @default(true)
+  totpSecret   String? // base32 TOTP secret (2FA) — null = belum diaktifkan
+  totpEnabled  Boolean       @default(false)
   createdAt    DateTime      @default(now())
   activityLogs ActivityLog[]
   teams        TeamMember[]
@@ -32,10 +34,42 @@ model Team {
   name          String
   isPersonal    Boolean        @default(false) // auto-created per user, cannot be deleted
   createdAt     DateTime       @default(now())
+  lowBalanceThreshold Int? // rupiah; kirim notifikasi bila saldo aktual di bawah ini
   members       TeamMember[]
   accounts      DepaAccount[]
   dbConnections DbConnection[]
   activityLogs  ActivityLog[]
+  notifyChannels NotifyChannel[]
+}
+
+/// A notification target for a team (Telegram, Discord, or generic webhook).
+model NotifyChannel {
+  id        String   @id @default(cuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  type      String // "telegram" | "discord" | "webhook"
+  label     String
+  config    String // JSON: telegram {botToken,chatId} | discord/webhook {url}
+  // event toggles
+  onPower   Boolean  @default(true) // scheduler start/stop
+  onBackup  Boolean  @default(true) // db backup success/failure
+  onError   Boolean  @default(true) // server status error / sync failure
+  onBalance Boolean  @default(true) // low balance
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+/// Periodic metric + status sample for uptime/history (collected by the worker).
+model MetricSample {
+  id        String   @id @default(cuid())
+  serverId  String
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  at        DateTime @default(now())
+  status    String // canonical status at sample time
+  cpu       Float? // % (from depa rrd last point)
+  memPct    Float? // % memory used
+
+  @@index([serverId, at])
 }
 
 model TeamMember {
@@ -103,6 +137,7 @@ model Server {
   schedule      Schedule?
   activityLogs  ActivityLog[]
   hiddenFor     MemberServerHide[]
+  metricSamples MetricSample[]
 
   @@unique([accountId, uuid])
 }
