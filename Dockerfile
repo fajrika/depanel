@@ -7,7 +7,7 @@
 # at boot) lives in an isolated dir so the app image stays lean.
 # ---------------------------------------------------------------------------
 
-FROM node:22-alpine AS base
+FROM node:24-alpine AS base
 # libc6-compat + openssl are needed by the Prisma engine on Alpine (musl).
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app

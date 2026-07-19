@@ -30,16 +30,18 @@ export interface ActiveTeam {
 
 /** Pastikan user punya tim pribadi; buat kalau belum ada. */
 export async function ensurePersonalTeam(userId: string, userName: string) {
-  const existing = await prisma.team.findFirst({
-    where: { isPersonal: true, members: { some: { userId } } },
-  });
-  if (existing) return existing;
-  return prisma.team.create({
-    data: {
-      name: `Pribadi — ${userName}`,
-      isPersonal: true,
-      members: { create: { userId, role: "owner", canViewBilling: true } },
-    },
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.team.findFirst({
+      where: { isPersonal: true, members: { some: { userId } } },
+    });
+    if (existing) return existing;
+    return tx.team.create({
+      data: {
+        name: `Pribadi — ${userName}`,
+        isPersonal: true,
+        members: { create: { userId, role: "owner", canViewBilling: true } },
+      },
+    });
   });
 }
 
