@@ -16,6 +16,7 @@ type Job = {
   cronExpr: string | null;
   destType: string;
   dest: Record<string, unknown>;
+  retention: number;
   enabled: boolean;
   lastRunAt: string | null;
   lastStatus: string | null;
@@ -68,6 +69,7 @@ export default function DbBackupPage() {
   const [jCron, setJCron] = useState("0 2 * * *");
   const [jDest, setJDest] = useState("local");
   const [dest, setDest] = useState<Record<string, string>>({});
+  const [jRetention, setJRetention] = useState(0);
 
   const load = useCallback(async () => {
     const [cRes, jRes] = await Promise.all([fetch("/api/db/connections"), fetch("/api/db/jobs")]);
@@ -137,12 +139,14 @@ export default function DbBackupPage() {
       ...(jType === "weekly" ? { dayOn: jDay } : jType === "monthly" ? { dayOn: jDate } : {}),
       destType: jDest,
       dest: Object.fromEntries(Object.entries(dest).filter(([, v]) => v !== "")),
+      retention: jRetention,
     });
     if (ok) {
       setShowJobForm(false);
       setJName("");
       setJDbs(new Set());
       setDest({});
+      setJRetention(0);
       setMsg({ text: "Job backup dibuat.", ok: true });
     }
   }
@@ -352,6 +356,24 @@ export default function DbBackupPage() {
               </div>
             </div>
 
+            {/* retensi */}
+            <div>
+              <label className={label}>Retensi backup</label>
+              <div className="mt-2 flex items-center gap-3">
+                <input
+                  type="number"
+                  min={0}
+                  max={1000}
+                  value={jRetention}
+                  onChange={(e) => setJRetention(Number(e.target.value) || 0)}
+                  className={`${input} w-24`}
+                />
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  {jRetention === 0 ? "Simpan semua" : `Simpan ${jRetention} backup terakhir`}
+                </span>
+              </div>
+            </div>
+
             <div className="flex justify-end">
               <button disabled={busy || jDbs.size === 0} className={btnPrimary}>
                 {busy ? "Menyimpan…" : `Simpan job (${jDbs.size} database)`}
@@ -382,6 +404,7 @@ export default function DbBackupPage() {
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                       {j.connection.name} · {j.databases.join(", ")} · {scheduleLabel(j)} · →{" "}
                       {j.destType === "local" ? `📁 ${j.dest.path}` : j.destType === "ftp" ? `FTP ${j.dest.host}` : `S3 ${j.dest.bucket}`}
+                      {j.retention > 0 ? ` · Retensi: ${j.retention}` : ""}
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-2 text-xs">

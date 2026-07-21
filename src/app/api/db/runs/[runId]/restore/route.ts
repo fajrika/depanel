@@ -26,5 +26,8 @@ export async function POST(_req: Request, ctx: { params: Promise<{ runId: string
     status: result.ok ? "success" : "failed",
     message: `Restore "${run.job.name}": ${result.message}`,
   });
-  return NextResponse.json(result.ok ? { ok: true } : { ok: false, message: result.message }, { status: result.ok ? 200 : 400 });
+  return NextResponse.json(
+    result.ok ? { ok: true, message: result.message, warnings: result.warnings } : { ok: false, message: result.message },
+    { status: result.ok ? 200 : 400 },
+  );
 }

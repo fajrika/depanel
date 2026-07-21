@@ -48,6 +48,9 @@ dev.db
 *.db-wal
 *.db-shm
 
+# backup data
+/data
+
 # Claude Code local settings
 .claude/settings.local.json
 

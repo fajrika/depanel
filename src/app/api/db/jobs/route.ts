@@ -37,6 +37,7 @@ export async function GET() {
       timezone: j.timezone,
       destType: j.destType,
       dest,
+      retention: j.retention,
       enabled: j.enabled,
       lastRunAt: j.lastRunAt,
       lastStatus: j.lastStatus,
@@ -59,6 +60,7 @@ const createSchema = z
     timezone: z.string().default("Asia/Jakarta"),
     destType: z.enum(["local", "ftp", "s3"]),
     dest: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
+    retention: z.number().int().min(0).max(1000).default(0), // 0 = keep all, N = keep last N
   })
   .superRefine((v, ctx) => {
     if (v.scheduleType === "cron") {
@@ -125,6 +127,7 @@ export async function POST(request: Request) {
       timezone: v.timezone,
       destType: v.destType,
       destConfig: JSON.stringify(dest),
+      retention: v.retention,
     },
   });
   return NextResponse.json({ ok: true, data: { id: job.id } });

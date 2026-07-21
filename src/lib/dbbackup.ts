@@ -16,6 +16,134 @@ import { prisma } from "./db";
 import { decryptSecret } from "./crypto";
 import { notifyTeam } from "./notify";
 
+// ---------- SQL statement splitter ----------
+
+/**
+ * Split a SQL dump into individual statements, handling:
+ * - Single-quoted string literals (including escaped quotes '')
+ * - Double-quoted identifiers
+ * - Backslash escapes inside strings
+ * - Line comments (-- ...)
+ * - Block comments (/* ... *​/)
+ * - Proper semicolon splitting only outside all the above contexts
+ *
+ * Based on the resilient parser from BackupDB-GO (gorestore.go).
+ */
+function splitStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = "";
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let escaped = false;
+
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i];
+
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\\" && (inSingleQuote || inDoubleQuote)) {
+      current += ch;
+      escaped = true;
+      continue;
+    }
+
+    if (inLineComment) {
+      if (ch === "\n") {
+        inLineComment = false;
+        current += ch;
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (ch === "*" && i + 1 < sql.length && sql[i + 1] === "/") {
+        inBlockComment = false;
+        current += "*/";
+        i++;
+      }
+      continue;
+    }
+
+    if (inSingleQuote) {
+      current += ch;
+      if (ch === "'") {
+        // Check for escaped quote ('')
+        if (i + 1 < sql.length && sql[i + 1] === "'") {
+          current += "'";
+          i++;
+        } else {
+          inSingleQuote = false;
+        }
+      }
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      current += ch;
+      if (ch === '"') {
+        inDoubleQuote = false;
+      }
+      continue;
+    }
+
+    // Outside string literals
+    if (ch === "'") {
+      inSingleQuote = true;
+      current += ch;
+      continue;
+    }
+    if (ch === '"') {
+      inDoubleQuote = true;
+      current += ch;
+      continue;
+    }
+
+    // Comment
+    if (ch === "-" && i + 1 < sql.length && sql[i + 1] === "-") {
+      inLineComment = true;
+      current += "--";
+      i++;
+      continue;
+    }
+    if (ch === "/" && i + 1 < sql.length && sql[i + 1] === "*") {
+      inBlockComment = true;
+      current += "/*";
+      i++;
+      continue;
+    }
+
+    // Statement separator
+    if (ch === ";") {
+      const s = current.trim();
+      if (s !== "") {
+        statements.push(s);
+      }
+      current = "";
+      continue;
+    }
+
+    current += ch;
+  }
+
+  // Remaining text
+  const s = current.trim();
+  if (s !== "") {
+    statements.push(s);
+  }
+
+  return statements;
+}
+
+function truncate(s: string, max: number): string {
+  return s.length <= max ? s : s.slice(0, max) + "...";
+}
+
 export interface ConnCfg {
   host: string;
   port: number;
@@ -73,10 +201,21 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
 
   const conn = await openConn(cfg);
   try {
-    await write(`-- Depanel MySQL backup\n-- Host: ${cfg.host}\nSET FOREIGN_KEY_CHECKS=0;\nSET NAMES utf8mb4;\n\n`);
+    await write(`-- Depanel MySQL backup\n-- Host: ${cfg.host}\nSET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\nSET UNIQUE_CHECKS=0;\nSET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n\n`);
+    // Create ALL databases upfront — views in one database may reference
+    // tables in another, so all databases must exist before any data is restored.
+    for (const db of databases) {
+      await write(`CREATE DATABASE IF NOT EXISTS ${mysql.escapeId(db)};\n`);
+    }
+    await write("\n");
+    // Collect view definitions per-database, but write them AFTER all tables
+    // are loaded. Views in one DB may reference tables in another, so the base
+    // tables must exist before any view is created.
+    const viewsByDb: { db: string; name: string; createSql: string }[] = [];
+
     for (const db of databases) {
       const dbId = mysql.escapeId(db);
-      await write(`CREATE DATABASE IF NOT EXISTS ${dbId};\nUSE ${dbId};\n\n`);
+      await write(`USE ${dbId};\n\n`);
       await conn.changeUser({ database: db });
 
       const [tblRows] = await conn.query("SHOW FULL TABLES");
@@ -90,7 +229,11 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
       for (const table of tables) {
         const tId = mysql.escapeId(table);
         const [createRows] = await conn.query(`SHOW CREATE TABLE ${tId}`);
-        const createSql = (createRows as Record<string, string>[])[0]["Create Table"];
+        let createSql = (createRows as Record<string, string>[])[0]["Create Table"];
+        // MySQL 8.0.17+ disallows certain functions (md5, sha1, …) in generated
+        // column expressions. Strip `GENERATED ALWAYS AS (...) VIRTUAL|STORED`
+        // so the column becomes a regular column — data is still in INSERTs.
+        createSql = createSql.replace(/GENERATED ALWAYS AS \(.*\)\s*(VIRTUAL|STORED)/g, "");
         await write(`DROP TABLE IF EXISTS ${tId};\n${createSql};\n\n`);
 
         // data — chunked to keep memory bounded
@@ -100,11 +243,17 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
           const [rows] = await conn.query(`SELECT * FROM ${tId} LIMIT ${CHUNK} OFFSET ${offset}`);
           const list = rows as Record<string, unknown>[];
           if (list.length === 0) break;
-          const cols = Object.keys(list[0]).map((c) => mysql.escapeId(c)).join(",");
+          const colNames = Object.keys(list[0]);
+          const cols = colNames.map((c) => mysql.escapeId(c)).join(",");
           const values = list.map(
-            (r) => `(${Object.values(r).map((v) => mysql.escape(v as string | number | boolean | null | Date | Buffer)).join(",")})`,
+            (r) => `(${colNames.map((c) => {
+              const v = r[c];
+              if (v !== null && typeof v === "object" && !(v instanceof Date) && !Buffer.isBuffer(v)) {
+                return mysql.escape(JSON.stringify(v));
+              }
+              return mysql.escape(v as string | number | boolean | null | Date | Buffer);
+            }).join(",")})`,
           );
-          // batch INSERTs of 200 rows
           for (let i = 0; i < values.length; i += 200) {
             await write(`INSERT INTO ${tId} (${cols}) VALUES\n${values.slice(i, i + 200).join(",\n")};\n`);
           }
@@ -114,18 +263,33 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
         }
       }
 
+      // Collect views, don't write them yet
       for (const view of views) {
-        const vId = mysql.escapeId(view);
         try {
+          const vId = mysql.escapeId(view);
           const [createRows] = await conn.query(`SHOW CREATE VIEW ${vId}`);
           const createSql = (createRows as Record<string, string>[])[0]["Create View"];
-          await write(`DROP VIEW IF EXISTS ${vId};\n${createSql};\n\n`);
+          viewsByDb.push({ db, name: view, createSql });
         } catch {
-          await write(`-- gagal dump view ${view}\n`);
+          await write(`-- gagal dump view ${db}.${view}\n`);
         }
       }
     }
-    await write("SET FOREIGN_KEY_CHECKS=1;\n");
+
+    // Write all views AFTER all tables across all databases are loaded
+    if (viewsByDb.length > 0) {
+      await write("-- Views (created after all tables to resolve cross-database references)\n");
+      let lastDb = "";
+      for (const v of viewsByDb) {
+        if (v.db !== lastDb) {
+          await write(`USE ${mysql.escapeId(v.db)};\n`);
+          lastDb = v.db;
+        }
+        const vId = mysql.escapeId(v.name);
+        await write(`DROP VIEW IF EXISTS ${vId};\n${v.createSql};\n\n`);
+      }
+    }
+    await write("SET FOREIGN_KEY_CHECKS=1;\nSET UNIQUE_CHECKS=1;\n");
   } finally {
     await conn.end();
     gzip.end();
@@ -233,6 +397,10 @@ export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "m
       data: { status: "success", sizeBytes: size, location, endedAt: new Date(), message: `${databases.length} database` },
     });
     await prisma.dbBackupJob.update({ where: { id: jobId }, data: { lastStatus: "success", lastRunAt: new Date() } });
+
+    // Clean up old backups based on retention policy
+    await cleanupRetention(jobId);
+
     if (trigger === "scheduler") {
       await notifyTeam(job.connection.teamId, "backup", `💾 Backup DB "${job.name}" sukses (${databases.length} database).`);
     }
@@ -256,8 +424,13 @@ export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "m
  * Restore a completed run's dump back into its connection's MySQL server.
  * Only supported for the "local" destination (file readable on disk). The dump
  * carries CREATE DATABASE/USE, so it restores into the original database names.
+ *
+ * Uses resilient per-statement execution: individual statement failures are
+ * logged as warnings but do NOT abort the entire restore. This ensures that
+ * the restore completes even if some statements fail (e.g., due to data
+ * conflicts, missing dependencies, or partial corruption).
  */
-export async function restoreRun(runId: string): Promise<{ ok: boolean; message: string }> {
+export async function restoreRun(runId: string): Promise<{ ok: boolean; message: string; warnings?: string[] }> {
   const run = await prisma.dbBackupRun.findUnique({
     where: { id: runId },
     include: { job: { include: { connection: true } } },
@@ -282,7 +455,7 @@ export async function restoreRun(runId: string): Promise<{ ok: boolean; message:
     password: decryptSecret(run.job.connection.passwordEnc),
   };
 
-  // stream-gunzip the dump into a string, then execute (allowing multi statements)
+  // Stream-gunzip the dump into a string
   const gunzip = zlib.createGunzip();
   const chunks: Buffer[] = [];
   await pipeline(fs.createReadStream(file), gunzip, async function* (source) {
@@ -291,17 +464,95 @@ export async function restoreRun(runId: string): Promise<{ ok: boolean; message:
   });
   const sql = Buffer.concat(chunks).toString("utf8");
 
+  // Split into individual statements for resilient execution
+  const statements = splitStatements(sql);
+  const warnings: string[] = [];
+  let warningCount = 0;
+
   const conn = await mysql.createConnection({
     host: cfg.host,
     port: cfg.port,
     user: cfg.username,
     password: cfg.password,
-    multipleStatements: true,
     connectTimeout: 15_000,
   });
+
   try {
-    await conn.query(sql);
-    return { ok: true, message: "Restore selesai" };
+    // Phase 1: Disable FK checks and pre-create ALL databases first.
+    // This ensures cross-database foreign keys won't fail because the
+    // referenced database doesn't exist yet when the referencing table
+    // is being restored.
+    await conn.query("SET FOREIGN_KEY_CHECKS=0");
+    await conn.query("SET UNIQUE_CHECKS=0");
+
+    const dbNames = new Set<string>();
+    for (const stmt of statements) {
+      const upper = stmt.toUpperCase();
+      // Match: CREATE DATABASE IF NOT EXISTS `xyz`;
+      const createMatch = stmt.match(/CREATE\s+DATABASE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?(\w+)`?/i);
+      if (createMatch) {
+        dbNames.add(createMatch[1]);
+      }
+    }
+    for (const dbName of dbNames) {
+      try {
+        await conn.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\``);
+      } catch (err) {
+        console.warn(`[WARN] Gagal pre-create database "${dbName}": ${(err as Error).message}`);
+      }
+    }
+    if (dbNames.size > 0) {
+      console.log(`[INFO] Pre-created ${dbNames.size} database: ${[...dbNames].join(", ")}`);
+    }
+
+    // Phase 2: Execute each statement individually for resilience
+    for (let i = 0; i < statements.length; i++) {
+      const stmt = statements[i];
+      if (!stmt) continue;
+
+      try {
+        await conn.query(stmt);
+      } catch (err) {
+        const upper = stmt.toUpperCase();
+        const isSpecial =
+          upper.startsWith("SET ") ||
+          upper.startsWith("CREATE DATABASE") ||
+          upper.startsWith("USE ") ||
+          upper.startsWith("START TRANSACTION") ||
+          upper.startsWith("COMMIT");
+
+        // Special MySQL commands: warn but continue
+        if (isSpecial) {
+          const msg = `[WARN] Perintah khusus gagal (${i + 1}/${statements.length}): ${truncate(stmt, 80)} — ${(err as Error).message}`;
+          console.warn(msg);
+          warnings.push(msg);
+          warningCount++;
+          continue;
+        }
+
+        // Regular statements: log warning but DO NOT abort
+        const msg = `[WARN] Statement gagal (${i + 1}/${statements.length}): ${truncate(stmt, 80)} — ${(err as Error).message}`;
+        console.warn(msg);
+        warnings.push(msg);
+        warningCount++;
+      }
+
+      // Progress log every 100 statements
+      if ((i + 1) % 100 === 0) {
+        console.log(`[INFO] Progress: ${i + 1}/${statements.length} statement`);
+      }
+    }
+
+    // Phase 3: Re-enable FK checks after everything is restored
+    await conn.query("SET FOREIGN_KEY_CHECKS=1");
+    await conn.query("SET UNIQUE_CHECKS=1");
+
+    const message =
+      warningCount > 0
+        ? `Restore selesai dengan ${warningCount} warning`
+        : "Restore selesai";
+
+    return { ok: true, message, warnings: warnings.length > 0 ? warnings : undefined };
   } catch (e) {
     return { ok: false, message: (e as Error).message };
   } finally {
@@ -317,6 +568,35 @@ export async function deleteRun(runId: string): Promise<void> {
     await fsp.rm(run.location, { force: true }).catch(() => {});
   }
   await prisma.dbBackupRun.delete({ where: { id: runId } }).catch(() => {});
+}
+
+// ---------- retention management ----------
+
+/**
+ * Clean up old backup runs for a job based on retention policy.
+ * retention=0 means keep all, retention=N means keep the N most recent successful runs.
+ * Deletes both the run record and the local file (if applicable).
+ */
+export async function cleanupRetention(jobId: string): Promise<void> {
+  const job = await prisma.dbBackupJob.findUnique({ where: { id: jobId } });
+  if (!job || job.retention <= 0) return; // 0 = keep all
+
+  // Get all successful runs for this job, ordered by most recent first
+  const runs = await prisma.dbBackupRun.findMany({
+    where: { jobId, status: "success" },
+    orderBy: { startedAt: "desc" },
+  });
+
+  // If we have more runs than retention, delete the extras
+  if (runs.length > job.retention) {
+    const runsToDelete = runs.slice(job.retention);
+    for (const run of runsToDelete) {
+      if (job.destType === "local" && run.location) {
+        await fsp.rm(run.location, { force: true }).catch(() => {});
+      }
+      await prisma.dbBackupRun.delete({ where: { id: run.id } }).catch(() => {});
+    }
+  }
 }
 
 // ---------- schedule matching (dipanggil worker tiap menit) ----------

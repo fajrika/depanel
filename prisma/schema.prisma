@@ -192,6 +192,7 @@ model DbBackupJob {
   timezone     String       @default("Asia/Jakarta")
   destType     String // "local" | "ftp" | "s3" (SMB = mount ke path lokal)
   destConfig   String // JSON config; secret fields encrypted
+  retention    Int          @default(0) // 0 = keep all, N = keep last N backups
   enabled      Boolean      @default(true)
   lastRunAt    DateTime?
   lastStatus   String? // "success" | "failed" | "running"
