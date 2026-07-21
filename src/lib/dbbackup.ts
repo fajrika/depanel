@@ -10,7 +10,8 @@ import zlib from "node:zlib";
 import { pipeline } from "node:stream/promises";
 import mysql, { type Connection } from "mysql2/promise";
 import { Client as FtpClient } from "basic-ftp";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { google } from "googleapis";
 import { CronExpressionParser } from "cron-parser";
 import { prisma } from "./db";
 import { decryptSecret } from "./crypto";
@@ -298,6 +299,26 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
   return outPath;
 }
 
+// ---------- Google Drive helper ----------
+
+function getGDrive(cfg: DestConfig) {
+  const keyJson = cfg.serviceAccountKeyEnc ? decryptSecret(String(cfg.serviceAccountKeyEnc)) : cfg.serviceAccountKey;
+  if (!keyJson || typeof keyJson !== "string") {
+    throw new Error("Service Account Key Google Drive belum diisi");
+  }
+  let parsed: { client_email: string; private_key: string };
+  try {
+    parsed = JSON.parse(keyJson);
+  } catch {
+    throw new Error("Service Account Key JSON tidak valid");
+  }
+  const auth = new google.auth.GoogleAuth({
+    credentials: { client_email: parsed.client_email, private_key: parsed.private_key },
+    scopes: ["https://www.googleapis.com/auth/drive"],
+  });
+  return google.drive({ version: "v3", auth });
+}
+
 // ---------- destinations ----------
 
 export type DestConfig = Record<string, string | number | boolean | undefined>;
@@ -354,7 +375,83 @@ export async function deliver(destType: string, cfg: DestConfig, filePath: strin
     return `s3://${cfg.bucket}/${key}`;
   }
 
+  if (destType === "gdrive") {
+    const drive = getGDrive(cfg);
+    const folderId = String(cfg.folderId || "");
+    const fileMetadata: { name: string; parents?: string[] } = { name: fileName };
+    if (folderId) fileMetadata.parents = [folderId];
+    const res = await drive.files.create({
+      requestBody: fileMetadata,
+      media: { mimeType: "application/gzip", body: fs.createReadStream(filePath) },
+      fields: "id",
+    });
+    const fileId = res.data.id;
+    return `gdrive://${fileId}`;
+  }
+
   throw new Error(`Tujuan backup tidak dikenal: ${destType}`);
+}
+
+/**
+ * Fetch a backup file from any destination (local / FTP / S3) to a local temp path.
+ * The caller is responsible for cleaning up the returned file.
+ */
+export async function fetchBackup(destType: string, cfg: DestConfig, location: string): Promise<string> {
+  if (destType === "local") {
+    await fsp.access(location);
+    return location;
+  }
+
+  const tmpFile = path.join(os.tmpdir(), `restore-${Date.now()}-${Math.random().toString(36).slice(2)}.sql.gz`);
+
+  if (destType === "ftp") {
+    const client = new FtpClient(30_000);
+    try {
+      await client.access({
+        host: String(cfg.host || ""),
+        port: Number(cfg.port || 21),
+        user: String(cfg.username || ""),
+        password: cfg.passwordEnc ? decryptSecret(String(cfg.passwordEnc)) : "",
+        secure: cfg.secure === true || cfg.secure === "true",
+      });
+      // location format: ftp://host/path/file.sql.gz
+      const url = new URL(location);
+      await client.downloadTo(tmpFile, decodeURIComponent(url.pathname));
+      return tmpFile;
+    } finally {
+      client.close();
+    }
+  }
+
+  if (destType === "s3") {
+    const s3 = new S3Client({
+      region: String(cfg.region || "auto"),
+      ...(cfg.endpoint ? { endpoint: String(cfg.endpoint), forcePathStyle: true } : {}),
+      credentials: {
+        accessKeyId: String(cfg.accessKeyId || ""),
+        secretAccessKey: cfg.secretKeyEnc ? decryptSecret(String(cfg.secretKeyEnc)) : "",
+      },
+    });
+    // location format: s3://bucket/key
+    const url = new URL(location);
+    const bucket = url.host;
+    const key = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+    const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    const body = await resp.Body!.transformToByteArray();
+    await fsp.writeFile(tmpFile, body);
+    return tmpFile;
+  }
+
+  if (destType === "gdrive") {
+    const drive = getGDrive(cfg);
+    // location format: gdrive://fileId
+    const fileId = location.replace(/^gdrive:\/\//, "");
+    const res = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" });
+    await fsp.writeFile(tmpFile, Buffer.from(res.data as ArrayBuffer));
+    return tmpFile;
+  }
+
+  throw new Error(`Tidak bisa mengambil file dari tujuan: ${destType}`);
 }
 
 // ---------- job runner ----------
@@ -437,16 +534,6 @@ export async function restoreRun(runId: string): Promise<{ ok: boolean; message:
   });
   if (!run) return { ok: false, message: "Run tidak ditemukan" };
   if (run.status !== "success" || !run.location) return { ok: false, message: "Run ini tidak punya arsip yang valid" };
-  if (run.job.destType !== "local") {
-    return { ok: false, message: "Restore otomatis hanya untuk tujuan Lokal. Untuk FTP/S3, unduh arsip lalu restore manual." };
-  }
-
-  const file = run.location;
-  try {
-    await fsp.access(file);
-  } catch {
-    return { ok: false, message: "File arsip tidak ditemukan di path lokal" };
-  }
 
   const cfg: ConnCfg = {
     host: run.job.connection.host,
@@ -454,6 +541,17 @@ export async function restoreRun(runId: string): Promise<{ ok: boolean; message:
     username: run.job.connection.username,
     password: decryptSecret(run.job.connection.passwordEnc),
   };
+
+  // Fetch the backup file (local path, or download from FTP/S3)
+  const destCfg = JSON.parse(run.job.destConfig) as DestConfig;
+  let tmpFile: string | null = null;
+  let file: string;
+  try {
+    file = await fetchBackup(run.job.destType, destCfg, run.location);
+    if (file !== run.location) tmpFile = file;
+  } catch (e) {
+    return { ok: false, message: `Gagal mengambil arsip: ${(e as Error).message}` };
+  }
 
   // Stream-gunzip the dump into a string
   const gunzip = zlib.createGunzip();
@@ -557,6 +655,7 @@ export async function restoreRun(runId: string): Promise<{ ok: boolean; message:
     return { ok: false, message: (e as Error).message };
   } finally {
     await conn.end();
+    if (tmpFile) await fsp.rm(tmpFile, { force: true }).catch(() => {});
   }
 }
 

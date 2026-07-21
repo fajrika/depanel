@@ -25,6 +25,7 @@ export async function GET() {
     // never expose encrypted/secret fields to the browser
     delete dest.passwordEnc;
     delete dest.secretKeyEnc;
+    delete dest.serviceAccountKeyEnc;
     return {
       id: j.id,
       name: j.name,
@@ -113,6 +114,10 @@ export async function POST(request: Request) {
   if (typeof dest.secretKey === "string" && dest.secretKey) {
     dest.secretKeyEnc = encryptSecret(dest.secretKey);
     delete dest.secretKey;
+  }
+  if (typeof dest.serviceAccountKey === "string" && dest.serviceAccountKey) {
+    dest.serviceAccountKeyEnc = encryptSecret(dest.serviceAccountKey);
+    delete dest.serviceAccountKey;
   }
 
   const job = await prisma.dbBackupJob.create({

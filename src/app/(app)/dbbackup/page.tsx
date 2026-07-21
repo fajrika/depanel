@@ -58,6 +58,7 @@ export default function DbBackupPage() {
   const [nc, setNc] = useState({ name: "", host: "", port: "3306", username: "", password: "" });
   // form job
   const [showJobForm, setShowJobForm] = useState(false);
+  const [editJobId, setEditJobId] = useState<string | null>(null);
   const [jName, setJName] = useState("");
   const [jConn, setJConn] = useState("");
   const [dbList, setDbList] = useState<string[] | null>(null);
@@ -114,10 +115,10 @@ export default function DbBackupPage() {
     return true;
   }
 
-  async function loadDatabases(connId: string) {
+  async function loadDatabases(connId: string, preserveSelection = false) {
     setJConn(connId);
     setDbList(null);
-    setJDbs(new Set());
+    if (!preserveSelection) setJDbs(new Set());
     if (!connId) return;
     const res = await fetch(`/api/db/connections/${connId}/databases`);
     const d = await res.json();
@@ -130,7 +131,7 @@ export default function DbBackupPage() {
 
   async function createJob(e: React.FormEvent) {
     e.preventDefault();
-    const ok = await api("/api/db/jobs", "POST", {
+    const body = {
       name: jName,
       connectionId: jConn,
       databases: [...jDbs],
@@ -140,15 +141,37 @@ export default function DbBackupPage() {
       destType: jDest,
       dest: Object.fromEntries(Object.entries(dest).filter(([, v]) => v !== "")),
       retention: jRetention,
-    });
+    };
+    const url = editJobId ? `/api/db/jobs/${editJobId}` : "/api/db/jobs";
+    const method = editJobId ? "PATCH" : "POST";
+    const ok = await api(url, method, body);
     if (ok) {
       setShowJobForm(false);
+      setEditJobId(null);
       setJName("");
       setJDbs(new Set());
       setDest({});
       setJRetention(0);
-      setMsg({ text: "Job backup dibuat.", ok: true });
+      setMsg({ text: editJobId ? "Job backup diperbarui." : "Job backup dibuat.", ok: true });
     }
+  }
+
+  function openEdit(j: Job) {
+    setEditJobId(j.id);
+    setJName(j.name);
+    setJConn(j.connection.id);
+    setJDbs(new Set(j.databases));
+    setJType(j.scheduleType);
+    setJTime(j.timeAt ?? "02:00");
+    setJDay(j.dayOn ?? 0);
+    setJDate(j.dayOn ?? 1);
+    setJCron(j.cronExpr ?? "0 2 * * *");
+    setJDest(j.destType);
+    setDest(j.dest as Record<string, string>);
+    setJRetention(j.retention);
+    setShowJobForm(true);
+    // load database list for the connection
+    loadDatabases(j.connection.id, true);
   }
 
   if (forbidden) {
@@ -225,13 +248,17 @@ export default function DbBackupPage() {
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Job Backup</h2>
-          <button onClick={() => setShowJobForm(!showJobForm)} disabled={conns.length === 0} className={btnPrimary}>
+          <button onClick={() => { setShowJobForm(!showJobForm); setEditJobId(null); setJName(""); setJDbs(new Set()); setDest({}); setJRetention(0); }} disabled={conns.length === 0} className={btnPrimary}>
             {showJobForm ? "Tutup form" : "+ Buat job"}
           </button>
         </div>
 
         {showJobForm && (
           <form onSubmit={createJob} className={`${card} animate-fade-up mb-4 space-y-5`}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{editJobId ? "Edit Job Backup" : "Buat Job Backup"}</h3>
+              <button type="button" onClick={() => { setShowJobForm(false); setEditJobId(null); }} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">✕ Tutup</button>
+            </div>
             <div className="flex flex-wrap gap-4">
               <div><label className={label}>Nama job</label><input required value={jName} onChange={(e) => setJName(e.target.value)} placeholder="mis. backup-harian-app" className={`${input} mt-1 w-56`} /></div>
               <div>
@@ -319,6 +346,7 @@ export default function DbBackupPage() {
                   { v: "local", l: "💾 Lokal / SMB-mount" },
                   { v: "ftp", l: "🌐 FTP" },
                   { v: "s3", l: "☁️ S3" },
+                  { v: "gdrive", l: "📁 Google Drive" },
                 ].map((o) => (
                   <button
                     type="button"
@@ -353,6 +381,27 @@ export default function DbBackupPage() {
                     <div><label className={label}>Secret key</label><input required type="password" value={D("secretKey")} onChange={(e) => setD("secretKey", e.target.value)} className={`${input} mt-1 w-44`} /></div>
                   </>
                 )}
+                {jDest === "gdrive" && (
+                  <>
+                    <div className="w-full">
+                      <label className={label}>Service Account Key (JSON)</label>
+                      <textarea
+                        required
+                        value={D("serviceAccountKey")}
+                        onChange={(e) => setD("serviceAccountKey", e.target.value)}
+                        placeholder='{"type":"service_account","project_id":"...","private_key":"...","client_email":"...@...iam.gserviceaccount.com"}'
+                        className={`${input} mt-1 w-full max-w-2xl font-mono`}
+                        rows={4}
+                      />
+                      <p className="mt-1 text-[11px] text-slate-400">Buat Service Account di Google Cloud Console, lalu share folder Drive ke email service account.</p>
+                    </div>
+                    <div>
+                      <label className={label}>Folder ID (opsional)</label>
+                      <input value={D("folderId")} onChange={(e) => setD("folderId", e.target.value)} placeholder="1abc...xyz (dari URL folder)" className={`${input} mt-1 w-64`} />
+                      <p className="mt-1 text-[11px] text-slate-400">Kosongkan = simpan di root Drive. Folder ID dari: drive.google.com/drive/folders/<b>FOLDER_ID</b></p>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -376,7 +425,7 @@ export default function DbBackupPage() {
 
             <div className="flex justify-end">
               <button disabled={busy || jDbs.size === 0} className={btnPrimary}>
-                {busy ? "Menyimpan…" : `Simpan job (${jDbs.size} database)`}
+                {busy ? "Menyimpan…" : editJobId ? `Perbarui job (${jDbs.size} database)` : `Simpan job (${jDbs.size} database)`}
               </button>
             </div>
           </form>
@@ -414,6 +463,9 @@ export default function DbBackupPage() {
                     <button onClick={() => api(`/api/db/jobs/${j.id}`, "PATCH", { enabled: !j.enabled })} disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1.5 font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">
                       {j.enabled ? "Nonaktifkan" : "Aktifkan"}
                     </button>
+                    <button onClick={() => openEdit(j)} disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1.5 font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">
+                      Edit
+                    </button>
                     <button onClick={() => confirm(`Hapus job "${j.name}"?`) && api(`/api/db/jobs/${j.id}`, "DELETE")} disabled={busy} className="rounded-lg px-2 py-1.5 font-medium text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950/40">
                       Hapus
                     </button>
@@ -423,7 +475,7 @@ export default function DbBackupPage() {
                 {j.runs.length > 0 && (
                   <div className="mt-3 space-y-1 border-t border-slate-100 pt-3 dark:border-slate-800">
                     {j.runs.map((r) => {
-                      const localOk = j.destType === "local" && r.status === "success";
+                      const runOk = r.status === "success";
                       return (
                       <p key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
                         <span className={r.status === "success" ? "text-emerald-600" : r.status === "running" ? "text-sky-600" : "text-red-500"}>
@@ -434,10 +486,10 @@ export default function DbBackupPage() {
                         {r.location && <span className="max-w-[240px] truncate font-mono">{r.location}</span>}
                         {r.message && r.status === "failed" && <span className="text-red-500">{r.message}</span>}
                         <span className="ml-auto flex items-center gap-2">
-                          {localOk && (
+                          {runOk && (
                             <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline dark:text-sky-400">Unduh</a>
                           )}
-                          {localOk && (
+                          {runOk && (
                             <button
                               onClick={() => { if (confirm("Restore backup ini ke database tujuan? Data saat ini akan ditimpa.")) api(`/api/db/runs/${r.id}/restore`, "POST"); }}
                               disabled={busy}
