@@ -9,26 +9,30 @@ export async function GET(request: Request) {
   const state = url.searchParams.get("state");
   const error = url.searchParams.get("error");
 
+  const proto = request.headers.get("x-forwarded-proto") || "https";
+  const host = request.headers.get("host") || url.host;
+  const origin = `${proto}://${host}`;
+
   if (error) {
     const msg = encodeURIComponent(`Google auth error: ${error}`);
-    return NextResponse.redirect(`${url.origin}/dbbackup?gdrive_error=${msg}`);
+    return NextResponse.redirect(`${origin}/dbbackup?gdrive_error=${msg}`);
   }
   if (!code || !state) {
-    return NextResponse.redirect(`${url.origin}/dbbackup?gdrive_error=${encodeURIComponent("Missing code/state")}`);
+    return NextResponse.redirect(`${origin}/dbbackup?gdrive_error=${encodeURIComponent("Missing code/state")}`);
   }
 
   let parsed: { jobId: string; callbackUrl: string };
   try {
     parsed = JSON.parse(Buffer.from(state, "base64url").toString());
   } catch {
-    return NextResponse.redirect(`${url.origin}/dbbackup?gdrive_error=${encodeURIComponent("Invalid state")}`);
+    return NextResponse.redirect(`${origin}/dbbackup?gdrive_error=${encodeURIComponent("Invalid state")}`);
   }
 
   const { jobId, callbackUrl } = parsed;
 
   const job = await prisma.dbBackupJob.findUnique({ where: { id: jobId } });
   if (!job) {
-    return NextResponse.redirect(`${url.origin}/dbbackup?gdrive_error=${encodeURIComponent("Job tidak ditemukan")}`);
+    return NextResponse.redirect(`${origin}/dbbackup?gdrive_error=${encodeURIComponent("Job tidak ditemukan")}`);
   }
 
   const dest = JSON.parse(job.destConfig) as Record<string, unknown>;
@@ -36,7 +40,7 @@ export async function GET(request: Request) {
   const clientSecret = dest.clientSecretEnc ? decryptSecret(String(dest.clientSecretEnc)) : String(dest.clientSecret || "");
 
   if (!clientId || !clientSecret) {
-    return NextResponse.redirect(`${url.origin}/dbbackup?gdrive_error=${encodeURIComponent("clientId/clientSecret kosong di job")}`);
+    return NextResponse.redirect(`${origin}/dbbackup?gdrive_error=${encodeURIComponent("clientId/clientSecret kosong di job")}`);
   }
 
   // Exchange authorization code for tokens
@@ -63,7 +67,7 @@ export async function GET(request: Request) {
 
     if (!tokenRes.ok || !tokenData.access_token) {
       const errMsg = tokenData.error_description || tokenData.error || `Token exchange failed: ${tokenRes.status}`;
-      return NextResponse.redirect(`${url.origin}/dbbackup?gdrive_error=${encodeURIComponent(errMsg)}`);
+      return NextResponse.redirect(`${origin}/dbbackup?gdrive_error=${encodeURIComponent(errMsg)}`);
     }
 
     // Get user email for display
@@ -90,9 +94,9 @@ export async function GET(request: Request) {
       data: { destConfig: JSON.stringify(updatedDest) },
     });
 
-    return NextResponse.redirect(`${url.origin}/dbbackup?gdrive_ok=${encodeURIComponent(userEmail || "connected")}`);
+    return NextResponse.redirect(`${origin}/dbbackup?gdrive_ok=${encodeURIComponent(userEmail || "connected")}`);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.redirect(`${url.origin}/dbbackup?gdrive_error=${encodeURIComponent(msg)}`);
+    return NextResponse.redirect(`${origin}/dbbackup?gdrive_error=${encodeURIComponent(msg)}`);
   }
 }

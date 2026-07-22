@@ -32,7 +32,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, message: "clientId & clientSecret wajib diisi di form job dulu" }, { status: 400 });
   }
 
-  const callbackUrl = `${url.origin}/api/db/gdrive/callback`;
+  const proto = request.headers.get("x-forwarded-proto") || "https";
+  const host = request.headers.get("host") || url.host;
+  const callbackUrl = `${proto}://${host}/api/db/gdrive/callback`;
   const state = Buffer.from(JSON.stringify({ jobId, callbackUrl })).toString("base64url");
 
   const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
