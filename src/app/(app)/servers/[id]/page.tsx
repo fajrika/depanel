@@ -8,6 +8,7 @@ import ServerMonitor from "@/components/ServerMonitor";
 export default function ServerMonitorPage() {
   const { id } = useParams<{ id: string }>();
   const [managed, setManaged] = useState(false);
+  const [isStaff, setIsStaff] = useState(false);
 
   useEffect(() => {
     fetch("/api/servers")
@@ -19,13 +20,23 @@ export default function ServerMonitorPage() {
       .catch(() => {});
   }, [id]);
 
+  useEffect(() => {
+    fetch("/api/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const role = d?.activeTeam?.role;
+        setIsStaff(role === "owner" || role === "admin");
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <div>
       <Link href="/" className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
         ← kembali ke daftar server
       </Link>
       <div className="mt-2">
-        <ServerMonitor serverId={id} managed={managed} />
+        <ServerMonitor serverId={id} managed={managed} isStaff={isStaff} />
       </div>
     </div>
   );

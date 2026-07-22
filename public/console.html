@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Depa Console — noVNC</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; overflow: hidden; }
+    #status-bar { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid #1e293b; background: #1e293b; font-size: 13px; }
+    #status-dot { width: 8px; height: 8px; border-radius: 50%; background: #eab308; }
+    #status-dot.connected { background: #22c55e; }
+    #status-dot.error { background: #ef4444; }
+    #status-dot.connecting { animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    #status-text { color: #94a3b8; flex: 1; }
+    #close-btn { background: #334155; color: #e2e8f0; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    #close-btn:hover { background: #475569; }
+    #vnc-container { position: absolute; top: 37px; left: 0; right: 0; bottom: 0; }
+    #vnc-container canvas { display: block; margin: 0 auto; }
+    #error-overlay { display: none; position: absolute; inset: 0; background: rgba(15,23,42,0.85); align-items: center; justify-content: center; }
+    #error-overlay.visible { display: flex; }
+    #error-box { background: #1e293b; border: 1px solid #7f1d1d; border-radius: 12px; padding: 24px; text-align: center; max-width: 400px; }
+    #error-msg { color: #f87171; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="status-bar">
+    <div id="status-dot" class="connecting"></div>
+    <span id="status-text">Memuat noVNC…</span>
+    <button id="close-btn" onclick="window.close()">Tutup</button>
+  </div>
+  <div id="vnc-container"></div>
+  <div id="error-overlay">
+    <div id="error-box">
+      <p id="error-msg"></p>
+      <button id="close-btn" onclick="window.close()" style="margin-top:16px;background:#334155;color:#e2e8f0;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:13px;">Tutup tab</button>
+    </div>
+  </div>
+
+  <script type="module">
+    // ---- helpers ----
+    const $ = (s) => document.querySelector(s);
+    const setStatus = (text, cls) => {
+      $('#status-text').textContent = text;
+      const dot = $('#status-dot');
+      dot.className = cls || '';
+    };
+    const showError = (msg) => {
+      $('#error-msg').textContent = msg;
+      $('#error-overlay').classList.add('visible');
+      setStatus(msg, 'error');
+    };
+
+    // ---- parse query params ----
+    const params = new URLSearchParams(window.location.search);
+    const wsB64 = params.get('ws');
+    const pwB64 = params.get('password');
+
+    if (!wsB64 || !pwB64) {
+      showError('Parameter ws dan password diperlukan');
+      throw new Error('missing params');
+    }
+
+    let wsUrl, password;
+    try {
+      wsUrl = atob(wsB64);
+      password = atob(pwB64);
+    } catch {
+      showError('Parameter tidak valid (base64 decode error)');
+      throw new Error('invalid params');
+    }
+
+    // ---- load noVNC from CDN via ES module ----
+    setStatus('Memuat noVNC…', 'connecting');
+
+    let RFB;
+    try {
+      // noVNC 1.7.0 core RFB module
+      const mod = await import('https://cdn.jsdelivr.net/npm/@novnc/novnc@1.7.0/core/rfb.js');
+      RFB = mod.default;
+    } catch (e) {
+      showError(`Gagal memuat noVNC: ${e.message}`);
+      throw e;
+    }
+
+    // ---- connect ----
+    setStatus('Menghubungkan…', 'connecting');
+
+    try {
+      const rfb = new RFB($('#vnc-container'), wsUrl, {
+        credentials: { password },
+        resize: 'scale',
+        wsProtocols: ['binary'],
+        reconnect: false,
+      });
+
+      rfb.addEventListener('connect', () => {
+        setStatus('Terhubung', 'connected');
+      });
+
+      rfb.addEventListener('disconnect', (e) => {
+        const reason = e.detail?.reason || 'Koneksi terputus';
+        setStatus(`Terputus: ${reason}`, 'error');
+      });
+
+      rfb.addEventListener('credentialsrequired', () => {
+        rfb.sendCredentials({ password });
+      });
+    } catch (e) {
+      showError(`Gagal menghubungkan: ${e.message}`);
+    }
+  </script>
+</body>
+</html>

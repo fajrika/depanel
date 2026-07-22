@@ -16,15 +16,24 @@ function findUrl(obj: unknown): string | null {
   return null;
 }
 
+/** Find a password field in the response (depa returns it alongside the ws URL). */
+function findPassword(obj: unknown): string | null {
+  if (!obj || typeof obj !== "object") return null;
+  const d = obj as Record<string, unknown>;
+  if (typeof d.password === "string") return d.password as string;
+  if (d.data && typeof d.data === "object") return findPassword(d.data);
+  return null;
+}
+
 export default function ConsolePanel({ serverId, hostname }: { serverId: string; hostname: string }) {
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ url: string | null; raw: unknown } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   async function open() {
     setBusy(true);
     setErr(null);
-    setResult(null);
+    setInfo(null);
     const res = await fetch(`/api/servers/${serverId}/console`, { method: "POST" });
     const d = await res.json().catch(() => ({}));
     setBusy(false);
@@ -32,7 +41,23 @@ export default function ConsolePanel({ serverId, hostname }: { serverId: string;
       setErr(d.message ?? "Gagal membuka console");
       return;
     }
-    setResult({ url: findUrl(d.data), raw: d.data });
+
+    const wsUrl = findUrl(d.data);
+    const password = findPassword(d.data);
+
+    if (!wsUrl) {
+      setErr("URL WebSocket tidak ditemukan dalam respons depa");
+      setInfo(JSON.stringify(d.data, null, 2));
+      return;
+    }
+
+    // Open the noVNC viewer page with base64-encoded params
+    const params = new URLSearchParams({
+      ws: btoa(wsUrl),
+      password: btoa(password ?? ""),
+    });
+    window.open(`/console.html?${params.toString()}`, "_blank", "noopener,noreferrer");
+    setInfo("Console dibuka di tab baru. Jika tidak terbuka, pastikan popup blocker dimatikan.");
   }
 
   return (
@@ -52,24 +77,8 @@ export default function ConsolePanel({ serverId, hostname }: { serverId: string;
 
         {err && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-300">{err}</p>}
 
-        {result && (
-          <div className="mt-4">
-            {result.url ? (
-              <a
-                href={result.url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300"
-              >
-                ↗ Buka console di tab baru
-              </a>
-            ) : (
-              <>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Sesi dibuat. Detail koneksi dari depa:</p>
-                <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">{JSON.stringify(result.raw, null, 2)}</pre>
-              </>
-            )}
-          </div>
+        {info && (
+          <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950/50 dark:text-green-300">{info}</p>
         )}
       </div>
     </div>
