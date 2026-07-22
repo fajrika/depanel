@@ -11,7 +11,7 @@ import { pipeline } from "node:stream/promises";
 import mysql, { type Connection } from "mysql2/promise";
 import { Client as FtpClient } from "basic-ftp";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
-import { google } from "googleapis";
+import crypto from "node:crypto";
 import { CronExpressionParser } from "cron-parser";
 import { prisma } from "./db";
 import { decryptSecret } from "./crypto";
@@ -299,24 +299,73 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
   return outPath;
 }
 
-// ---------- Google Drive helper ----------
+// ---------- Google Drive helper (native fetch + JWT, no googleapis) ----------
 
-function getGDrive(cfg: DestConfig) {
+interface GDriveSA { client_email: string; private_key: string }
+
+function parseSAKey(cfg: DestConfig): GDriveSA {
   const keyJson = cfg.serviceAccountKeyEnc ? decryptSecret(String(cfg.serviceAccountKeyEnc)) : cfg.serviceAccountKey;
-  if (!keyJson || typeof keyJson !== "string") {
-    throw new Error("Service Account Key Google Drive belum diisi");
-  }
-  let parsed: { client_email: string; private_key: string };
+  if (!keyJson || typeof keyJson !== "string") throw new Error("Service Account Key Google Drive belum diisi");
   try {
-    parsed = JSON.parse(keyJson);
+    const parsed = JSON.parse(keyJson);
+    if (!parsed.client_email || !parsed.private_key) throw new Error();
+    return parsed;
   } catch {
     throw new Error("Service Account Key JSON tidak valid");
   }
-  const auth = new google.auth.GoogleAuth({
-    credentials: { client_email: parsed.client_email, private_key: parsed.private_key },
-    scopes: ["https://www.googleapis.com/auth/drive"],
+}
+
+/** Sign a minimal RS256 JWT and exchange it for a Google OAuth2 access token. */
+async function getGDriveToken(sa: GDriveSA): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
+  const claim = Buffer.from(JSON.stringify({
+    iss: sa.client_email,
+    scope: "https://www.googleapis.com/auth/drive",
+    aud: "https://oauth2.googleapis.com/token",
+    exp: now + 3600,
+    iat: now,
+  })).toString("base64url");
+  const signed = crypto.sign("sha256", Buffer.from(`${header}.${claim}`), sa.private_key);
+  const jwt = `${header}.${claim}.${signed.toString("base64url")}`;
+
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwt }),
   });
-  return google.drive({ version: "v3", auth });
+  if (!res.ok) throw new Error(`GDrive token error: ${res.status} ${await res.text()}`);
+  const data = (await res.json()) as { access_token: string };
+  return data.access_token;
+}
+
+/** Upload a file to Google Drive, return file id. */
+async function gdriveUpload(token: string, folderId: string, fileName: string, filePath: string): Promise<string> {
+  const fileBytes = await fsp.readFile(filePath);
+  const boundary = "----Depanel" + crypto.randomUUID();
+  const metadata = JSON.stringify({ name: fileName, parents: folderId ? [folderId] : undefined });
+  const preamble = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/gzip\r\n\r\n`;
+  const epilogue = `\r\n--${boundary}--`;
+  const body = Buffer.concat([Buffer.from(preamble), fileBytes, Buffer.from(epilogue)]);
+
+  const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+    body,
+  });
+  if (!res.ok) throw new Error(`GDrive upload error: ${res.status} ${await res.text()}`);
+  const data = (await res.json()) as { id: string };
+  return data.id;
+}
+
+/** Download a file from Google Drive by file id. */
+async function gdriveDownload(token: string, fileId: string, destPath: string): Promise<void> {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`GDrive download error: ${res.status} ${await res.text()}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  await fsp.writeFile(destPath, buf);
 }
 
 // ---------- destinations ----------
@@ -376,16 +425,10 @@ export async function deliver(destType: string, cfg: DestConfig, filePath: strin
   }
 
   if (destType === "gdrive") {
-    const drive = getGDrive(cfg);
+    const sa = parseSAKey(cfg);
+    const token = await getGDriveToken(sa);
     const folderId = String(cfg.folderId || "");
-    const fileMetadata: { name: string; parents?: string[] } = { name: fileName };
-    if (folderId) fileMetadata.parents = [folderId];
-    const res = await drive.files.create({
-      requestBody: fileMetadata,
-      media: { mimeType: "application/gzip", body: fs.createReadStream(filePath) },
-      fields: "id",
-    });
-    const fileId = res.data.id;
+    const fileId = await gdriveUpload(token, folderId, fileName, filePath);
     return `gdrive://${fileId}`;
   }
 
@@ -443,11 +486,10 @@ export async function fetchBackup(destType: string, cfg: DestConfig, location: s
   }
 
   if (destType === "gdrive") {
-    const drive = getGDrive(cfg);
-    // location format: gdrive://fileId
+    const sa = parseSAKey(cfg);
+    const token = await getGDriveToken(sa);
     const fileId = location.replace(/^gdrive:\/\//, "");
-    const res = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" });
-    await fsp.writeFile(tmpFile, Buffer.from(res.data as ArrayBuffer));
+    await gdriveDownload(token, fileId, tmpFile);
     return tmpFile;
   }
 

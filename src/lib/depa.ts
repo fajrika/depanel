@@ -207,14 +207,21 @@ export function depaClient(apiKey: string) {
     async billingSummary() {
       return call("/billing/summary");
     },
-    async creditHistory(page = 1) {
-      return call<Record<string, unknown>>("/billing/credit/history", { query: { page } });
+    async creditHistory(opts: { page?: number; start?: string; end?: string; type?: string } = {}) {
+      return call<Record<string, unknown>>("/billing/credit/history", {
+        query: { page: opts.page, start: opts.start, end: opts.end, type: opts.type },
+      });
     },
-    async depositHistory(page = 1) {
-      return call<Record<string, unknown>>("/billing/deposit/history", { query: { page } });
+    async depositHistory(opts: { page?: number; start?: string; end?: string } = {}) {
+      return call<Record<string, unknown>>("/billing/deposit/history", {
+        query: { page: opts.page, start: opts.start, end: opts.end },
+      });
     },
     async billingReports(page = 1) {
       return call<Record<string, unknown>>("/billing/reports", { query: { page } });
+    },
+    async reportDetail(summaryId: string) {
+      return call<Record<string, unknown>>(`/billing/reports/${summaryId}/details`);
     },
 
     // ---- top-up (creates a payment invoice; the user pays manually) ----

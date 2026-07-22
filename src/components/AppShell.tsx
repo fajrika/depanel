@@ -210,6 +210,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       items: [
         { href: "/billing", label: "Saldo", icon: "💰", show: billing },
         { href: "/cost", label: "Biaya", icon: "📉", show: billing },
+        { href: "/reports/financial", label: "Laporan", icon: "📊", show: billing },
       ],
     },
     {
