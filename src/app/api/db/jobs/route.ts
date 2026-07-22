@@ -26,6 +26,9 @@ export async function GET() {
     delete dest.passwordEnc;
     delete dest.secretKeyEnc;
     delete dest.serviceAccountKeyEnc;
+    delete dest.clientSecretEnc;
+    delete dest.accessTokenEnc;
+    delete dest.refreshTokenEnc;
     return {
       id: j.id,
       name: j.name,
@@ -86,8 +89,8 @@ const createSchema = z
       ctx.addIssue({ code: "custom", message: "Host & username FTP wajib diisi" });
     if (v.destType === "s3" && (!v.dest.bucket || !v.dest.accessKeyId))
       ctx.addIssue({ code: "custom", message: "Bucket & access key S3 wajib diisi" });
-    if (v.destType === "gdrive" && (!v.dest.serviceAccountKey || !v.dest.folderId))
-      ctx.addIssue({ code: "custom", message: "Service Account Key & Folder ID (Shared Drive) wajib diisi" });
+    if (v.destType === "gdrive" && !v.dest.clientId)
+      ctx.addIssue({ code: "custom", message: "Google OAuth Client ID wajib diisi" });
   });
 
 export async function POST(request: Request) {
@@ -117,10 +120,15 @@ export async function POST(request: Request) {
     dest.secretKeyEnc = encryptSecret(dest.secretKey);
     delete dest.secretKey;
   }
-  if (typeof dest.serviceAccountKey === "string" && dest.serviceAccountKey) {
-    dest.serviceAccountKeyEnc = encryptSecret(dest.serviceAccountKey);
-    delete dest.serviceAccountKey;
+  if (typeof dest.clientSecret === "string" && dest.clientSecret) {
+    dest.clientSecretEnc = encryptSecret(dest.clientSecret);
+    delete dest.clientSecret;
   }
+  // strip OAuth tokens from creation (they come from callback only)
+  delete dest.accessTokenEnc;
+  delete dest.refreshTokenEnc;
+  delete dest.gdriveConnected;
+  delete dest.gdriveUserEmail;
 
   const job = await prisma.dbBackupJob.create({
     data: {

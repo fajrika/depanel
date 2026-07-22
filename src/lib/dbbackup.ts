@@ -11,11 +11,11 @@ import { pipeline } from "node:stream/promises";
 import mysql, { type Connection } from "mysql2/promise";
 import { Client as FtpClient } from "basic-ftp";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
-import crypto from "node:crypto";
 import { CronExpressionParser } from "cron-parser";
 import { prisma } from "./db";
 import { decryptSecret } from "./crypto";
 import { notifyTeam } from "./notify";
+import { getGDriveOAuthToken, gdriveOAuthUpload, gdriveOAuthDownload } from "./gdrive-oauth";
 
 // ---------- SQL statement splitter ----------
 
@@ -299,9 +299,7 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
   return outPath;
 }
 
-// ---------- Google Drive helper (native fetch + JWT, no googleapis) ----------
-
-interface GDriveSA { client_email: string; private_key: string }
+// ---------- retry helper ----------
 
 async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1000): Promise<T> {
   for (let i = 0; i < retries; i++) {
@@ -314,84 +312,14 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1000): 
   throw new Error("unreachable");
 }
 
-function parseSAKey(cfg: DestConfig): GDriveSA {
-  const keyJson = cfg.serviceAccountKeyEnc ? decryptSecret(String(cfg.serviceAccountKeyEnc)) : cfg.serviceAccountKey;
-  if (!keyJson || typeof keyJson !== "string") throw new Error("Service Account Key Google Drive belum diisi");
-  try {
-    const parsed = JSON.parse(keyJson);
-    if (!parsed.client_email || !parsed.private_key) throw new Error();
-    return parsed;
-  } catch {
-    throw new Error("Service Account Key JSON tidak valid");
-  }
-}
-
-/** Sign a minimal RS256 JWT and exchange it for a Google OAuth2 access token. */
-async function getGDriveToken(sa: GDriveSA): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
-  const claim = Buffer.from(JSON.stringify({
-    iss: sa.client_email,
-    scope: "https://www.googleapis.com/auth/drive",
-    aud: "https://oauth2.googleapis.com/token",
-    exp: now + 3600,
-    iat: now,
-  })).toString("base64url");
-  const signed = crypto.sign("sha256", Buffer.from(`${header}.${claim}`), sa.private_key);
-  const jwt = `${header}.${claim}.${signed.toString("base64url")}`;
-
-  return withRetry(async () => {
-    const res = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwt }),
-    });
-    if (!res.ok) throw new Error(`GDrive token error: ${res.status} ${await res.text()}`);
-    const data = (await res.json()) as { access_token: string };
-    return data.access_token;
-  });
-}
-
-/** Upload a file to Google Drive, return file id. */
-async function gdriveUpload(token: string, folderId: string, fileName: string, filePath: string): Promise<string> {
-  if (!folderId) throw new Error("Folder ID (Shared Drive) wajib diisi — Service Account tidak bisa upload ke My Drive");
-  const fileBytes = await fsp.readFile(filePath);
-  const boundary = "----Depanel" + crypto.randomUUID();
-  const metadata = JSON.stringify({ name: fileName, parents: folderId ? [folderId] : undefined });
-  const preamble = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/gzip\r\n\r\n`;
-  const epilogue = `\r\n--${boundary}--`;
-  const body = Buffer.concat([Buffer.from(preamble), fileBytes, Buffer.from(epilogue)]);
-
-  return withRetry(async () => {
-    const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
-      body,
-    });
-    if (!res.ok) throw new Error(`GDrive upload error: ${res.status} ${await res.text()}`);
-    const data = (await res.json()) as { id: string };
-    return data.id;
-  });
-}
-
-/** Download a file from Google Drive by file id. */
-async function gdriveDownload(token: string, fileId: string, destPath: string): Promise<void> {
-  await withRetry(async () => {
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`GDrive download error: ${res.status} ${await res.text()}`);
-    const buf = Buffer.from(await res.arrayBuffer());
-    await fsp.writeFile(destPath, buf);
-  });
-}
+// gdrive-oauth.ts handles OAuth2 token management
 
 // ---------- destinations ----------
 
 export type DestConfig = Record<string, string | number | boolean | undefined>;
 
 /** Deliver the dump file; returns a human-readable final location. */
-export async function deliver(destType: string, cfg: DestConfig, filePath: string, fileName: string): Promise<string> {
+export async function deliver(destType: string, cfg: DestConfig, filePath: string, fileName: string, jobId?: string): Promise<string> {
   if (destType === "local") {
     const dir = String(cfg.path || "");
     if (!dir) throw new Error("Path tujuan belum diisi");
@@ -443,10 +371,12 @@ export async function deliver(destType: string, cfg: DestConfig, filePath: strin
   }
 
   if (destType === "gdrive") {
-    const sa = parseSAKey(cfg);
-    const token = await getGDriveToken(sa);
+    if (!jobId) throw new Error("jobId wajib untuk Google Drive backup");
+    const token = await getGDriveOAuthToken(jobId);
     const folderId = String(cfg.folderId || "");
-    const fileId = await gdriveUpload(token, folderId, fileName, filePath);
+    if (!folderId) throw new Error("Folder ID wajib diisi untuk Google Drive");
+    const fileBytes = await fsp.readFile(filePath);
+    const fileId = await withRetry(() => gdriveOAuthUpload(token, folderId, fileName, fileBytes));
     return `gdrive://${fileId}`;
   }
 
@@ -457,7 +387,7 @@ export async function deliver(destType: string, cfg: DestConfig, filePath: strin
  * Fetch a backup file from any destination (local / FTP / S3) to a local temp path.
  * The caller is responsible for cleaning up the returned file.
  */
-export async function fetchBackup(destType: string, cfg: DestConfig, location: string): Promise<string> {
+export async function fetchBackup(destType: string, cfg: DestConfig, location: string, jobId?: string): Promise<string> {
   if (destType === "local") {
     await fsp.access(location);
     return location;
@@ -504,10 +434,10 @@ export async function fetchBackup(destType: string, cfg: DestConfig, location: s
   }
 
   if (destType === "gdrive") {
-    const sa = parseSAKey(cfg);
-    const token = await getGDriveToken(sa);
+    if (!jobId) throw new Error("jobId wajib untuk Google Drive restore");
+    const token = await getGDriveOAuthToken(jobId);
     const fileId = location.replace(/^gdrive:\/\//, "");
-    await gdriveDownload(token, fileId, tmpFile);
+    await withRetry(() => gdriveOAuthDownload(token, fileId, tmpFile));
     return tmpFile;
   }
 
@@ -547,7 +477,7 @@ export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "m
     const size = (await fsp.stat(tmpFile)).size;
 
     const destCfg = JSON.parse(job.destConfig) as DestConfig;
-    const location = await deliver(job.destType, destCfg, tmpFile, `${fileBase}.sql.gz`);
+    const location = await deliver(job.destType, destCfg, tmpFile, `${fileBase}.sql.gz`, job.id);
 
     await prisma.dbBackupRun.update({
       where: { id: run.id },
@@ -607,7 +537,7 @@ export async function restoreRun(runId: string): Promise<{ ok: boolean; message:
   let tmpFile: string | null = null;
   let file: string;
   try {
-    file = await fetchBackup(run.job.destType, destCfg, run.location);
+    file = await fetchBackup(run.job.destType, destCfg, run.location, run.job.id);
     if (file !== run.location) tmpFile = file;
   } catch (e) {
     return { ok: false, message: `Gagal mengambil arsip: ${(e as Error).message}` };

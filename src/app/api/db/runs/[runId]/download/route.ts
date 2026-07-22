@@ -28,7 +28,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ runId: string 
   let tmpFile: string | null = null;
   try {
     const destCfg = JSON.parse(run.job.destConfig) as DestConfig;
-    const file = await fetchBackup(run.job.destType, destCfg, run.location);
+    const file = await fetchBackup(run.job.destType, destCfg, run.location, run.job.id);
     if (file !== run.location) tmpFile = file; // fetched from FTP/S3, needs cleanup
 
     const name = `backup-${run.id}.sql.gz`;

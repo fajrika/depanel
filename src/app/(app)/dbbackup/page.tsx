@@ -97,6 +97,21 @@ export default function DbBackupPage() {
     return () => clearInterval(t);
   }, [jobs, load]);
 
+  // Handle OAuth redirect messages
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ok = params.get("gdrive_ok");
+    const err = params.get("gdrive_error");
+    if (ok) {
+      setMsg({ text: `✅ Google Drive terkoneksi sebagai ${ok}`, ok: true });
+      window.history.replaceState({}, "", window.location.pathname);
+      load();
+    } else if (err) {
+      setMsg({ text: `❌ ${err}`, ok: false });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [load]);
+
   async function api(path: string, method: string, body?: unknown): Promise<boolean> {
     setBusy(true);
     setMsg(null);
@@ -390,26 +405,40 @@ export default function DbBackupPage() {
                 )}
                 {jDest === "gdrive" && (
                   <>
-                    <div className="w-full">
-                      <label className={label}>Service Account Key (JSON)</label>
-                      <textarea
-                        required
-                        value={D("serviceAccountKey")}
-                        onChange={(e) => setD("serviceAccountKey", e.target.value)}
-                        placeholder='{"type":"service_account","project_id":"...","private_key":"...","client_email":"...@...iam.gserviceaccount.com"}'
-                        className={`${input} mt-1 w-full max-w-2xl font-mono`}
-                        rows={4}
-                      />
-                      <p className="mt-1 text-[11px] text-slate-400">Buat Service Account di Google Cloud Console, lalu share folder Drive ke email service account.</p>
+                    <div>
+                      <label className={label}>Google OAuth Client ID</label>
+                      <input required value={D("clientId")} onChange={(e) => setD("clientId", e.target.value)} placeholder="xxxx.apps.googleusercontent.com" className={`${input} mt-1 w-80`} />
+                      <p className="mt-1 text-[11px] text-slate-400">Buat OAuth 2.0 Client ID di Google Cloud Console (type: Web Application). Tambahkan redirect URI: <code className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded">{typeof window !== "undefined" ? window.location.origin : ""}/api/db/gdrive/callback</code></p>
                     </div>
                     <div>
-                      <label className={label}>Folder ID (Shared Drive) <span className="text-red-500">*</span></label>
-                      <input required value={D("folderId")} onChange={(e) => setD("folderId", e.target.value)} placeholder="1abc...xyz (dari URL folder Shared Drive)" className={`${input} mt-1 w-64`} />
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        <b className="text-red-500">Wajib Shared Drive</b> — Service Account tidak bisa upload ke My Drive.
-                        Folder ID dari: drive.google.com/drive/folders/<b>FOLDER_ID</b> (pastikan folder ini di dalam Shared Drive).
-                      </p>
+                      <label className={label}>Google OAuth Client Secret</label>
+                      <input type="password" required value={D("clientSecret")} onChange={(e) => setD("clientSecret", e.target.value)} placeholder="GOCSPX-..." className={`${input} mt-1 w-80`} />
                     </div>
+                    {D("gdriveConnected") === "true" && (
+                      <div className="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-400">
+                        ✅ Terkoneksi sebagai <b>{D("gdriveUserEmail") || "akun Google"}</b>
+                      </div>
+                    )}
+                    <div>
+                      <label className={label}>Folder ID (opsional)</label>
+                      <input value={D("folderId")} onChange={(e) => setD("folderId", e.target.value)} placeholder="Kosongkan = simpan di root My Drive" className={`${input} mt-1 w-64`} />
+                      <p className="mt-1 text-[11px] text-slate-400">Folder ID dari: drive.google.com/drive/folders/<b>FOLDER_ID</b>. Kosongkan untuk simpan di root Drive.</p>
+                    </div>
+                    {D("clientId") && D("clientSecret") && (
+                      <div className="w-full">
+                        {editJobId ? (
+                          <a
+                            href={`/api/db/gdrive/auth?jobId=${editJobId}`}
+                            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-500"
+                          >
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#fff"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#fff" opacity=".8"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#fff" opacity=".6"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#fff" opacity=".9"/></svg>
+                            Login Google
+                          </a>
+                        ) : (
+                          <p className="text-[11px] text-slate-400 mt-1">Simpan job dulu, lalu klik Edit untuk Login Google.</p>
+                        )}
+                      </div>
+                    )}
                   </>
                 )}
               </div>

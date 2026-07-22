@@ -47,7 +47,7 @@ const patchSchema = z
     if (v.destType === "local" && v.dest && !v.dest.path) ctx.addIssue({ code: "custom", message: "Path tujuan wajib diisi" });
     if (v.destType === "ftp" && v.dest && (!v.dest.host || !v.dest.username)) ctx.addIssue({ code: "custom", message: "Host & username FTP wajib diisi" });
     if (v.destType === "s3" && v.dest && (!v.dest.bucket || !v.dest.accessKeyId)) ctx.addIssue({ code: "custom", message: "Bucket & access key S3 wajib diisi" });
-    if (v.destType === "gdrive" && v.dest && (!v.dest.serviceAccountKey || !v.dest.folderId)) ctx.addIssue({ code: "custom", message: "Service Account Key & Folder ID (Shared Drive) wajib diisi" });
+    if (v.destType === "gdrive" && v.dest && !v.dest.clientId) ctx.addIssue({ code: "custom", message: "Google OAuth Client ID wajib diisi" });
   });
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -94,10 +94,15 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       dest.secretKeyEnc = encryptSecret(dest.secretKey);
       delete dest.secretKey;
     }
-    if (typeof dest.serviceAccountKey === "string" && dest.serviceAccountKey) {
-      dest.serviceAccountKeyEnc = encryptSecret(dest.serviceAccountKey);
-      delete dest.serviceAccountKey;
+    if (typeof dest.clientSecret === "string" && dest.clientSecret) {
+      dest.clientSecretEnc = encryptSecret(dest.clientSecret);
+      delete dest.clientSecret;
     }
+    // strip OAuth tokens from manual edit (they come from callback only)
+    delete dest.accessTokenEnc;
+    delete dest.refreshTokenEnc;
+    delete dest.gdriveConnected;
+    delete dest.gdriveUserEmail;
     data.destConfig = JSON.stringify(dest);
   }
 
