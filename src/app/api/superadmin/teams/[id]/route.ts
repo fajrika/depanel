@@ -15,12 +15,6 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const team = await prisma.team.findUnique({ where: { id } });
   if (!team) return NextResponse.json({ ok: false, message: "Tim tidak ditemukan" }, { status: 404 });
 
-  // Cegah super admin menghapus diri sendiri
-  const members = await prisma.teamMember.findMany({ where: { teamId: id, role: "owner" } });
-  if (members.some((m) => m.userId === user.id)) {
-    return NextResponse.json({ ok: false, message: "Tidak bisa menghapus tim Anda sendiri" }, { status: 400 });
-  }
-
   await prisma.team.delete({ where: { id } });
   await logActivity({ userId: user.id, action: "team-delete", message: `(super admin) Hapus tim ${team.name}` });
   return NextResponse.json({ ok: true });
