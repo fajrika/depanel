@@ -303,6 +303,17 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
 
 interface GDriveSA { client_email: string; private_key: string }
 
+async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1000): Promise<T> {
+  for (let i = 0; i < retries; i++) {
+    try { return await fn(); }
+    catch (err) {
+      if (i === retries - 1) throw err;
+      await new Promise(r => setTimeout(r, delayMs * 2 ** i));
+    }
+  }
+  throw new Error("unreachable");
+}
+
 function parseSAKey(cfg: DestConfig): GDriveSA {
   const keyJson = cfg.serviceAccountKeyEnc ? decryptSecret(String(cfg.serviceAccountKeyEnc)) : cfg.serviceAccountKey;
   if (!keyJson || typeof keyJson !== "string") throw new Error("Service Account Key Google Drive belum diisi");
@@ -329,14 +340,16 @@ async function getGDriveToken(sa: GDriveSA): Promise<string> {
   const signed = crypto.sign("sha256", Buffer.from(`${header}.${claim}`), sa.private_key);
   const jwt = `${header}.${claim}.${signed.toString("base64url")}`;
 
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwt }),
+  return withRetry(async () => {
+    const res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwt }),
+    });
+    if (!res.ok) throw new Error(`GDrive token error: ${res.status} ${await res.text()}`);
+    const data = (await res.json()) as { access_token: string };
+    return data.access_token;
   });
-  if (!res.ok) throw new Error(`GDrive token error: ${res.status} ${await res.text()}`);
-  const data = (await res.json()) as { access_token: string };
-  return data.access_token;
 }
 
 /** Upload a file to Google Drive, return file id. */
@@ -348,24 +361,28 @@ async function gdriveUpload(token: string, folderId: string, fileName: string, f
   const epilogue = `\r\n--${boundary}--`;
   const body = Buffer.concat([Buffer.from(preamble), fileBytes, Buffer.from(epilogue)]);
 
-  const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
-    body,
+  return withRetry(async () => {
+    const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+      body,
+    });
+    if (!res.ok) throw new Error(`GDrive upload error: ${res.status} ${await res.text()}`);
+    const data = (await res.json()) as { id: string };
+    return data.id;
   });
-  if (!res.ok) throw new Error(`GDrive upload error: ${res.status} ${await res.text()}`);
-  const data = (await res.json()) as { id: string };
-  return data.id;
 }
 
 /** Download a file from Google Drive by file id. */
 async function gdriveDownload(token: string, fileId: string, destPath: string): Promise<void> {
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-    headers: { Authorization: `Bearer ${token}` },
+  await withRetry(async () => {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`GDrive download error: ${res.status} ${await res.text()}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    await fsp.writeFile(destPath, buf);
   });
-  if (!res.ok) throw new Error(`GDrive download error: ${res.status} ${await res.text()}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  await fsp.writeFile(destPath, buf);
 }
 
 // ---------- destinations ----------
