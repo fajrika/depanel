@@ -201,13 +201,25 @@ export default function SuperAdminPage() {
                     <span className="truncate">{t.name}</span>
                     <span className="text-[10px] font-normal text-slate-400">{t.accountCount} akun API</span>
                   </p>
-                  <button
-                    onClick={() => confirm(`(Super admin) Hapus tim "${t.name}" beserta seluruh datanya?`) && api(`/api/superadmin/teams/${t.id}`, "DELETE")}
-                    disabled={busy}
-                    className="shrink-0 text-xs font-medium text-red-500 hover:underline disabled:opacity-40"
-                  >
-                    Hapus
-                  </button>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      onClick={async () => {
+                        const ok = await api(`/api/superadmin/teams/${t.id}/enter`, "POST");
+                        if (ok) window.location.href = "/";
+                      }}
+                      disabled={busy}
+                      className="text-xs font-medium text-indigo-600 hover:underline disabled:opacity-40 dark:text-indigo-400"
+                    >
+                      Masuk
+                    </button>
+                    <button
+                      onClick={() => confirm(`(Super admin) Hapus tim "${t.name}" beserta seluruh datanya?`) && api(`/api/superadmin/teams/${t.id}`, "DELETE")}
+                      disabled={busy}
+                      className="text-xs font-medium text-red-500 hover:underline disabled:opacity-40"
+                    >
+                      Hapus
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">
                   {t.members.map((m) => (
