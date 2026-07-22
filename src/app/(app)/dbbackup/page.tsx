@@ -191,13 +191,6 @@ export default function DbBackupPage() {
         </p>
       </div>
 
-      {msg && (
-        <div className={`flex items-start gap-2 rounded-lg border px-4 py-3 text-sm ${msg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300" : "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"}`}>
-          <span className="flex-1">{msg.text}</span>
-          <button onClick={() => setMsg(null)} className="opacity-50 hover:opacity-100">✕</button>
-        </div>
-      )}
-
       {/* ===== koneksi ===== */}
       <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Koneksi MySQL</h2>
@@ -219,6 +212,13 @@ export default function DbBackupPage() {
           <div><label className={label}>Password</label><input type="password" value={nc.password} onChange={(e) => setNc({ ...nc, password: e.target.value })} className={`${input} mt-1 w-36`} /></div>
           <button disabled={busy} className={btnPrimary}>{busy ? "…" : "Tes & simpan"}</button>
         </form>
+
+        {msg && !showJobForm && (
+          <div className={`mb-4 flex items-start gap-2 rounded-lg border px-4 py-3 text-sm ${msg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300" : "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"}`}>
+            <span className="flex-1">{msg.text}</span>
+            <button onClick={() => setMsg(null)} className="opacity-50 hover:opacity-100">✕</button>
+          </div>
+        )}
 
         {loading ? (
           <div className="h-16 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
@@ -259,6 +259,13 @@ export default function DbBackupPage() {
               <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{editJobId ? "Edit Job Backup" : "Buat Job Backup"}</h3>
               <button type="button" onClick={() => { setShowJobForm(false); setEditJobId(null); }} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">✕ Tutup</button>
             </div>
+
+            {msg && (
+              <div className={`flex items-start gap-2 rounded-lg border px-4 py-3 text-sm ${msg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300" : "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"}`}>
+                <span className="flex-1">{msg.text}</span>
+                <button onClick={() => setMsg(null)} className="opacity-50 hover:opacity-100">✕</button>
+              </div>
+            )}
             <div className="flex flex-wrap gap-4">
               <div><label className={label}>Nama job</label><input required value={jName} onChange={(e) => setJName(e.target.value)} placeholder="mis. backup-harian-app" className={`${input} mt-1 w-56`} /></div>
               <div>
@@ -452,7 +459,7 @@ export default function DbBackupPage() {
                     </p>
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                       {j.connection.name} · {j.databases.join(", ")} · {scheduleLabel(j)} · →{" "}
-                      {j.destType === "local" ? `📁 ${j.dest.path}` : j.destType === "ftp" ? `FTP ${j.dest.host}` : `S3 ${j.dest.bucket}`}
+                      {j.destType === "local" ? `📁 ${j.dest.path}` : j.destType === "ftp" ? `FTP ${j.dest.host}` : j.destType === "gdrive" ? "📂 Google Drive" : `S3 ${j.dest.bucket}`}
                       {j.retention > 0 ? ` · Retensi: ${j.retention}` : ""}
                     </p>
                   </div>

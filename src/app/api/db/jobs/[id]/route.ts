@@ -28,7 +28,7 @@ const patchSchema = z
     dayOn: z.number().int().min(0).max(28).optional().nullable(),
     cronExpr: z.string().optional().nullable(),
     timezone: z.string().optional(),
-    destType: z.enum(["local", "ftp", "s3"]).optional(),
+    destType: z.enum(["local", "ftp", "s3", "gdrive"]).optional(),
     dest: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
     retention: z.number().int().min(0).max(1000).optional(),
   })
@@ -47,6 +47,7 @@ const patchSchema = z
     if (v.destType === "local" && v.dest && !v.dest.path) ctx.addIssue({ code: "custom", message: "Path tujuan wajib diisi" });
     if (v.destType === "ftp" && v.dest && (!v.dest.host || !v.dest.username)) ctx.addIssue({ code: "custom", message: "Host & username FTP wajib diisi" });
     if (v.destType === "s3" && v.dest && (!v.dest.bucket || !v.dest.accessKeyId)) ctx.addIssue({ code: "custom", message: "Bucket & access key S3 wajib diisi" });
+    if (v.destType === "gdrive" && v.dest && !v.dest.serviceAccountKey) ctx.addIssue({ code: "custom", message: "Service Account Key Google Drive wajib diisi" });
   });
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {

@@ -59,7 +59,7 @@ const createSchema = z
     dayOn: z.number().int().min(0).max(28).optional(),
     cronExpr: z.string().optional(),
     timezone: z.string().default("Asia/Jakarta"),
-    destType: z.enum(["local", "ftp", "s3"]),
+    destType: z.enum(["local", "ftp", "s3", "gdrive"]),
     dest: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
     retention: z.number().int().min(0).max(1000).default(0), // 0 = keep all, N = keep last N
   })
@@ -86,6 +86,8 @@ const createSchema = z
       ctx.addIssue({ code: "custom", message: "Host & username FTP wajib diisi" });
     if (v.destType === "s3" && (!v.dest.bucket || !v.dest.accessKeyId))
       ctx.addIssue({ code: "custom", message: "Bucket & access key S3 wajib diisi" });
+    if (v.destType === "gdrive" && !v.dest.serviceAccountKey)
+      ctx.addIssue({ code: "custom", message: "Service Account Key Google Drive wajib diisi" });
   });
 
 export async function POST(request: Request) {
