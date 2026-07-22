@@ -403,9 +403,12 @@ export default function DbBackupPage() {
                       <p className="mt-1 text-[11px] text-slate-400">Buat Service Account di Google Cloud Console, lalu share folder Drive ke email service account.</p>
                     </div>
                     <div>
-                      <label className={label}>Folder ID (opsional)</label>
-                      <input value={D("folderId")} onChange={(e) => setD("folderId", e.target.value)} placeholder="1abc...xyz (dari URL folder)" className={`${input} mt-1 w-64`} />
-                      <p className="mt-1 text-[11px] text-slate-400">Kosongkan = simpan di root Drive. Folder ID dari: drive.google.com/drive/folders/<b>FOLDER_ID</b></p>
+                      <label className={label}>Folder ID (Shared Drive) <span className="text-red-500">*</span></label>
+                      <input required value={D("folderId")} onChange={(e) => setD("folderId", e.target.value)} placeholder="1abc...xyz (dari URL folder Shared Drive)" className={`${input} mt-1 w-64`} />
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        <b className="text-red-500">Wajib Shared Drive</b> — Service Account tidak bisa upload ke My Drive.
+                        Folder ID dari: drive.google.com/drive/folders/<b>FOLDER_ID</b> (pastikan folder ini di dalam Shared Drive).
+                      </p>
                     </div>
                   </>
                 )}

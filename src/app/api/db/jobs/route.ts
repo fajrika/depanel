@@ -86,8 +86,8 @@ const createSchema = z
       ctx.addIssue({ code: "custom", message: "Host & username FTP wajib diisi" });
     if (v.destType === "s3" && (!v.dest.bucket || !v.dest.accessKeyId))
       ctx.addIssue({ code: "custom", message: "Bucket & access key S3 wajib diisi" });
-    if (v.destType === "gdrive" && !v.dest.serviceAccountKey)
-      ctx.addIssue({ code: "custom", message: "Service Account Key Google Drive wajib diisi" });
+    if (v.destType === "gdrive" && (!v.dest.serviceAccountKey || !v.dest.folderId))
+      ctx.addIssue({ code: "custom", message: "Service Account Key & Folder ID (Shared Drive) wajib diisi" });
   });
 
 export async function POST(request: Request) {

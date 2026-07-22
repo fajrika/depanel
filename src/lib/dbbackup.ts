@@ -354,6 +354,7 @@ async function getGDriveToken(sa: GDriveSA): Promise<string> {
 
 /** Upload a file to Google Drive, return file id. */
 async function gdriveUpload(token: string, folderId: string, fileName: string, filePath: string): Promise<string> {
+  if (!folderId) throw new Error("Folder ID (Shared Drive) wajib diisi — Service Account tidak bisa upload ke My Drive");
   const fileBytes = await fsp.readFile(filePath);
   const boundary = "----Depanel" + crypto.randomUUID();
   const metadata = JSON.stringify({ name: fileName, parents: folderId ? [folderId] : undefined });
