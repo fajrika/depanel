@@ -201,15 +201,13 @@ export default function SuperAdminPage() {
                     <span className="truncate">{t.name}</span>
                     <span className="text-[10px] font-normal text-slate-400">{t.accountCount} akun API</span>
                   </p>
-                  {!t.isPersonal && (
-                    <button
-                      onClick={() => confirm(`(Super admin) Hapus tim "${t.name}" beserta seluruh datanya?`) && api(`/api/superadmin/teams/${t.id}`, "DELETE")}
-                      disabled={busy}
-                      className="shrink-0 text-xs font-medium text-red-500 hover:underline disabled:opacity-40"
-                    >
-                      Hapus
-                    </button>
-                  )}
+                  <button
+                    onClick={() => confirm(`(Super admin) Hapus tim "${t.name}" beserta seluruh datanya?`) && api(`/api/superadmin/teams/${t.id}`, "DELETE")}
+                    disabled={busy}
+                    className="shrink-0 text-xs font-medium text-red-500 hover:underline disabled:opacity-40"
+                  >
+                    Hapus
+                  </button>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">
                   {t.members.map((m) => (
