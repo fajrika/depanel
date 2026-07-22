@@ -13,10 +13,10 @@ RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# ---- 1. full deps (for building). npm cache is mounted so re-downloads are skipped. ----
+# ---- 1. full deps (for building). ----
 FROM base AS deps
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN npm ci
 
 # ---- 2. build the app (standalone) + compile the worker ----
 FROM base AS builder
@@ -38,14 +38,14 @@ RUN npm prune --omit=dev && npx prisma generate
 # ---- 4. isolated Prisma CLI (complete dependency closure) for `db push` ----
 FROM base AS prismacli
 WORKDIR /pcli
-RUN --mount=type=cache,target=/root/.npm npm init -y >/dev/null 2>&1 \
+RUN npm init -y >/dev/null 2>&1 \
   && npm install prisma@6.19.3 --omit=dev --no-audit --no-fund
 
 # ---- 4b. deps for the compiled worker/create-user scripts that Next bundles
 #          into its own chunks (so they're absent from node_modules). ----
 FROM base AS workerdeps
 WORKDIR /wd
-RUN --mount=type=cache,target=/root/.npm npm init -y >/dev/null 2>&1 \
+RUN npm init -y >/dev/null 2>&1 \
   && npm install mysql2@3.22.6 basic-ftp@6.0.1 cron-parser@5.6.1 node-cron@4.6.0 bcryptjs@3.0.3 --omit=dev --no-audit --no-fund
 
 # ---- 5. runner ----
