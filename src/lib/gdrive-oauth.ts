@@ -40,10 +40,13 @@ export async function getGDriveOAuthToken(jobId: string): Promise<string> {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (checkRes.ok) return accessToken;
-    } catch { /* token invalid, refresh below */ }
+    } catch (e) {
+      console.warn(`[GDRIVE] Access token check failed (will refresh): ${(e as Error).message}`);
+    }
   }
 
   // Refresh the token
+  console.log(`[GDRIVE] Refreshing OAuth token for job ${jobId}...`);
   const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -64,6 +67,7 @@ export async function getGDriveOAuthToken(jobId: string): Promise<string> {
 
   if (!refreshRes.ok || !refreshData.access_token) {
     const errMsg = refreshData.error_description || refreshData.error || `Token refresh failed: ${refreshRes.status}`;
+    console.error(`[GDRIVE] Token refresh failed for job ${jobId}: ${errMsg}`);
     // If refresh token is revoked, mark as disconnected
     if (refreshData.error === "invalid_grant") {
       const updatedDest = { ...dest, gdriveConnected: false };
@@ -77,6 +81,7 @@ export async function getGDriveOAuthToken(jobId: string): Promise<string> {
   }
 
   // Store refreshed access token
+  console.log(`[GDRIVE] Token refreshed successfully for job ${jobId}`);
   const updatedDest = { ...dest, accessTokenEnc: encryptSecret(refreshData.access_token) };
   await prisma.dbBackupJob.update({
     where: { id: jobId },
@@ -107,7 +112,11 @@ export async function gdriveOAuthUpload(
     },
     body,
   });
-  if (!res.ok) throw new Error(`GDrive upload error: ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    console.error(`[GDRIVE] Upload failed: ${res.status} ${errBody}`);
+    throw new Error(`GDrive upload error: ${res.status} ${errBody}`);
+  }
   const data = (await res.json()) as { id: string };
   return data.id;
 }

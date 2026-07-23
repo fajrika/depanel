@@ -492,7 +492,10 @@ export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "m
       await notifyTeam(job.connection.teamId, "backup", `💾 Backup DB "${job.name}" sukses (${databases.length} database).`);
     }
   } catch (e) {
-    const msg = (e as Error).message;
+    const err = e instanceof Error ? e : new Error(String(e));
+    const msg = err.message;
+    const detail = err.stack ? `\nStack: ${err.stack}` : "";
+    console.error(`[BACKUP] Job "${job.name}" failed: ${msg}${detail}`);
     await prisma.dbBackupRun.update({
       where: { id: run.id },
       data: { status: "failed", message: msg, endedAt: new Date() },
