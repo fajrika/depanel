@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import TimeField from "@/components/TimeField";
 
 type Conn = { id: string; name: string; host: string; port: number; username: string; jobCount: number };
+type Team = { id: string; name: string };
 type Run = { id: string; status: string; message: string | null; sizeBytes: number | null; location: string | null; startedAt: string; endedAt: string | null };
 type Job = {
   id: string;
@@ -56,6 +57,11 @@ export default function DbBackupPage() {
 
   // form koneksi
   const [nc, setNc] = useState({ name: "", host: "", port: "3306", username: "", password: "" });
+  const [editConnId, setEditConnId] = useState<string | null>(null);
+  // clone
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [cloneConnId, setCloneConnId] = useState<string | null>(null);
+  const [cloneTeamId, setCloneTeamId] = useState("");
   // form job
   const [showJobForm, setShowJobForm] = useState(false);
   const [editJobId, setEditJobId] = useState<string | null>(null);
@@ -73,7 +79,7 @@ export default function DbBackupPage() {
   const [jRetention, setJRetention] = useState(0);
 
   const load = useCallback(async () => {
-    const [cRes, jRes] = await Promise.all([fetch("/api/db/connections"), fetch("/api/db/jobs")]);
+    const [cRes, jRes, tRes] = await Promise.all([fetch("/api/db/connections"), fetch("/api/db/jobs"), fetch("/api/teams")]);
     if (cRes.status === 403) {
       setForbidden(true);
       setLoading(false);
@@ -81,8 +87,10 @@ export default function DbBackupPage() {
     }
     const c = await cRes.json();
     const j = await jRes.json();
+    const t = await tRes.json();
     setConns(c.data ?? []);
     setJobs(j.data ?? []);
+    setTeams(t.data ?? []);
     setLoading(false);
   }, []);
 
@@ -213,10 +221,19 @@ export default function DbBackupPage() {
           className={`${card} mb-4 flex flex-wrap items-end gap-3`}
           onSubmit={async (e) => {
             e.preventDefault();
-            const ok = await api("/api/db/connections", "POST", { ...nc, port: Number(nc.port) || 3306 });
-            if (ok) {
-              setNc({ name: "", host: "", port: "3306", username: "", password: "" });
-              setMsg({ text: "Koneksi tersimpan (tes koneksi berhasil).", ok: true });
+            if (editConnId) {
+              const ok = await api(`/api/db/connections/${editConnId}`, "PATCH", { ...nc, port: Number(nc.port) || 3306 });
+              if (ok) {
+                setEditConnId(null);
+                setNc({ name: "", host: "", port: "3306", username: "", password: "" });
+                setMsg({ text: "Koneksi diperbarui.", ok: true });
+              }
+            } else {
+              const ok = await api("/api/db/connections", "POST", { ...nc, port: Number(nc.port) || 3306 });
+              if (ok) {
+                setNc({ name: "", host: "", port: "3306", username: "", password: "" });
+                setMsg({ text: "Koneksi tersimpan (tes koneksi berhasil).", ok: true });
+              }
             }
           }}
         >
@@ -224,8 +241,11 @@ export default function DbBackupPage() {
           <div><label className={label}>Host</label><input required value={nc.host} onChange={(e) => setNc({ ...nc, host: e.target.value })} placeholder="103.x.x.x" className={`${input} mt-1 w-40`} /></div>
           <div><label className={label}>Port</label><input value={nc.port} onChange={(e) => setNc({ ...nc, port: e.target.value })} className={`${input} mt-1 w-20`} /></div>
           <div><label className={label}>Username</label><input required value={nc.username} onChange={(e) => setNc({ ...nc, username: e.target.value })} className={`${input} mt-1 w-32`} /></div>
-          <div><label className={label}>Password</label><input type="password" value={nc.password} onChange={(e) => setNc({ ...nc, password: e.target.value })} className={`${input} mt-1 w-36`} /></div>
-          <button disabled={busy} className={btnPrimary}>{busy ? "…" : "Tes & simpan"}</button>
+          <div><label className={label}>Password</label><input type="password" value={nc.password} onChange={(e) => setNc({ ...nc, password: e.target.value })} placeholder={editConnId ? "Kosongkan jika tidak diubah" : ""} className={`${input} mt-1 w-36`} /></div>
+          <div className="flex gap-2">
+            <button disabled={busy} className={btnPrimary}>{busy ? "…" : editConnId ? "Simpan edit" : "Tes & simpan"}</button>
+            {editConnId && <button type="button" onClick={() => { setEditConnId(null); setNc({ name: "", host: "", port: "3306", username: "", password: "" }); }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">Batal</button>}
+          </div>
         </form>
 
         {msg && !showJobForm && (
@@ -247,17 +267,76 @@ export default function DbBackupPage() {
                   <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{c.name}</p>
                   <p className="truncate text-xs text-slate-400">{c.username}@{c.host}:{c.port} · {c.jobCount} job</p>
                 </div>
-                <button
-                  onClick={() => confirm(`Hapus koneksi "${c.name}" beserta job backup-nya?`) && api(`/api/db/connections/${c.id}`, "DELETE")}
-                  className="text-xs font-medium text-red-500 hover:underline"
-                >
-                  Hapus
-                </button>
+                <div className="flex shrink-0 gap-2 text-xs">
+                  <button
+                    onClick={() => { setEditConnId(c.id); setNc({ name: c.name, host: c.host, port: String(c.port), username: c.username, password: "" }); }}
+                    className="font-medium text-slate-500 hover:underline dark:text-slate-400"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => { setCloneConnId(c.id); setCloneTeamId(""); }}
+                    className="font-medium text-sky-600 hover:underline dark:text-sky-400"
+                  >
+                    Clone
+                  </button>
+                  <button
+                    onClick={() => confirm(`Hapus koneksi "${c.name}" beserta job backup-nya?`) && api(`/api/db/connections/${c.id}`, "DELETE")}
+                    className="font-medium text-red-500 hover:underline"
+                  >
+                    Hapus
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         )}
       </section>
+
+      {/* Clone modal */}
+      {cloneConnId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900">
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Clone Koneksi ke Tim Lain</h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Koneksi dan semua job-nya akan disalin ke tim tujuan.</p>
+            <select
+              value={cloneTeamId}
+              onChange={(e) => setCloneTeamId(e.target.value)}
+              className={`${input} mt-4 w-full`}
+            >
+              <option value="">— pilih tim tujuan —</option>
+              {teams.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}
+            </select>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => { setCloneConnId(null); setCloneTeamId(""); }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">Batal</button>
+              <button
+                disabled={!cloneTeamId || busy}
+                onClick={async () => {
+                  setBusy(true);
+                  const res = await fetch(`/api/db/connections/${cloneConnId}/clone`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ teamId: cloneTeamId }),
+                  });
+                  const d = await res.json().catch(() => ({}));
+                  setBusy(false);
+                  if (!res.ok || d.ok === false) {
+                    setMsg({ text: d.message ?? "Gagal clone", ok: false });
+                  } else {
+                    setMsg({ text: `Berhasil clone + ${d.data?.jobCount ?? 0} job.`, ok: true });
+                    setCloneConnId(null);
+                    setCloneTeamId("");
+                    load();
+                  }
+                }}
+                className={btnPrimary}
+              >
+                {busy ? "…" : "Clone"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ===== jobs ===== */}
       <section>
