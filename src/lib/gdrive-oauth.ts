@@ -45,50 +45,65 @@ export async function getGDriveOAuthToken(jobId: string): Promise<string> {
     }
   }
 
-  // Refresh the token
-  console.log(`[GDRIVE] Refreshing OAuth token for job ${jobId}...`);
-  const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: refreshToken,
-      grant_type: "refresh_token",
-    }),
-  });
+  // Refresh the token (retry up to 3 times on transient errors)
+  const MAX_RETRIES = 3;
+  let lastErr: string = "";
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`[GDRIVE] Refreshing OAuth token for job ${jobId} (attempt ${attempt}/${MAX_RETRIES})...`);
+    const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: "refresh_token",
+      }),
+    });
 
-  const refreshData = await refreshRes.json() as {
-    access_token?: string;
-    expires_in?: number;
-    error?: string;
-    error_description?: string;
-  };
+    const refreshData = await refreshRes.json() as {
+      access_token?: string;
+      expires_in?: number;
+      error?: string;
+      error_description?: string;
+    };
 
-  if (!refreshRes.ok || !refreshData.access_token) {
-    const errMsg = refreshData.error_description || refreshData.error || `Token refresh failed: ${refreshRes.status}`;
-    console.error(`[GDRIVE] Token refresh failed for job ${jobId}: ${errMsg}`);
-    // If refresh token is revoked, mark as disconnected
-    if (refreshData.error === "invalid_grant") {
-      const updatedDest = { ...dest, gdriveConnected: false };
-      await prisma.dbBackupJob.update({
-        where: { id: jobId },
-        data: { destConfig: JSON.stringify(updatedDest) },
-      });
-      throw new Error("Google Drive token expired/revoked — silakan login Google ulang dari form edit job");
+    if (!refreshRes.ok || !refreshData.access_token) {
+      const errMsg = refreshData.error_description || refreshData.error || `Token refresh failed: ${refreshRes.status}`;
+      console.error(`[GDRIVE] Token refresh failed (attempt ${attempt}): ${errMsg}`);
+      lastErr = errMsg;
+
+      // If refresh token is revoked, mark as disconnected — no retry
+      if (refreshData.error === "invalid_grant") {
+        const updatedDest = { ...dest, gdriveConnected: false };
+        await prisma.dbBackupJob.update({
+          where: { id: jobId },
+          data: { destConfig: JSON.stringify(updatedDest) },
+        });
+        throw new Error("Google Drive token expired/revoked — silakan login Google ulang dari form edit job");
+      }
+
+      // Retry on transient errors (network, 5xx), wait before next attempt
+      if (attempt < MAX_RETRIES) {
+        const delay = 1000 * 2 ** (attempt - 1); // 1s, 2s, 4s
+        console.log(`[GDRIVE] Retrying in ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw new Error(lastErr);
     }
-    throw new Error(errMsg);
+
+    // Success — store refreshed access token
+    console.log(`[GDRIVE] Token refreshed successfully for job ${jobId}`);
+    const updatedDest = { ...dest, accessTokenEnc: encryptSecret(refreshData.access_token) };
+    await prisma.dbBackupJob.update({
+      where: { id: jobId },
+      data: { destConfig: JSON.stringify(updatedDest) },
+    });
+    return refreshData.access_token;
   }
 
-  // Store refreshed access token
-  console.log(`[GDRIVE] Token refreshed successfully for job ${jobId}`);
-  const updatedDest = { ...dest, accessTokenEnc: encryptSecret(refreshData.access_token) };
-  await prisma.dbBackupJob.update({
-    where: { id: jobId },
-    data: { destConfig: JSON.stringify(updatedDest) },
-  });
-
-  return refreshData.access_token;
+  throw new Error(lastErr || "Token refresh gagal setelah 3 percobaan");
 }
 
 /** Upload a file to Google Drive using OAuth2 token. */
