@@ -41,6 +41,7 @@ function fmtSize(n: number | null): string {
 }
 
 function scheduleLabel(j: Job): string {
+  if (j.scheduleType === "hourly") return "Perjam (setiap jam :00)";
   if (j.scheduleType === "daily") return `Harian ${j.timeAt}`;
   if (j.scheduleType === "weekly") return `Mingguan, ${DAY_NAMES[j.dayOn ?? 0]} ${j.timeAt}`;
   if (j.scheduleType === "monthly") return `Bulanan, tgl ${j.dayOn} ${j.timeAt}`;
@@ -159,7 +160,7 @@ export default function DbBackupPage() {
       connectionId: jConn,
       databases: [...jDbs],
       scheduleType: jType,
-      ...(jType === "cron" ? { cronExpr: jCron } : { timeAt: jTime }),
+      ...(jType === "cron" ? { cronExpr: jCron } : jType === "hourly" ? {} : { timeAt: jTime }),
       ...(jType === "weekly" ? { dayOn: jDay } : jType === "monthly" ? { dayOn: jDate } : {}),
       destType: jDest,
       dest: Object.fromEntries(Object.entries(dest).filter(([, v]) => v !== "")),
@@ -404,6 +405,7 @@ export default function DbBackupPage() {
               <div>
                 <label className={label}>Jadwal</label>
                 <select value={jType} onChange={(e) => setJType(e.target.value)} className={`${input} mt-1`}>
+                  <option value="hourly">Perjam</option>
                   <option value="daily">Harian</option>
                   <option value="weekly">Mingguan</option>
                   <option value="monthly">Bulanan</option>
@@ -426,7 +428,7 @@ export default function DbBackupPage() {
                   </select>
                 </div>
               )}
-              {jType !== "cron" ? (
+              {jType !== "cron" && jType !== "hourly" ? (
                 <div>
                   <label className={label}>Jam</label>
                   <div className="mt-1"><TimeField value={jTime} onChange={setJTime} /></div>
@@ -518,7 +520,7 @@ export default function DbBackupPage() {
                                 connectionId: jConn,
                                 databases: [...jDbs],
                                 scheduleType: jType,
-                                ...(jType === "cron" ? { cronExpr: jCron } : { timeAt: jTime }),
+                                ...(jType === "cron" ? { cronExpr: jCron } : jType === "hourly" ? {} : { timeAt: jTime }),
                                 ...(jType === "weekly" ? { dayOn: jDay } : jType === "monthly" ? { dayOn: jDate } : {}),
                                 destType: jDest,
                                 dest: Object.fromEntries(Object.entries(dest).filter(([, v]) => v !== "")),

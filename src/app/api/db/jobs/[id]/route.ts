@@ -23,7 +23,7 @@ const patchSchema = z
     name: z.string().min(1).optional(),
     connectionId: z.string().min(1).optional(),
     databases: z.array(z.string().min(1)).min(1, "Pilih minimal satu database").optional(),
-    scheduleType: z.enum(["daily", "weekly", "monthly", "cron"]).optional(),
+    scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "cron"]).optional(),
     timeAt: z.string().regex(timeRe).optional().nullable(),
     dayOn: z.number().int().min(0).max(28).optional().nullable(),
     cronExpr: z.string().optional().nullable(),
@@ -38,7 +38,7 @@ const patchSchema = z
       else if (v.cronExpr) {
         try { CronExpressionParser.parse(v.cronExpr); } catch { ctx.addIssue({ code: "custom", message: "Cron expression tidak valid" }); }
       }
-    } else if (v.scheduleType && !v.timeAt) {
+    } else if (v.scheduleType && v.scheduleType !== "hourly" && !v.timeAt) {
       ctx.addIssue({ code: "custom", message: "Jam backup wajib diisi" });
     }
     if (v.scheduleType === "weekly" && v.dayOn === undefined) ctx.addIssue({ code: "custom", message: "Pilih hari untuk backup mingguan" });

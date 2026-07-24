@@ -57,7 +57,7 @@ const createSchema = z
     name: z.string().min(1),
     connectionId: z.string().min(1),
     databases: z.array(z.string().min(1)).min(1, "Pilih minimal satu database"),
-    scheduleType: z.enum(["daily", "weekly", "monthly", "cron"]),
+    scheduleType: z.enum(["hourly", "daily", "weekly", "monthly", "cron"]),
     timeAt: z.string().regex(timeRe).optional(),
     dayOn: z.number().int().min(0).max(28).optional(),
     cronExpr: z.string().optional(),
@@ -76,7 +76,7 @@ const createSchema = z
           ctx.addIssue({ code: "custom", message: "Cron expression tidak valid" });
         }
       }
-    } else if (!v.timeAt) {
+    } else if (v.scheduleType !== "hourly" && !v.timeAt) {
       ctx.addIssue({ code: "custom", message: "Jam backup wajib diisi" });
     }
     if (v.scheduleType === "weekly" && v.dayOn === undefined)

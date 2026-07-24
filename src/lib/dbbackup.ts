@@ -717,6 +717,8 @@ export function jobIsDue(
 ): boolean {
   const { weekday, date, hhmm } = localStamp(now, job.timezone);
   switch (job.scheduleType) {
+    case "hourly":
+      return hhmm.endsWith(":00"); // runs at minute 00 every hour
     case "daily":
       return job.timeAt === hhmm;
     case "weekly":
