@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import MetricChart from "@/components/MetricChart";
 import ScheduleForm from "@/components/ScheduleForm";
+import ScheduleLogs from "@/components/ScheduleLogs";
 import BackupPanel from "@/components/BackupPanel";
 import FirewallPanel from "@/components/FirewallPanel";
 import ManagePanel from "@/components/ManagePanel";
@@ -333,7 +334,16 @@ export default function ServerMonitor({
       )}
 
       {/* ===== TAB: JADWAL ===== */}
-      {tab === "jadwal" && canSchedule && <ScheduleForm serverId={serverId} managed={managed} onSaved={onScheduleSaved} />}
+      {tab === "jadwal" && canSchedule && (
+        <div className="flex flex-col gap-4 lg:flex-row">
+          <div className="flex-1 min-w-0">
+            <ScheduleForm serverId={serverId} managed={managed} onSaved={onScheduleSaved} />
+          </div>
+          <div className="lg:w-[380px] shrink-0">
+            <ScheduleLogs serverId={serverId} />
+          </div>
+        </div>
+      )}
 
       {/* ===== TAB: BACKUP ===== */}
       {tab === "backup" && canBackup && <BackupPanel serverId={serverId} hostname={serverName} />}
