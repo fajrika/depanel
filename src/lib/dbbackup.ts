@@ -520,7 +520,7 @@ export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "m
  * the restore completes even if some statements fail (e.g., due to data
  * conflicts, missing dependencies, or partial corruption).
  */
-export async function restoreRun(runId: string): Promise<{ ok: boolean; message: string; warnings?: string[] }> {
+export async function restoreRun(runId: string, targetConnId?: string): Promise<{ ok: boolean; message: string; warnings?: string[] }> {
   const run = await prisma.dbBackupRun.findUnique({
     where: { id: runId },
     include: { job: { include: { connection: true } } },
@@ -528,11 +528,19 @@ export async function restoreRun(runId: string): Promise<{ ok: boolean; message:
   if (!run) return { ok: false, message: "Run tidak ditemukan" };
   if (run.status !== "success" || !run.location) return { ok: false, message: "Run ini tidak punya arsip yang valid" };
 
+  let connRow;
+  if (targetConnId) {
+    connRow = await prisma.dbConnection.findUnique({ where: { id: targetConnId } });
+    if (!connRow) return { ok: false, message: "Koneksi tujuan tidak ditemukan" };
+  } else {
+    connRow = run.job.connection;
+  }
+
   const cfg: ConnCfg = {
-    host: run.job.connection.host,
-    port: run.job.connection.port,
-    username: run.job.connection.username,
-    password: decryptSecret(run.job.connection.passwordEnc),
+    host: connRow.host,
+    port: connRow.port,
+    username: connRow.username,
+    password: decryptSecret(connRow.passwordEnc),
   };
 
   // Fetch the backup file (local path, or download from FTP/S3)

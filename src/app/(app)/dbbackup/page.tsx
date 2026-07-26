@@ -91,6 +91,12 @@ export default function DbBackupPage() {
   const [jRetention, setJRetention] = useState(0);
   // panel — selectedJobId always has a value when on job tab + not in form mode
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  // restore modal
+  const [restoreRunId, setRestoreRunId] = useState<string | null>(null);
+  const [restoreConnId, setRestoreConnId] = useState("");
+  const [restoreDbList, setRestoreDbList] = useState<string[] | null>(null);
+  const [restoreDbs, setRestoreDbs] = useState<Set<string>>(new Set());
+  const [restoreOrigJob, setRestoreOrigJob] = useState<{ connId: string; connName: string; databases: string[] } | null>(null);
 
   const load = useCallback(async () => {
     const [cRes, jRes, tRes] = await Promise.all([fetch("/api/db/connections"), fetch("/api/db/jobs"), fetch("/api/teams")]);
@@ -161,6 +167,54 @@ export default function DbBackupPage() {
     else {
       setDbList([]);
       setMsg({ text: d.message ?? "Gagal mengambil daftar database", ok: false });
+    }
+  }
+
+  function openRestoreModal(runId: string, job: { connection: { id: string; name: string }; databases: string[] }) {
+    setRestoreRunId(runId);
+    setRestoreOrigJob({ connId: job.connection.id, connName: job.connection.name, databases: job.databases });
+    setRestoreConnId(job.connection.id);
+    setRestoreDbs(new Set(job.databases));
+    // load databases for default connection
+    setRestoreDbList(null);
+    fetch(`/api/db/connections/${job.connection.id}/databases`)
+      .then((r) => r.json())
+      .then((d) => { if (d.ok) setRestoreDbList(d.data); else setRestoreDbList([]); });
+  }
+
+  async function loadRestoreDatabases(connId: string) {
+    setRestoreConnId(connId);
+    setRestoreDbList(null);
+    // reset to original databases if switching back to original connection
+    if (connId === restoreOrigJob?.connId) {
+      setRestoreDbs(new Set(restoreOrigJob.databases));
+    } else {
+      setRestoreDbs(new Set());
+    }
+    if (!connId) return;
+    const res = await fetch(`/api/db/connections/${connId}/databases`);
+    const d = await res.json();
+    if (d.ok) setRestoreDbList(d.data);
+    else setRestoreDbList([]);
+  }
+
+  async function doRestore() {
+    if (!restoreRunId) return;
+    setBusy(true);
+    setMsg(null);
+    const res = await fetch(`/api/db/runs/${restoreRunId}/restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetConnectionId: restoreConnId !== restoreOrigJob?.connId ? restoreConnId : undefined }),
+    });
+    const d = await res.json().catch(() => ({}));
+    setBusy(false);
+    setRestoreRunId(null);
+    if (!res.ok || d.ok === false) {
+      setMsg({ text: d.message ?? "Gagal restore", ok: false });
+    } else {
+      setMsg({ text: `✓ ${d.message}`, ok: true });
+      load();
     }
   }
 
@@ -375,6 +429,61 @@ export default function DbBackupPage() {
                 }}
                 className={btnPrimary}
               >{busy ? "…" : "Clone"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore modal */}
+      {restoreRunId && restoreOrigJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900">
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Restore Backup</h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Pilih koneksi tujuan untuk restore. Default ke koneksi asal backup.</p>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className={label}>Koneksi Tujuan</label>
+                <select value={restoreConnId} onChange={(e) => loadRestoreDatabases(e.target.value)} className={`${input} mt-1 w-full`}>
+                  {conns.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.host}){c.id === restoreOrigJob.connId ? " — asal" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className={label}>Database dari file backup</label>
+                {restoreDbList === null ? (
+                  <p className="mt-2 text-xs text-slate-400">Mengambil daftar database…</p>
+                ) : restoreDbList.length === 0 ? (
+                  <p className="mt-2 text-xs text-slate-400">Tidak ada database tersedia.</p>
+                ) : (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {restoreDbList.map((db) => {
+                      const on = restoreDbs.has(db);
+                      const fromBackup = restoreOrigJob.databases.includes(db);
+                      return (
+                        <button type="button" key={db} onClick={() => setRestoreDbs((s) => { const n = new Set(s); if (on) n.delete(db); else n.add(db); return n; })}
+                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${on ? "bg-emerald-600 text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"}`}
+                        >{on ? "✓ " : ""}{db}{fromBackup && !on ? " (asal)" : ""}</button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                Database dari file backup akan dibuat otomatis jika belum ada di server tujuan.
+              </p>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => { setRestoreRunId(null); setRestoreOrigJob(null); }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">Batal</button>
+              <button disabled={busy || restoreDbs.size === 0} onClick={doRestore} className={btnPrimary}>
+                {busy ? "Restore…" : "Restore sekarang"}
+              </button>
             </div>
           </div>
         </div>
@@ -639,7 +748,7 @@ export default function DbBackupPage() {
                                 {r.message && r.status === "failed" && <span className="text-red-500">{r.message}</span>}
                                 <span className="ml-auto flex items-center gap-2">
                                   {runOk && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline dark:text-sky-400">Unduh</a>}
-                                  {runOk && <button onClick={() => { if (confirm("Restore backup ini ke database tujuan? Data saat ini akan ditimpa.")) api(`/api/db/runs/${r.id}/restore`, "POST"); }} disabled={busy} className="text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">Restore</button>}
+                                  {runOk && <button onClick={() => openRestoreModal(r.id, { connection: { id: selected.connection.id, name: selected.connection.name }, databases: selected.databases })} disabled={busy} className="text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">Restore</button>}
                                   <button onClick={() => { if (confirm("Hapus catatan backup ini beserta filenya?")) api(`/api/db/runs/${r.id}`, "DELETE"); }} disabled={busy} className="text-red-500 hover:underline disabled:opacity-50">Hapus</button>
                                 </span>
                               </div>
