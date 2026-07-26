@@ -67,6 +67,7 @@ export default function DbBackupPage() {
   const [busy, setBusy] = useState(false);
 
   // form koneksi
+  const [showConnForm, setShowConnForm] = useState(false);
   const [nc, setNc] = useState({ name: "", host: "", port: "3306", username: "", password: "" });
   const [editConnId, setEditConnId] = useState<string | null>(null);
   // clone
@@ -240,7 +241,7 @@ export default function DbBackupPage() {
           onClick={() => setTab("koneksi")}
           className={`rounded-lg px-4 py-2 text-sm font-medium transition ${tab === "koneksi" ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100" : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"}`}
         >
-          Koneksi MySQL
+          Koneksi
         </button>
         <button
           onClick={() => setTab("job")}
@@ -260,51 +261,86 @@ export default function DbBackupPage() {
       {/* ===== TAB: KONEKSI ===== */}
       {tab === "koneksi" && (
         <section>
-          <form
-            className={`${card} mb-4 flex flex-wrap items-end gap-3`}
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (editConnId) {
-                const ok = await api(`/api/db/connections/${editConnId}`, "PATCH", { ...nc, port: Number(nc.port) || 3306 });
-                if (ok) {
-                  setEditConnId(null);
-                  setNc({ name: "", host: "", port: "3306", username: "", password: "" });
-                  setMsg({ text: "Koneksi diperbarui.", ok: true });
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Koneksi</h2>
+            <button onClick={() => { setShowConnForm(!showConnForm); setEditConnId(null); setNc({ name: "", host: "", port: "3306", username: "", password: "" }); }} className={btnPrimary}>
+              {showConnForm ? "Tutup form" : "+ Tambah koneksi"}
+            </button>
+          </div>
+
+          {showConnForm && (
+            <form
+              className={`${card} animate-fade-up mb-4 space-y-5`}
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (editConnId) {
+                  const ok = await api(`/api/db/connections/${editConnId}`, "PATCH", { ...nc, port: Number(nc.port) || 3306 });
+                  if (ok) {
+                    setShowConnForm(false);
+                    setEditConnId(null);
+                    setNc({ name: "", host: "", port: "3306", username: "", password: "" });
+                    setMsg({ text: "Koneksi diperbarui.", ok: true });
+                  }
+                } else {
+                  const ok = await api("/api/db/connections", "POST", { ...nc, port: Number(nc.port) || 3306 });
+                  if (ok) {
+                    setShowConnForm(false);
+                    setNc({ name: "", host: "", port: "3306", username: "", password: "" });
+                    setMsg({ text: "Koneksi tersimpan (tes koneksi berhasil).", ok: true });
+                  }
                 }
-              } else {
-                const ok = await api("/api/db/connections", "POST", { ...nc, port: Number(nc.port) || 3306 });
-                if (ok) {
-                  setNc({ name: "", host: "", port: "3306", username: "", password: "" });
-                  setMsg({ text: "Koneksi tersimpan (tes koneksi berhasil).", ok: true });
-                }
-              }
-            }}
-          >
-            <div><label className={label}>Nama</label><input required value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="mis. DB Produksi" className={`${input} mt-1 w-36`} /></div>
-            <div><label className={label}>Host</label><input required value={nc.host} onChange={(e) => setNc({ ...nc, host: e.target.value })} placeholder="103.x.x.x" className={`${input} mt-1 w-40`} /></div>
-            <div><label className={label}>Port</label><input value={nc.port} onChange={(e) => setNc({ ...nc, port: e.target.value })} className={`${input} mt-1 w-20`} /></div>
-            <div><label className={label}>Username</label><input required value={nc.username} onChange={(e) => setNc({ ...nc, username: e.target.value })} className={`${input} mt-1 w-32`} /></div>
-            <div><label className={label}>Password</label><input type="password" value={nc.password} onChange={(e) => setNc({ ...nc, password: e.target.value })} placeholder={editConnId ? "Kosongkan jika tidak diubah" : ""} className={`${input} mt-1 w-36`} /></div>
-            <div className="flex gap-2">
-              <button disabled={busy} className={btnPrimary}>{busy ? "…" : editConnId ? "Simpan edit" : "Tes & simpan"}</button>
-              {editConnId && <button type="button" onClick={() => { setEditConnId(null); setNc({ name: "", host: "", port: "3306", username: "", password: "" }); }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">Batal</button>}
-            </div>
-          </form>
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{editConnId ? "Edit Koneksi" : "Buat Koneksi"}</h3>
+                <button type="button" onClick={() => { setShowConnForm(false); setEditConnId(null); }} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">✕ Tutup</button>
+              </div>
+
+              {/* RDBMS selector */}
+              <div>
+                <label className={label}>Tipe Database</label>
+                <div className="mt-2 flex gap-2">
+                  {[{ v: "mysql", l: "🐬 MySQL", active: true }, { v: "postgresql", l: "🐘 PostgreSQL", active: false }, { v: "sqlite", l: "🪶 SQLite", active: false }].map((o) => (
+                    <button type="button" key={o.v} disabled={!o.active}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${o.active ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "cursor-not-allowed bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600"}`}
+                    >{o.l}{!o.active && " (coming soon)"}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-4">
+                <div><label className={label}>Nama</label><input required value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="mis. DB Produksi" className={`${input} mt-1 w-56`} /></div>
+                <div><label className={label}>Host</label><input required value={nc.host} onChange={(e) => setNc({ ...nc, host: e.target.value })} placeholder="103.x.x.x" className={`${input} mt-1 w-56`} /></div>
+                <div><label className={label}>Port</label><input value={nc.port} onChange={(e) => setNc({ ...nc, port: e.target.value })} className={`${input} mt-1 w-24`} /></div>
+                <div><label className={label}>Username</label><input required value={nc.username} onChange={(e) => setNc({ ...nc, username: e.target.value })} className={`${input} mt-1 w-44`} /></div>
+                <div><label className={label}>Password</label><input type="password" value={nc.password} onChange={(e) => setNc({ ...nc, password: e.target.value })} placeholder={editConnId ? "Kosongkan jika tidak diubah" : ""} className={`${input} mt-1 w-44`} /></div>
+              </div>
+
+              <div className="flex justify-end">
+                <button disabled={busy} className={btnPrimary}>{busy ? "…" : editConnId ? "Simpan edit" : "Tes & simpan"}</button>
+              </div>
+            </form>
+          )}
 
           {loading ? (
             <div className="h-16 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
           ) : conns.length === 0 ? (
-            <p className="text-sm text-slate-400">Belum ada koneksi.</p>
+            <p className="rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 p-8 text-center text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-900/40">
+              Belum ada koneksi. Tambahkan koneksi database untuk memulai.
+            </p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {conns.map((c) => (
                 <div key={c.id} className={`${card} flex items-center justify-between gap-3 !p-4`}>
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{c.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{c.name}</p>
+                      <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">MySQL</span>
+                    </div>
                     <p className="truncate text-xs text-slate-400">{c.username}@{c.host}:{c.port} · {c.jobCount} job</p>
                   </div>
                   <div className="flex shrink-0 gap-2 text-xs">
-                    <button onClick={() => { setEditConnId(c.id); setNc({ name: c.name, host: c.host, port: String(c.port), username: c.username, password: "" }); }} className="font-medium text-slate-500 hover:underline dark:text-slate-400">Edit</button>
+                    <button onClick={() => { setEditConnId(c.id); setNc({ name: c.name, host: c.host, port: String(c.port), username: c.username, password: "" }); setShowConnForm(true); }} className="font-medium text-slate-500 hover:underline dark:text-slate-400">Edit</button>
                     <button onClick={() => { setCloneConnId(c.id); setCloneTeamId(""); }} className="font-medium text-sky-600 hover:underline dark:text-sky-400">Clone</button>
                     <button onClick={() => confirm(`Hapus koneksi "${c.name}" beserta job backup-nya?`) && api(`/api/db/connections/${c.id}`, "DELETE")} className="font-medium text-red-500 hover:underline">Hapus</button>
                   </div>
