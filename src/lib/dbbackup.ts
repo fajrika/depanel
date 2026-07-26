@@ -389,7 +389,11 @@ export async function deliver(destType: string, cfg: DestConfig, filePath: strin
  */
 export async function fetchBackup(destType: string, cfg: DestConfig, location: string, jobId?: string): Promise<string> {
   if (destType === "local") {
-    await fsp.access(location);
+    try {
+      await fsp.access(location);
+    } catch {
+      throw new Error(`File backup lokal tidak ditemukan: ${location}. Pastikan file masih ada di path tersebut.`);
+    }
     return location;
   }
 
@@ -409,6 +413,8 @@ export async function fetchBackup(destType: string, cfg: DestConfig, location: s
       const url = new URL(location);
       await client.downloadTo(tmpFile, decodeURIComponent(url.pathname));
       return tmpFile;
+    } catch (e) {
+      throw new Error(`FTP gagal mengambil file: ${(e as Error).message}. Pastikan host, port, username, password FTP benar dan file tersedia.`);
     } finally {
       client.close();
     }
@@ -427,18 +433,26 @@ export async function fetchBackup(destType: string, cfg: DestConfig, location: s
     const url = new URL(location);
     const bucket = url.host;
     const key = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
-    const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-    const body = await resp.Body!.transformToByteArray();
-    await fsp.writeFile(tmpFile, body);
-    return tmpFile;
+    try {
+      const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+      const body = await resp.Body!.transformToByteArray();
+      await fsp.writeFile(tmpFile, body);
+      return tmpFile;
+    } catch (e) {
+      throw new Error(`S3 gagal mengambil file dari bucket "${bucket}" key "${key}": ${(e as Error).message}. Pastikan credentials S3 benar dan file tersedia.`);
+    }
   }
 
   if (destType === "gdrive") {
     if (!jobId) throw new Error("jobId wajib untuk Google Drive restore");
-    const token = await getGDriveOAuthToken(jobId);
-    const fileId = location.replace(/^gdrive:\/\//, "");
-    await withRetry(() => gdriveOAuthDownload(token, fileId, tmpFile));
-    return tmpFile;
+    try {
+      const token = await getGDriveOAuthToken(jobId);
+      const fileId = location.replace(/^gdrive:\/\//, "");
+      await withRetry(() => gdriveOAuthDownload(token, fileId, tmpFile));
+      return tmpFile;
+    } catch (e) {
+      throw new Error(`Google Drive gagal mengambil file: ${(e as Error).message}. Coba login Google lagi jika token sudah expired.`);
+    }
   }
 
   throw new Error(`Tidak bisa mengambil file dari tujuan: ${destType}`);
@@ -551,30 +565,46 @@ export async function restoreRun(runId: string, targetConnId?: string): Promise<
     file = await fetchBackup(run.job.destType, destCfg, run.location, run.job.id);
     if (file !== run.location) tmpFile = file;
   } catch (e) {
-    return { ok: false, message: `Gagal mengambil arsip: ${(e as Error).message}` };
+    const detail = (e as Error).message;
+    return { ok: false, message: `Gagal mengambil arsip backup dari ${run.job.destType.toUpperCase()}: ${detail}. Pastikan file backup masih tersedia dan koneksi ke storage aktif.` };
   }
 
   // Stream-gunzip the dump into a string
-  const gunzip = zlib.createGunzip();
-  const chunks: Buffer[] = [];
-  await pipeline(fs.createReadStream(file), gunzip, async function* (source) {
-    for await (const c of source) chunks.push(c as Buffer);
-    yield; // satisfy pipeline sink
-  });
-  const sql = Buffer.concat(chunks).toString("utf8");
+  let sql: string;
+  try {
+    const gunzip = zlib.createGunzip();
+    const chunks: Buffer[] = [];
+    await pipeline(fs.createReadStream(file), gunzip, async function* (source) {
+      for await (const c of source) chunks.push(c as Buffer);
+      yield; // satisfy pipeline sink
+    });
+    sql = Buffer.concat(chunks).toString("utf8");
+  } catch (e) {
+    const detail = (e as Error).message;
+    return { ok: false, message: `Gagal membaca file backup (decompress): ${detail}. File mungkin korup atau bukan file .sql.gz yang valid.` };
+  }
 
   // Split into individual statements for resilient execution
   const statements = splitStatements(sql);
+  if (statements.length === 0) {
+    return { ok: false, message: "File backup kosong atau tidak mengandung SQL yang valid. Periksa apakah file backup benar-benar hasil dump MySQL." };
+  }
   const warnings: string[] = [];
   let warningCount = 0;
 
-  const conn = await mysql.createConnection({
-    host: cfg.host,
-    port: cfg.port,
-    user: cfg.username,
-    password: cfg.password,
-    connectTimeout: 15_000,
-  });
+  let conn;
+  try {
+    conn = await mysql.createConnection({
+      host: cfg.host,
+      port: cfg.port,
+      user: cfg.username,
+      password: cfg.password,
+      connectTimeout: 15_000,
+    });
+  } catch (e) {
+    const detail = (e as Error).message;
+    return { ok: false, message: `Gagal koneksi ke MySQL ${cfg.host}:${cfg.port} (user: ${cfg.username}): ${detail}. Periksa host, port, username, password, dan pastikan MySQL server aktif dan bisa diakses dari server ini.` };
+  }
 
   try {
     // Phase 1: Disable FK checks and pre-create ALL databases first.
@@ -653,7 +683,7 @@ export async function restoreRun(runId: string, targetConnId?: string): Promise<
 
     return { ok: true, message, warnings: warnings.length > 0 ? warnings : undefined };
   } catch (e) {
-    return { ok: false, message: (e as Error).message };
+    return { ok: false, message: `Restore gagal (tidak terduga): ${(e as Error).message}` };
   } finally {
     await conn.end();
     if (tmpFile) await fsp.rm(tmpFile, { force: true }).catch(() => {});
