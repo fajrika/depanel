@@ -32,6 +32,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ runId: string 
   }
 
   const result = await restoreRun(runId, targetConnId);
+  if (!result.ok) {
+    console.error(`[RESTORE] Failed runId=${runId} target=${targetConnId ?? "original"}: ${result.message}`);
+  } else if (result.warnings?.length) {
+    console.log(`[RESTORE] OK runId=${runId} with ${result.warnings.length} warnings`);
+  }
   await logActivity({
     teamId: run.job.connection.teamId,
     userId: user.id,
