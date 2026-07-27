@@ -645,11 +645,13 @@ export async function restoreRun(runId: string, targetConnId?: string): Promise<
   try {
     const gunzip = zlib.createGunzip();
     const chunks: Buffer[] = [];
+    const t0 = Date.now();
     await pipeline(fs.createReadStream(file), gunzip, async function* (source) {
       for await (const c of source) chunks.push(c as Buffer);
       yield; // satisfy pipeline sink
     });
     sql = Buffer.concat(chunks).toString("utf8");
+    console.log(`[RESTORE] Decompress selesai dalam ${((Date.now() - t0) / 1000).toFixed(1)}s — ${(sql.length / 1024 / 1024).toFixed(2)} MB`);
   } catch (e) {
     const detail = (e as Error).message;
     return { ok: false, message: `Gagal membaca file backup (decompress): ${detail}. File mungkin korup atau bukan file .sql.gz yang valid.` };
@@ -664,9 +666,7 @@ export async function restoreRun(runId: string, targetConnId?: string): Promise<
   // Split large INSERT statements to avoid max_allowed_packet issues
   const beforeCount = statements.length;
   statements = splitLargeInserts(statements, 50_000);
-  if (statements.length !== beforeCount) {
-    console.log(`[INFO] Split ${beforeCount} statements → ${statements.length} (INSERT besar dipecah)`);
-  }
+  console.log(`[RESTORE] Split: ${beforeCount} → ${statements.length} statements (terbesar: ${Math.max(...statements.map(s => s.length))} bytes)`);
 
   const warnings: string[] = [];
   let warningCount = 0;
@@ -714,12 +714,17 @@ export async function restoreRun(runId: string, targetConnId?: string): Promise<
     }
 
     // Phase 2: Execute each statement individually for resilience
+    const tStart = Date.now();
     for (let i = 0; i < statements.length; i++) {
       const stmt = statements[i];
       if (!stmt) continue;
 
       try {
-        await conn.query(stmt);
+        // Per-statement timeout: 60s
+        await Promise.race([
+          conn.query(stmt),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Query timeout 60s")), 60_000)),
+        ]);
       } catch (err) {
         const upper = stmt.toUpperCase();
         const isSpecial =
@@ -745,11 +750,15 @@ export async function restoreRun(runId: string, targetConnId?: string): Promise<
         warningCount++;
       }
 
-      // Progress log every 100 statements
-      if ((i + 1) % 100 === 0) {
-        console.log(`[INFO] Progress: ${i + 1}/${statements.length} statement`);
+      // Progress log every 50 statements
+      if ((i + 1) % 50 === 0) {
+        const elapsed = ((Date.now() - tStart) / 1000).toFixed(1);
+        const rate = ((i + 1) / (Date.now() - tStart) * 1000).toFixed(1);
+        console.log(`[RESTORE] Progress: ${i + 1}/${statements.length} statements — ${elapsed}s elapsed — ${rate} stmt/s`);
       }
     }
+    const totalSecs = ((Date.now() - tStart) / 1000).toFixed(1);
+    console.log(`[RESTORE] Execution selesai: ${statements.length} statements dalam ${totalSecs}s — ${warningCount} warnings`);
 
     // Phase 3: Re-enable FK checks after everything is restored
     await conn.query("SET FOREIGN_KEY_CHECKS=1");
