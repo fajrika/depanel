@@ -32,29 +32,60 @@ export async function POST(req: Request, ctx: { params: Promise<{ runId: string 
       }
     }
 
-    const result = await restoreRun(runId, targetConnId);
-
-    if (!result.ok) {
-      console.error(`[RESTORE] Failed runId=${runId} target=${targetConnId ?? "original"}: ${result.message}`);
-    } else if (result.warnings?.length) {
-      console.log(`[RESTORE] OK runId=${runId} with ${result.warnings.length} warnings`);
-      for (const w of result.warnings.slice(0, 10)) console.warn(`[RESTORE] ${w}`);
+    // Check if there's already a running restore for this run
+    const existing = await prisma.dbRestoreRun.findFirst({
+      where: { runId, status: "running" },
+    });
+    if (existing) {
+      return NextResponse.json({ ok: true, data: { restoreId: existing.id, status: "running" } });
     }
+
+    // Create restore record and fire-and-forget
+    const restore = await prisma.dbRestoreRun.create({
+      data: {
+        teamId: run.job.connection.teamId,
+        userId: user.id,
+        runId,
+        targetConnId: targetConnId ?? null,
+      },
+    });
 
     await logActivity({
       teamId: run.job.connection.teamId,
       userId: user.id,
       action: "db-restore",
-      status: result.ok ? "success" : "failed",
-      message: `Restore "${run.job.name}": ${result.message}`,
+      message: `Mulai restore "${run.job.name}"`,
     });
 
-    return NextResponse.json(
-      result.ok
-        ? { ok: true, message: result.message, warnings: result.warnings }
-        : { ok: false, message: result.message, warnings: result.warnings },
-      { status: result.ok ? 200 : 400 },
-    );
+    // Background: run restore, update record when done
+    void (async () => {
+      try {
+        const result = await restoreRun(runId, targetConnId);
+        await prisma.dbRestoreRun.update({
+          where: { id: restore.id },
+          data: {
+            status: result.ok ? "success" : "failed",
+            message: result.message,
+            warnings: result.warnings ? JSON.stringify(result.warnings) : null,
+            endedAt: new Date(),
+          },
+        });
+
+        if (!result.ok) {
+          console.error(`[RESTORE] Failed restoreId=${restore.id} runId=${runId}: ${result.message}`);
+        } else if (result.warnings?.length) {
+          console.log(`[RESTORE] OK restoreId=${restore.id} with ${result.warnings.length} warnings`);
+        }
+      } catch (e) {
+        console.error(`[RESTORE] Unhandled restoreId=${restore.id}:`, e);
+        await prisma.dbRestoreRun.update({
+          where: { id: restore.id },
+          data: { status: "failed", message: (e as Error).message, endedAt: new Date() },
+        });
+      }
+    })();
+
+    return NextResponse.json({ ok: true, data: { restoreId: restore.id, status: "running" } });
   } catch (e) {
     console.error("[RESTORE] Unhandled error:", e);
     return NextResponse.json(

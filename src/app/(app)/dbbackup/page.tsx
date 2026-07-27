@@ -242,17 +242,42 @@ export default function DbBackupPage() {
       body: JSON.stringify({ targetConnectionId: restoreConnId !== restoreOrigJob?.connId ? restoreConnId : undefined }),
     });
     const d = await res.json().catch(() => ({ message: `HTTP ${res.status} — tidak ada response dari server` }));
-    setBusy(false);
     setRestoreRunId(null);
+
     if (!res.ok || d.ok === false) {
-      const warnText = d.warnings?.length ? `\n\nDetail (${d.warnings.length} peringatan):\n${d.warnings.slice(0, 5).join("\n")}` : "";
-      setMsg({ text: `${d.message ?? "Gagal restore"}${warnText}`, ok: false });
-    } else {
-      const warnText = d.warnings?.length ? ` (${d.warnings.length} peringatan — lihat log server untuk detail)` : "";
-      setMsg({ text: `✓ ${d.message}${warnText}`, ok: true });
-      load();
-      refreshRuns();
+      setBusy(false);
+      setMsg({ text: d.message ?? "Gagal memulai restore", ok: false });
+      return;
     }
+
+    // Async restore started — poll for status
+    const restoreId = d.data?.restoreId;
+    setMsg({ text: "⏳ Restore sedang berjalan di server…", ok: true });
+
+    const poll = async () => {
+      for (let i = 0; i < 120; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const pRes = await fetch(`/api/db/restores/${restoreId}`);
+        const p = await pRes.json().catch(() => null);
+        if (!p?.ok) continue;
+        if (p.data.status === "success") {
+          setBusy(false);
+          const warnText = p.data.warnings?.length ? ` (${p.data.warnings.length} peringatan)` : "";
+          setMsg({ text: `✓ Restore selesai${warnText}`, ok: true });
+          load();
+          refreshRuns();
+          return;
+        }
+        if (p.data.status === "failed") {
+          setBusy(false);
+          setMsg({ text: `Gagal restore: ${p.data.message}`, ok: false });
+          return;
+        }
+      }
+      setBusy(false);
+      setMsg({ text: "Restore masih berjalan. Cek log server untuk detail.", ok: true });
+    };
+    void poll();
   }
 
   async function createJob(e: React.FormEvent) {

@@ -215,6 +215,22 @@ model DbBackupRun {
   @@index([jobId, startedAt])
 }
 
+/// One execution of a restore operation (async, polled by client).
+model DbRestoreRun {
+  id        String   @id @default(cuid())
+  teamId    String?
+  userId    String?
+  runId     String   // DbBackupRun.id being restored
+  targetConnId String?
+  status    String   @default("running") // running | success | failed
+  message   String?
+  warnings  String?  // JSON array of warning strings
+  startedAt DateTime @default(now())
+  endedAt   DateTime?
+
+  @@index([id])
+}
+
 /// Audit trail: who did what, when (userId null = scheduler/system). Team-scoped.
 model ActivityLog {
   id        String   @id @default(cuid())
