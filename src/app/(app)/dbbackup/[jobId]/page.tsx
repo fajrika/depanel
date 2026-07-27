@@ -20,7 +20,6 @@ type Job = {
   enabled: boolean;
   lastRunAt: string | null;
   lastStatus: string | null;
-  runs: Run[];
 };
 
 const DAY_NAMES = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
@@ -58,6 +57,11 @@ export default function JobDetailPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  // runs pagination
+  const [runs, setRuns] = useState<Run[]>([]);
+  const [runPage, setRunPage] = useState(1);
+  const [runTotalPages, setRunTotalPages] = useState(0);
+  const [runLoading, setRunLoading] = useState(false);
   // restore modal
   const [restoreRunId, setRestoreRunId] = useState<string | null>(null);
   const [conns, setConns] = useState<Conn[]>([]);
@@ -76,6 +80,23 @@ export default function JobDetailPage() {
   };
 
   useEffect(() => { load(); }, [jobId]);
+
+  const loadRuns = async (page: number) => {
+    setRunLoading(true);
+    try {
+      const res = await fetch(`/api/db/jobs/${jobId}/runs?page=${page}&limit=10`);
+      const d = await res.json();
+      if (d.ok) {
+        setRuns(d.data);
+        setRunPage(d.pagination.page);
+        setRunTotalPages(d.pagination.totalPages);
+      }
+    } finally {
+      setRunLoading(false);
+    }
+  };
+
+  useEffect(() => { loadRuns(1); }, [jobId]);
 
   async function api(path: string, method: string, body?: unknown): Promise<boolean> {
     setBusy(true);
@@ -133,6 +154,7 @@ export default function JobDetailPage() {
       const warnText = d.warnings?.length ? ` (${d.warnings.length} peringatan — lihat log server untuk detail)` : "";
       setMsg({ text: `✓ ${d.message}${warnText}`, ok: true });
       load();
+      loadRuns(runPage);
     }
   }
 
@@ -168,25 +190,36 @@ export default function JobDetailPage() {
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Riwayat Backup</h3>
-        {job.runs.length === 0 ? (
+        {runLoading && runs.length === 0 ? (
+          <p className="mt-3 text-xs text-slate-400">Memuat riwayat…</p>
+        ) : runs.length === 0 ? (
           <p className="mt-3 text-xs text-slate-400">Belum ada riwayat.</p>
         ) : (
-          <div className="mt-3 space-y-2">
-            {job.runs.map((r) => (
-              <div key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-slate-100 px-3 py-2 text-[11px] dark:border-slate-800">
-                <span className={r.status === "success" ? "text-emerald-600" : r.status === "running" ? "text-sky-600" : "text-red-500"}>
-                  {r.status === "success" ? "✓" : r.status === "running" ? "⟳" : "✕"} {r.status}
-                </span>
-                <span className="text-slate-500">{new Date(r.startedAt).toLocaleString("id-ID")}</span>
-                <span className="text-slate-500">{fmtSize(r.sizeBytes)}</span>
-                {r.message && r.status === "failed" && <span className="text-red-500">{r.message}</span>}
-                <span className="ml-auto flex items-center gap-2">
-                  {r.status === "success" && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline">Unduh</a>}
-                  {r.status === "success" && <button onClick={() => openRestoreModal(r.id)} disabled={busy} className="text-amber-600 hover:underline disabled:opacity-50">Restore</button>}
-                </span>
+          <>
+            <div className="mt-3 space-y-2">
+              {runs.map((r) => (
+                <div key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-slate-100 px-3 py-2 text-[11px] dark:border-slate-800">
+                  <span className={r.status === "success" ? "text-emerald-600" : r.status === "running" ? "text-sky-600" : "text-red-500"}>
+                    {r.status === "success" ? "✓" : r.status === "running" ? "⟳" : "✕"} {r.status}
+                  </span>
+                  <span className="text-slate-500">{new Date(r.startedAt).toLocaleString("id-ID")}</span>
+                  <span className="text-slate-500">{fmtSize(r.sizeBytes)}</span>
+                  {r.message && r.status === "failed" && <span className="text-red-500">{r.message}</span>}
+                  <span className="ml-auto flex items-center gap-2">
+                    {r.status === "success" && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline">Unduh</a>}
+                    {r.status === "success" && <button onClick={() => openRestoreModal(r.id)} disabled={busy} className="text-amber-600 hover:underline disabled:opacity-50">Restore</button>}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {runTotalPages > 1 && (
+              <div className="mt-3 flex items-center justify-center gap-2">
+                <button onClick={() => { if (runPage > 1) loadRuns(runPage - 1); }} disabled={runPage <= 1 || runLoading} className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">← Prev</button>
+                <span className="text-xs text-slate-500">{runPage} / {runTotalPages}</span>
+                <button onClick={() => { if (runPage < runTotalPages) loadRuns(runPage + 1); }} disabled={runPage >= runTotalPages || runLoading} className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Next →</button>
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </div>
 

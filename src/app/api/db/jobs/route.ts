@@ -17,7 +17,6 @@ export async function GET() {
     orderBy: { createdAt: "asc" },
     include: {
       connection: { select: { id: true, name: true, host: true } },
-      runs: { orderBy: { startedAt: "desc" }, take: 5 },
     },
   });
   const data = jobs.map((j) => {
@@ -45,7 +44,6 @@ export async function GET() {
       enabled: j.enabled,
       lastRunAt: j.lastRunAt,
       lastStatus: j.lastStatus,
-      runs: j.runs,
     };
   });
   return NextResponse.json({ ok: true, data });

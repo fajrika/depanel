@@ -22,7 +22,6 @@ type Job = {
   enabled: boolean;
   lastRunAt: string | null;
   lastStatus: string | null;
-  runs: Run[];
 };
 
 const DAY_NAMES = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
@@ -91,6 +90,11 @@ export default function DbBackupPage() {
   const [jRetention, setJRetention] = useState(0);
   // panel — selectedJobId always has a value when on job tab + not in form mode
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  // runs pagination
+  const [runs, setRuns] = useState<Run[]>([]);
+  const [runPage, setRunPage] = useState(1);
+  const [runTotalPages, setRunTotalPages] = useState(0);
+  const [runLoading, setRunLoading] = useState(false);
   // restore modal
   const [restoreRunId, setRestoreRunId] = useState<string | null>(null);
   const [restoreConnId, setRestoreConnId] = useState("");
@@ -122,6 +126,36 @@ export default function DbBackupPage() {
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, [jobs, load]);
+
+  const loadRuns = useCallback(async (jobId: string, page: number) => {
+    setRunLoading(true);
+    try {
+      const res = await fetch(`/api/db/jobs/${jobId}/runs?page=${page}&limit=10`);
+      const d = await res.json();
+      if (d.ok) {
+        setRuns(d.data);
+        setRunPage(d.pagination.page);
+        setRunTotalPages(d.pagination.totalPages);
+      }
+    } finally {
+      setRunLoading(false);
+    }
+  }, []);
+
+  // load runs when selected job changes
+  useEffect(() => {
+    if (selectedJobId) {
+      setRuns([]);
+      setRunPage(1);
+      setRunTotalPages(0);
+      loadRuns(selectedJobId, 1);
+    }
+  }, [selectedJobId, loadRuns]);
+
+  // refresh runs after action (restore, delete, etc.)
+  const refreshRuns = useCallback(() => {
+    if (selectedJobId) loadRuns(selectedJobId, runPage);
+  }, [selectedJobId, runPage, loadRuns]);
 
   // Handle OAuth redirect
   useEffect(() => {
@@ -217,6 +251,7 @@ export default function DbBackupPage() {
       const warnText = d.warnings?.length ? ` (${d.warnings.length} peringatan — lihat log server untuk detail)` : "";
       setMsg({ text: `✓ ${d.message}${warnText}`, ok: true });
       load();
+      refreshRuns();
     }
   }
 
@@ -733,30 +768,41 @@ export default function DbBackupPage() {
                     {/* Riwayat backup */}
                     <div className="mt-5 border-t border-slate-100 pt-4 dark:border-slate-800">
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Riwayat Backup</h4>
-                      {selected.runs.length === 0 ? (
+                      {runLoading && runs.length === 0 ? (
+                        <p className="mt-3 text-xs text-slate-400">Memuat riwayat…</p>
+                      ) : runs.length === 0 ? (
                         <p className="mt-3 text-xs text-slate-400">Belum ada riwayat backup.</p>
                       ) : (
-                        <div className="mt-3 space-y-2">
-                          {selected.runs.map((r) => {
-                            const runOk = r.status === "success";
-                            return (
-                              <div key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-slate-100 px-3 py-2 text-[11px] dark:border-slate-800">
-                                <span className={r.status === "success" ? "text-emerald-600" : r.status === "running" ? "text-sky-600" : "text-red-500"}>
-                                  {r.status === "success" ? "✓" : r.status === "running" ? "⟳" : "✕"} {r.status}
-                                </span>
-                                <span className="text-slate-500 dark:text-slate-400">{new Date(r.startedAt).toLocaleString("id-ID")}</span>
-                                <span className="text-slate-500 dark:text-slate-400">{fmtSize(r.sizeBytes)}</span>
-                                {r.location && <span className="max-w-[200px] truncate font-mono text-slate-400">{r.location}</span>}
-                                {r.message && r.status === "failed" && <span className="text-red-500">{r.message}</span>}
-                                <span className="ml-auto flex items-center gap-2">
-                                  {runOk && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline dark:text-sky-400">Unduh</a>}
-                                  {runOk && <button onClick={() => openRestoreModal(r.id, { connection: { id: selected.connection.id, name: selected.connection.name }, databases: selected.databases })} disabled={busy} className="text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">Restore</button>}
-                                  <button onClick={() => { if (confirm("Hapus catatan backup ini beserta filenya?")) api(`/api/db/runs/${r.id}`, "DELETE"); }} disabled={busy} className="text-red-500 hover:underline disabled:opacity-50">Hapus</button>
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
+                        <>
+                          <div className="mt-3 space-y-2">
+                            {runs.map((r) => {
+                              const runOk = r.status === "success";
+                              return (
+                                <div key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-slate-100 px-3 py-2 text-[11px] dark:border-slate-800">
+                                  <span className={r.status === "success" ? "text-emerald-600" : r.status === "running" ? "text-sky-600" : "text-red-500"}>
+                                    {r.status === "success" ? "✓" : r.status === "running" ? "⟳" : "✕"} {r.status}
+                                  </span>
+                                  <span className="text-slate-500 dark:text-slate-400">{new Date(r.startedAt).toLocaleString("id-ID")}</span>
+                                  <span className="text-slate-500 dark:text-slate-400">{fmtSize(r.sizeBytes)}</span>
+                                  {r.location && <span className="max-w-[200px] truncate font-mono text-slate-400">{r.location}</span>}
+                                  {r.message && r.status === "failed" && <span className="text-red-500">{r.message}</span>}
+                                  <span className="ml-auto flex items-center gap-2">
+                                    {runOk && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline dark:text-sky-400">Unduh</a>}
+                                    {runOk && <button onClick={() => openRestoreModal(r.id, { connection: { id: selected.connection.id, name: selected.connection.name }, databases: selected.databases })} disabled={busy} className="text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">Restore</button>}
+                                    <button onClick={() => { if (confirm("Hapus catatan backup ini beserta filenya?")) { api(`/api/db/runs/${r.id}`, "DELETE").then(() => refreshRuns()); } }} disabled={busy} className="text-red-500 hover:underline disabled:opacity-50">Hapus</button>
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {runTotalPages > 1 && (
+                            <div className="mt-3 flex items-center justify-center gap-2">
+                              <button onClick={() => { if (runPage > 1) { setRunLoading(true); loadRuns(selected.id, runPage - 1); } }} disabled={runPage <= 1 || runLoading} className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">← Prev</button>
+                              <span className="text-xs text-slate-500 dark:text-slate-400">{runPage} / {runTotalPages}</span>
+                              <button onClick={() => { if (runPage < runTotalPages) { setRunLoading(true); loadRuns(selected.id, runPage + 1); } }} disabled={runPage >= runTotalPages || runLoading} className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Next →</button>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
