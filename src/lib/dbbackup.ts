@@ -680,7 +680,6 @@ export async function restoreRun(runId: string, targetConnId?: string): Promise<
       password: cfg.password,
       connectTimeout: 15_000,
     });
-    await conn.query("SET SESSION max_allowed_packet = 64 * 1024 * 1024");
   } catch (e) {
     const detail = (e as Error).message;
     return { ok: false, message: `Gagal koneksi ke MySQL ${cfg.host}:${cfg.port} (user: ${cfg.username}): ${detail}. Periksa host, port, username, password, dan pastikan MySQL server aktif dan bisa diakses dari server ini.` };
