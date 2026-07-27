@@ -8,7 +8,7 @@ import { logActivity } from "@/lib/power";
 export async function POST(req: Request, ctx: { params: Promise<{ runId: string }> }) {
   try {
     const user = await getCurrentUser();
-    if (!user) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
+    if (!user) return NextResponse.json({ ok: false, message: "Belum terautentikasi" }, { status: 401 });
     const { runId } = await ctx.params;
     const run = await prisma.dbBackupRun.findUnique({
       where: { id: runId },

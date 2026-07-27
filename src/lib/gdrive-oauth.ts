@@ -130,7 +130,7 @@ export async function gdriveOAuthUpload(
   if (!res.ok) {
     const errBody = await res.text().catch(() => "");
     console.error(`[GDRIVE] Upload failed: ${res.status} ${errBody}`);
-    throw new Error(`GDrive upload error: ${res.status} ${errBody}`);
+    throw new Error(`Gagal upload ke Google Drive: ${res.status} ${errBody}`);
   }
   const data = (await res.json()) as { id: string };
   return data.id;
@@ -146,7 +146,7 @@ export async function gdriveOAuthDownload(
   const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) throw new Error(`GDrive download error: ${res.status} ${await res.text()}`);
+  if (!res.ok) throw new Error(`Gagal download dari Google Drive: ${res.status} ${await res.text()}`);
   const buf = Buffer.from(await res.arrayBuffer());
   await fsp.writeFile(destPath, buf);
 }

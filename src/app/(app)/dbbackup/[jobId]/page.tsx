@@ -127,10 +127,10 @@ export default function JobDetailPage() {
     setBusy(false);
     setRestoreRunId(null);
     if (!res.ok || d.ok === false) {
-      const warnText = d.warnings?.length ? `\n\nDetail:\n${d.warnings.slice(0, 5).join("\n")}` : "";
+      const warnText = d.warnings?.length ? `\n\nDetail (${d.warnings.length} peringatan):\n${d.warnings.slice(0, 5).join("\n")}` : "";
       setMsg({ text: `${d.message ?? "Gagal restore"}${warnText}`, ok: false });
     } else {
-      const warnText = d.warnings?.length ? ` (${d.warnings.length} warning — lihat log server untuk detail)` : "";
+      const warnText = d.warnings?.length ? ` (${d.warnings.length} peringatan — lihat log server untuk detail)` : "";
       setMsg({ text: `✓ ${d.message}${warnText}`, ok: true });
       load();
     }

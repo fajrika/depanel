@@ -483,7 +483,7 @@ export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "m
       password: decryptSecret(job.connection.passwordEnc),
     };
     const databases = JSON.parse(job.databases) as string[];
-    if (!databases.length) throw new Error("Tidak ada database dipilih");
+    if (!databases.length) throw new Error("Tidak ada database yang dipilih");
 
     const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     const fileBase = `${job.name.replace(/[^a-zA-Z0-9_-]+/g, "_")}-${stamp}`;
