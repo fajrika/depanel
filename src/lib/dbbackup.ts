@@ -141,6 +141,77 @@ function splitStatements(sql: string): string[] {
   return statements;
 }
 
+/**
+ * Split a large INSERT INTO ... VALUES statement into smaller chunks.
+ * This prevents max_allowed_packet errors and timeouts on huge inserts.
+ * Only splits multi-row INSERTs; single-row or non-INSERT statements pass through.
+ */
+function splitLargeInserts(statements: string[], maxBytes = 50_000): string[] {
+  const result: string[] = [];
+  for (const stmt of statements) {
+    if (stmt.length <= maxBytes || !/^\s*INSERT\s+INTO\s/i.test(stmt)) {
+      result.push(stmt);
+      continue;
+    }
+    // Extract: INSERT INTO `table` (`col1`,...) VALUES
+    const m = stmt.match(/^(\s*INSERT\s+INTO\s+[`"']?\w+[`"']?\s*\([^)]+\)\s*VALUES\s*)(.+)$/i);
+    if (!m) {
+      result.push(stmt);
+      continue;
+    }
+    const prefix = m[1];
+    const valuesStr = m[2];
+
+    // Parse individual value tuples, respecting quotes
+    const tuples: string[] = [];
+    let depth = 0;
+    let inSq = false;
+    let inDq = false;
+    let esc = false;
+    let start = 0;
+    for (let i = 0; i < valuesStr.length; i++) {
+      const ch = valuesStr[i];
+      if (esc) { esc = false; continue; }
+      if (ch === "\\" && (inSq || inDq)) { esc = true; continue; }
+      if (inSq) { if (ch === "'") { if (valuesStr[i + 1] === "'") { i++; } else inSq = false; } continue; }
+      if (inDq) { if (ch === '"') inDq = false; continue; }
+      if (ch === "'") { inSq = true; continue; }
+      if (ch === '"') { inDq = true; continue; }
+      if (ch === "(") depth++;
+      if (ch === ")") depth--;
+      if (ch === "," && depth === 0) {
+        tuples.push(valuesStr.substring(start, i).trim());
+        start = i + 1;
+      }
+    }
+    const last = valuesStr.substring(start).trim();
+    if (last) tuples.push(last);
+
+    if (tuples.length <= 1) {
+      result.push(stmt);
+      continue;
+    }
+
+    // Reassemble into chunks under maxBytes
+    let chunk: string[] = [];
+    let chunkSize = prefix.length;
+    for (const t of tuples) {
+      const addSize = t.length + 2; // +2 for ", "
+      if (chunk.length > 0 && chunkSize + addSize > maxBytes) {
+        result.push(`${prefix}${chunk.join(", ")};`);
+        chunk = [];
+        chunkSize = prefix.length;
+      }
+      chunk.push(t);
+      chunkSize += addSize;
+    }
+    if (chunk.length > 0) {
+      result.push(`${prefix}${chunk.join(", ")};`);
+    }
+  }
+  return result;
+}
+
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max) + "...";
 }
@@ -585,10 +656,18 @@ export async function restoreRun(runId: string, targetConnId?: string): Promise<
   }
 
   // Split into individual statements for resilient execution
-  const statements = splitStatements(sql);
+  let statements = splitStatements(sql);
   if (statements.length === 0) {
     return { ok: false, message: "File backup kosong atau tidak mengandung SQL yang valid. Periksa apakah file backup benar-benar hasil dump MySQL." };
   }
+
+  // Split large INSERT statements to avoid max_allowed_packet issues
+  const beforeCount = statements.length;
+  statements = splitLargeInserts(statements, 50_000);
+  if (statements.length !== beforeCount) {
+    console.log(`[INFO] Split ${beforeCount} statements → ${statements.length} (INSERT besar dipecah)`);
+  }
+
   const warnings: string[] = [];
   let warningCount = 0;
 
@@ -601,6 +680,7 @@ export async function restoreRun(runId: string, targetConnId?: string): Promise<
       password: cfg.password,
       connectTimeout: 15_000,
     });
+    await conn.query("SET SESSION max_allowed_packet = 64 * 1024 * 1024");
   } catch (e) {
     const detail = (e as Error).message;
     return { ok: false, message: `Gagal koneksi ke MySQL ${cfg.host}:${cfg.port} (user: ${cfg.username}): ${detail}. Periksa host, port, username, password, dan pastikan MySQL server aktif dan bisa diakses dari server ini.` };
