@@ -207,13 +207,15 @@ export default function DbBackupPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ targetConnectionId: restoreConnId !== restoreOrigJob?.connId ? restoreConnId : undefined }),
     });
-    const d = await res.json().catch(() => ({}));
+    const d = await res.json().catch(() => ({ message: `HTTP ${res.status} — tidak ada response dari server` }));
     setBusy(false);
     setRestoreRunId(null);
     if (!res.ok || d.ok === false) {
-      setMsg({ text: d.message ?? "Gagal restore", ok: false });
+      const warnText = d.warnings?.length ? `\n\nDetail:\n${d.warnings.slice(0, 5).join("\n")}` : "";
+      setMsg({ text: `${d.message ?? "Gagal restore"}${warnText}`, ok: false });
     } else {
-      setMsg({ text: `✓ ${d.message}`, ok: true });
+      const warnText = d.warnings?.length ? ` (${d.warnings.length} warning — lihat log server untuk detail)` : "";
+      setMsg({ text: `✓ ${d.message}${warnText}`, ok: true });
       load();
     }
   }
@@ -306,7 +308,7 @@ export default function DbBackupPage() {
       </div>
 
       {msg && (
-        <div className={`flex items-start gap-2 rounded-lg border px-4 py-3 text-sm ${msg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300" : "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"}`}>
+        <div className={`flex items-start gap-2 whitespace-pre-wrap rounded-lg border px-4 py-3 text-sm ${msg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300" : "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"}`}>
           <span className="flex-1">{msg.text}</span>
           <button onClick={() => setMsg(null)} className="opacity-50 hover:opacity-100">✕</button>
         </div>
