@@ -154,7 +154,7 @@ function splitLargeInserts(statements: string[], maxBytes = 50_000): string[] {
       continue;
     }
     // Extract: INSERT INTO `table` (`col1`,...) VALUES
-    const m = stmt.match(/^(\s*INSERT\s+INTO\s+[`"']?\w+[`"']?\s*\([^)]+\)\s*VALUES\s*)(.+)$/i);
+    const m = stmt.match(/^(\s*INSERT\s+INTO\s+[`"']?\w+[`"']?\s*\([^)]+\)\s*VALUES\s*)([\s\S]+)$/i);
     if (!m) {
       result.push(stmt);
       continue;
