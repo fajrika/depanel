@@ -762,8 +762,8 @@ export async function restoreRun(runId: string, targetConnId?: string, restoreId
 
       // Update progress every 5 statements
       if ((i + 1) % 5 === 0 || i === statements.length - 1) {
-        const table = stmt.match(/(?:INSERT INTO|CREATE TABLE|CREATE DATABASE|DROP TABLE|ALTER TABLE)\s+[`"']?(\w+)/i)?.[1] ?? "";
-        const action = stmt.startsWith("INSERT") ? "Memulihkan data" : stmt.startsWith("CREATE TABLE") ? "Membuat tabel" : stmt.startsWith("DROP") ? "Menghapus tabel" : "Memproses";
+        const table = stmt.match(/(?:INSERT\s+INTO|CREATE\s+TABLE|CREATE\s+DATABASE|DROP\s+TABLE|DROP\s+DATABASE|ALTER\s+TABLE)\s+(?:IF\s+NOT\s+EXISTS\s+|OR\s+REPLACE\s+)?[`"']?(\w+)/i)?.[1] ?? "";
+        const action = /^\s*INSERT/i.test(stmt) ? "Memulihkan data" : /^\s*CREATE\s+TABLE/i.test(stmt) ? "Membuat tabel" : /^\s*DROP\s+TABLE/i.test(stmt) ? "Menghapus tabel" : /^\s*CREATE\s+DATABASE/i.test(stmt) ? "Membuat database" : /^\s*DROP\s+DATABASE/i.test(stmt) ? "Menghapus database" : "Memproses";
         const label = table ? `${action} di ${table}` : action;
         void saveProgress(i, label);
       }
