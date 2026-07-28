@@ -605,7 +605,7 @@ export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "m
  * the restore completes even if some statements fail (e.g., due to data
  * conflicts, missing dependencies, or partial corruption).
  */
-export async function restoreRun(runId: string, targetConnId?: string): Promise<{ ok: boolean; message: string; warnings?: string[] }> {
+export async function restoreRun(runId: string, targetConnId?: string, restoreId?: string): Promise<{ ok: boolean; message: string; warnings?: string[] }> {
   const run = await prisma.dbBackupRun.findUnique({
     where: { id: runId },
     include: { job: { include: { connection: true } } },
@@ -715,6 +715,16 @@ export async function restoreRun(runId: string, targetConnId?: string): Promise<
 
     // Phase 2: Execute each statement individually for resilience
     const tStart = Date.now();
+
+    const saveProgress = async (i: number, label: string) => {
+      if (!restoreId) return;
+      const pct = Math.round(((i + 1) / statements.length) * 100);
+      await prisma.dbRestoreRun.update({
+        where: { id: restoreId },
+        data: { progressPct: pct, progressText: `${label} (${i + 1}/${statements.length}, ${pct}%)` },
+      }).catch(() => {});
+    };
+
     for (let i = 0; i < statements.length; i++) {
       const stmt = statements[i];
       if (!stmt) continue;
@@ -748,6 +758,14 @@ export async function restoreRun(runId: string, targetConnId?: string): Promise<
         console.warn(msg);
         warnings.push(msg);
         warningCount++;
+      }
+
+      // Update progress every 5 statements
+      if ((i + 1) % 5 === 0 || i === statements.length - 1) {
+        const table = stmt.match(/(?:INSERT INTO|CREATE TABLE|CREATE DATABASE|DROP TABLE|ALTER TABLE)\s+[`"']?(\w+)/i)?.[1] ?? "";
+        const action = stmt.startsWith("INSERT") ? "Memulihkan data" : stmt.startsWith("CREATE TABLE") ? "Membuat tabel" : stmt.startsWith("DROP") ? "Menghapus tabel" : "Memproses";
+        const label = table ? `${action} di ${table}` : action;
+        void saveProgress(i, label);
       }
 
       // Progress log every 50 statements

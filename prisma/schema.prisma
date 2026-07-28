@@ -225,6 +225,8 @@ model DbRestoreRun {
   status    String   @default("running") // running | success | failed
   message   String?
   warnings  String?  // JSON array of warning strings
+  progressPct  Int?      // 0-100
+  progressText String?   // e.g. "Memulihkan data di audits (24/154)"
   startedAt DateTime @default(now())
   endedAt   DateTime?
 

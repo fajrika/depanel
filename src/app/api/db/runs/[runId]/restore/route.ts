@@ -60,7 +60,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ runId: string 
     // Background: run restore, update record when done
     void (async () => {
       try {
-        const result = await restoreRun(runId, targetConnId);
+        const result = await restoreRun(runId, targetConnId, restore.id);
         await prisma.dbRestoreRun.update({
           where: { id: restore.id },
           data: {

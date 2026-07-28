@@ -101,6 +101,7 @@ export default function DbBackupPage() {
   const [restoreDbList, setRestoreDbList] = useState<string[] | null>(null);
   const [restoreDbs, setRestoreDbs] = useState<Set<string>>(new Set());
   const [restoreOrigJob, setRestoreOrigJob] = useState<{ connId: string; connName: string; databases: string[] } | null>(null);
+  const [restoreProgress, setRestoreProgress] = useState<{ pct: number; text: string } | null>(null);
 
   const load = useCallback(async () => {
     const [cRes, jRes, tRes] = await Promise.all([fetch("/api/db/connections"), fetch("/api/db/jobs"), fetch("/api/teams")]);
@@ -252,7 +253,7 @@ export default function DbBackupPage() {
 
     // Async restore started — poll for status
     const restoreId = d.data?.restoreId;
-    setMsg({ text: "⏳ Restore sedang berjalan di server…", ok: true });
+    setRestoreProgress({ pct: 0, text: "Memulai restore…" });
 
     const poll = async () => {
       for (let i = 0; i < 120; i++) {
@@ -262,6 +263,7 @@ export default function DbBackupPage() {
         if (!p?.ok) continue;
         if (p.data.status === "success") {
           setBusy(false);
+          setRestoreProgress(null);
           const warnText = p.data.warnings?.length ? ` (${p.data.warnings.length} peringatan)` : "";
           setMsg({ text: `✓ Restore selesai${warnText}`, ok: true });
           load();
@@ -270,11 +272,17 @@ export default function DbBackupPage() {
         }
         if (p.data.status === "failed") {
           setBusy(false);
+          setRestoreProgress(null);
           setMsg({ text: `Gagal restore: ${p.data.message}`, ok: false });
           return;
         }
+        // Update progress
+        if (p.data.progressPct != null && p.data.progressText) {
+          setRestoreProgress({ pct: p.data.progressPct, text: p.data.progressText });
+        }
       }
       setBusy(false);
+      setRestoreProgress(null);
       setMsg({ text: "Restore masih berjalan. Cek log server untuk detail.", ok: true });
     };
     void poll();
@@ -371,6 +379,15 @@ export default function DbBackupPage() {
         <div className={`flex items-start gap-2 whitespace-pre-wrap rounded-lg border px-4 py-3 text-sm ${msg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300" : "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"}`}>
           <span className="flex-1">{msg.text}</span>
           <button onClick={() => setMsg(null)} className="opacity-50 hover:opacity-100">✕</button>
+        </div>
+      )}
+
+      {restoreProgress && (
+        <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-300">
+          <p>{restoreProgress.text}</p>
+          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-sky-200 dark:bg-sky-800">
+            <div className="h-full rounded-full bg-sky-500 transition-all duration-1000" style={{ width: `${restoreProgress.pct}%` }} />
+          </div>
         </div>
       )}
 

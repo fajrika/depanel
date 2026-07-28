@@ -22,6 +22,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ restoreId: str
       status: restore.status,
       message: restore.message,
       warnings: restore.warnings ? JSON.parse(restore.warnings) : null,
+      progressPct: restore.progressPct,
+      progressText: restore.progressText,
       startedAt: restore.startedAt,
       endedAt: restore.endedAt,
     },
