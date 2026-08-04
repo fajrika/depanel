@@ -17,6 +17,11 @@ import { decryptSecret } from "./crypto";
 import { notifyTeam } from "./notify";
 import { getGDriveOAuthToken, gdriveOAuthUpload, gdriveOAuthDownload } from "./gdrive-oauth";
 
+/** Escape a single identifier as a MySQL backtick-quoted name. */
+function escId(name: string): string {
+  return `\`${String(name).replace(/`/g, "``")}\``;
+}
+
 // ---------- SQL statement splitter ----------
 
 /**
@@ -277,7 +282,7 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
     // Create ALL databases upfront — views in one database may reference
     // tables in another, so all databases must exist before any data is restored.
     for (const db of databases) {
-      await write(`CREATE DATABASE IF NOT EXISTS ${mysql.escapeId(db)};\n`);
+      await write(`CREATE DATABASE IF NOT EXISTS ${escId(db)};\n`);
     }
     await write("\n");
     // Collect view definitions per-database, but write them AFTER all tables
@@ -286,7 +291,7 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
     const viewsByDb: { db: string; name: string; createSql: string }[] = [];
 
     for (const db of databases) {
-      const dbId = mysql.escapeId(db);
+      const dbId = escId(db);
       await write(`USE ${dbId};\n\n`);
       await conn.changeUser({ database: db });
 
@@ -299,7 +304,7 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
       const views = all.filter((t) => t.type === "VIEW").map((t) => t.name);
 
       for (const table of tables) {
-        const tId = mysql.escapeId(table);
+        const tId = escId(table);
         const [createRows] = await conn.query(`SHOW CREATE TABLE ${tId}`);
         let createSql = (createRows as Record<string, string>[])[0]["Create Table"];
         // MySQL 8.0.17+ disallows certain functions (md5, sha1, …) in generated
@@ -316,7 +321,7 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
           const list = rows as Record<string, unknown>[];
           if (list.length === 0) break;
           const colNames = Object.keys(list[0]);
-          const cols = colNames.map((c) => mysql.escapeId(c)).join(",");
+          const cols = colNames.map((c) => escId(c)).join(",");
           const values = list.map(
             (r) => `(${colNames.map((c) => {
               const v = r[c];
@@ -338,7 +343,7 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
       // Collect views, don't write them yet
       for (const view of views) {
         try {
-          const vId = mysql.escapeId(view);
+          const vId = escId(view);
           const [createRows] = await conn.query(`SHOW CREATE VIEW ${vId}`);
           const createSql = (createRows as Record<string, string>[])[0]["Create View"];
           viewsByDb.push({ db, name: view, createSql });
@@ -354,10 +359,10 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
       let lastDb = "";
       for (const v of viewsByDb) {
         if (v.db !== lastDb) {
-          await write(`USE ${mysql.escapeId(v.db)};\n`);
+          await write(`USE ${escId(v.db)};\n`);
           lastDb = v.db;
         }
-        const vId = mysql.escapeId(v.name);
+        const vId = escId(v.name);
         await write(`DROP VIEW IF EXISTS ${vId};\n${v.createSql};\n\n`);
       }
     }
@@ -672,6 +677,8 @@ export async function restoreRun(runId: string, targetConnId?: string, restoreId
   let warningCount = 0;
 
   let conn;
+  let adminConn;
+  let connThreadId: number | null = null;
   try {
     conn = await mysql.createConnection({
       host: cfg.host,
@@ -680,9 +687,41 @@ export async function restoreRun(runId: string, targetConnId?: string, restoreId
       password: cfg.password,
       connectTimeout: 15_000,
     });
+    // Second connection for killing hung queries
+    adminConn = await mysql.createConnection({
+      host: cfg.host,
+      port: cfg.port,
+      user: cfg.username,
+      password: cfg.password,
+      connectTimeout: 15_000,
+    });
+    const [rows] = await conn.query("SELECT CONNECTION_ID() AS id");
+    connThreadId = (rows as Array<{ id: number }>)[0]?.id ?? null;
   } catch (e) {
     const detail = (e as Error).message;
     return { ok: false, message: `Gagal koneksi ke MySQL ${cfg.host}:${cfg.port} (user: ${cfg.username}): ${detail}. Periksa host, port, username, password, dan pastikan MySQL server aktif dan bisa diakses dari server ini.` };
+  }
+
+  let currentQueryReject = null;
+  async function killAndReconnect(i) {
+    if (connThreadId) {
+      try {
+        await adminConn.query(`KILL QUERY ${connThreadId}`);
+        console.warn(`[WARN] Query timeout — KILL QUERY ${connThreadId} (${i + 1}/${statements.length})`);
+      } catch (kerr) {
+        console.warn(`[WARN] Gagal KILL QUERY ${connThreadId}: ${(kerr as Error).message}`);
+      }
+    }
+    // Force-close so pending query promise rejects
+    try { conn.destroy(); } catch {}
+    // Reconnect
+    conn = await mysql.createConnection({
+      host: cfg.host, port: cfg.port, user: cfg.username, password: cfg.password, connectTimeout: 15_000,
+    });
+    const [r2] = await conn.query("SELECT CONNECTION_ID() AS id");
+    connThreadId = (r2 as Array<{ id: number }>)[0]?.id ?? null;
+    await conn.query("SET FOREIGN_KEY_CHECKS=0");
+    await conn.query("SET UNIQUE_CHECKS=0");
   }
 
   try {
@@ -730,11 +769,18 @@ export async function restoreRun(runId: string, targetConnId?: string, restoreId
       if (!stmt) continue;
 
       try {
-        // Per-statement timeout: 60s
-        await Promise.race([
-          conn.query(stmt),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("Query timeout 60s")), 60_000)),
-        ]);
+        await new Promise((resolve, reject) => {
+          currentQueryReject = reject;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            clearTimeout(timer);
+            killAndReconnect(i).then(resolve).catch(reject);
+          }, 60_000);
+
+          conn.query(stmt)
+            .then((result) => { clearTimeout(timer); resolve(result); })
+            .catch((err) => { clearTimeout(timer); reject(err); });
+        });
       } catch (err) {
         const upper = stmt.toUpperCase();
         const isSpecial =
@@ -791,7 +837,8 @@ export async function restoreRun(runId: string, targetConnId?: string, restoreId
   } catch (e) {
     return { ok: false, message: `Restore gagal (tidak terduga): ${(e as Error).message}` };
   } finally {
-    await conn.end();
+    await conn.end().catch(() => {});
+    await adminConn.end().catch(() => {});
     if (tmpFile) await fsp.rm(tmpFile, { force: true }).catch(() => {});
   }
 }
