@@ -264,16 +264,16 @@ export async function listDatabases(cfg: ConnCfg): Promise<string[]> {
   }
 }
 
-/** Dump databases into a gzip'd SQL file inside the OS temp dir; returns the path. */
+/** Dump databases into a brotli-compressed SQL file inside the OS temp dir; returns the path. */
 export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase: string): Promise<string> {
-  const outPath = path.join(os.tmpdir(), `${fileBase}.sql.gz`);
-  const gzip = zlib.createGzip({ level: 6 });
+  const outPath = path.join(os.tmpdir(), `${fileBase}.sql.br`);
+  const compress = zlib.createBrotliCompress({ params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9 } });
   const out = fs.createWriteStream(outPath);
-  const done = pipeline(gzip, out);
+  const done = pipeline(compress, out);
 
   const write = (s: string) =>
     new Promise<void>((resolve, reject) => {
-      gzip.write(s, (e) => (e ? reject(e) : resolve()));
+      compress.write(s, (e) => (e ? reject(e) : resolve()));
     });
 
   const conn = await openConn(cfg);
@@ -369,7 +369,7 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
     await write("SET FOREIGN_KEY_CHECKS=1;\nSET UNIQUE_CHECKS=1;\n");
   } finally {
     await conn.end();
-    gzip.end();
+    compress.end();
   }
   await done;
   return outPath;
@@ -440,7 +440,7 @@ export async function deliver(destType: string, cfg: DestConfig, filePath: strin
         Bucket: String(cfg.bucket || ""),
         Key: key,
         Body: fs.createReadStream(filePath),
-        ContentType: "application/gzip",
+        ContentType: "application/octet-stream",
       }),
     );
     return `s3://${cfg.bucket}/${key}`;
@@ -567,7 +567,7 @@ export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "m
     const size = (await fsp.stat(tmpFile)).size;
 
     const destCfg = JSON.parse(job.destConfig) as DestConfig;
-    const location = await deliver(job.destType, destCfg, tmpFile, `${fileBase}.sql.gz`, job.id);
+    const location = await deliver(job.destType, destCfg, tmpFile, `${fileBase}.sql.br`, job.id);
 
     await prisma.dbBackupRun.update({
       where: { id: run.id },
@@ -645,21 +645,29 @@ export async function restoreRun(runId: string, targetConnId?: string, restoreId
     return { ok: false, message: `Gagal mengambil arsip backup dari ${run.job.destType.toUpperCase()}: ${detail}. Pastikan file backup masih tersedia dan koneksi ke storage aktif.` };
   }
 
-  // Stream-gunzip the dump into a string
+  // Decompress the dump (gzip for old backups, brotli for new) into a string
   let sql: string;
   try {
-    const gunzip = zlib.createGunzip();
+    const head = Buffer.alloc(2);
+    const fh = fs.openSync(file, "r");
+    try {
+      fs.readSync(fh, head, 0, 2, 0);
+    } finally {
+      fs.closeSync(fh);
+    }
+    const isGzip = head[0] === 0x1f && head[1] === 0x8b;
+    const decompress = isGzip ? zlib.createGunzip() : zlib.createBrotliDecompress();
     const chunks: Buffer[] = [];
     const t0 = Date.now();
-    await pipeline(fs.createReadStream(file), gunzip, async function* (source) {
+    await pipeline(fs.createReadStream(file), decompress, async function* (source) {
       for await (const c of source) chunks.push(c as Buffer);
       yield; // satisfy pipeline sink
     });
     sql = Buffer.concat(chunks).toString("utf8");
-    console.log(`[RESTORE] Decompress selesai dalam ${((Date.now() - t0) / 1000).toFixed(1)}s — ${(sql.length / 1024 / 1024).toFixed(2)} MB`);
+    console.log(`[RESTORE] Decompress (${isGzip ? "gzip" : "brotli"}) selesai dalam ${((Date.now() - t0) / 1000).toFixed(1)}s — ${(sql.length / 1024 / 1024).toFixed(2)} MB`);
   } catch (e) {
     const detail = (e as Error).message;
-    return { ok: false, message: `Gagal membaca file backup (decompress): ${detail}. File mungkin korup atau bukan file .sql.gz yang valid.` };
+    return { ok: false, message: `Gagal membaca file backup (decompress): ${detail}. File mungkin korup atau bukan file backup yang valid.` };
   }
 
   // Split into individual statements for resilient execution
@@ -676,8 +684,8 @@ export async function restoreRun(runId: string, targetConnId?: string, restoreId
   const warnings: string[] = [];
   let warningCount = 0;
 
-  let conn;
-  let adminConn;
+  let conn: Connection;
+  let adminConn: Connection;
   let connThreadId: number | null = null;
   try {
     conn = await mysql.createConnection({
@@ -702,8 +710,7 @@ export async function restoreRun(runId: string, targetConnId?: string, restoreId
     return { ok: false, message: `Gagal koneksi ke MySQL ${cfg.host}:${cfg.port} (user: ${cfg.username}): ${detail}. Periksa host, port, username, password, dan pastikan MySQL server aktif dan bisa diakses dari server ini.` };
   }
 
-  let currentQueryReject = null;
-  async function killAndReconnect(i) {
+  async function killAndReconnect(i: number) {
     if (connThreadId) {
       try {
         await adminConn.query(`KILL QUERY ${connThreadId}`);
@@ -770,9 +777,7 @@ export async function restoreRun(runId: string, targetConnId?: string, restoreId
 
       try {
         await new Promise((resolve, reject) => {
-          currentQueryReject = reject;
           const timer = setTimeout(() => {
-            timedOut = true;
             clearTimeout(timer);
             killAndReconnect(i).then(resolve).catch(reject);
           }, 60_000);

@@ -31,11 +31,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ runId: string 
     const file = await fetchBackup(run.job.destType, destCfg, run.location, run.job.id);
     if (file !== run.location) tmpFile = file; // fetched from FTP/S3, needs cleanup
 
-    const name = `backup-${run.id}.sql.gz`;
+    const base = path.basename(run.location).replace(/\.(sql\.gz|sql\.br)$/, "");
+    const name = `${base}.sql.br`;
     const stream = fs.createReadStream(file) as unknown as ReadableStream;
     return new Response(stream, {
       headers: {
-        "Content-Type": "application/gzip",
+        "Content-Type": "application/octet-stream",
         "Content-Disposition": `attachment; filename="${name}"`,
       },
     });
