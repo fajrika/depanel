@@ -40,6 +40,20 @@ function fmtSize(n: number | null): string {
   return `${n} B`;
 }
 
+function fmtDuration(startedAt: string, endedAt: string | null): string | null {
+  if (!endedAt) return null;
+  const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
+  if (isNaN(ms) || ms < 0) return null;
+  const totalSecs = Math.round(ms / 1000);
+  if (totalSecs < 60) return `${totalSecs} dtk`;
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  if (mins < 60) return secs ? `${mins} mnt ${secs} dtk` : `${mins} mnt`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins ? `${hours} jam ${remMins} mnt` : `${hours} jam`;
+}
+
 function scheduleLabel(j: Job): string {
   if (j.scheduleType === "hourly") return "Perjam";
   if (j.scheduleType === "daily") return `Harian ${j.timeAt}`;
@@ -826,6 +840,7 @@ export default function DbBackupPage() {
                                   </span>
                                   <span className="text-slate-500 dark:text-slate-400">{new Date(r.startedAt).toLocaleString("id-ID")}</span>
                                   <span className="text-slate-500 dark:text-slate-400">{fmtSize(r.sizeBytes)}</span>
+                                  {fmtDuration(r.startedAt, r.endedAt) && <span className="text-slate-400 dark:text-slate-500">⏱ {fmtDuration(r.startedAt, r.endedAt)}</span>}
                                   {r.location && <span className="max-w-[200px] truncate font-mono text-slate-400">{r.location}</span>}
                                   {r.message && r.status === "failed" && <span className="text-red-500">{r.message}</span>}
                                   <span className="ml-auto flex items-center gap-2">

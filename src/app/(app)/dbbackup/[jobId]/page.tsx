@@ -34,6 +34,20 @@ function fmtSize(n: number | null): string {
   return `${n} B`;
 }
 
+function fmtDuration(startedAt: string, endedAt: string | null): string | null {
+  if (!endedAt) return null;
+  const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
+  if (isNaN(ms) || ms < 0) return null;
+  const totalSecs = Math.round(ms / 1000);
+  if (totalSecs < 60) return `${totalSecs} dtk`;
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  if (mins < 60) return secs ? `${mins} mnt ${secs} dtk` : `${mins} mnt`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins ? `${hours} jam ${remMins} mnt` : `${hours} jam`;
+}
+
 function scheduleLabel(j: Job): string {
   if (j.scheduleType === "hourly") return "Perjam";
   if (j.scheduleType === "daily") return `Harian ${j.timeAt}`;
@@ -245,6 +259,7 @@ export default function JobDetailPage() {
                   </span>
                   <span className="text-slate-500">{new Date(r.startedAt).toLocaleString("id-ID")}</span>
                   <span className="text-slate-500">{fmtSize(r.sizeBytes)}</span>
+                  {fmtDuration(r.startedAt, r.endedAt) && <span className="text-slate-400">⏱ {fmtDuration(r.startedAt, r.endedAt)}</span>}
                   {r.message && r.status === "failed" && <span className="text-red-500">{r.message}</span>}
                   <span className="ml-auto flex items-center gap-2">
                     {r.status === "success" && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline">Unduh</a>}
