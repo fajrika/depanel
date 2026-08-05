@@ -844,7 +844,8 @@ export default function DbBackupPage() {
                                   {r.location && <span className="max-w-[200px] truncate font-mono text-slate-400">{r.location}</span>}
                                   {r.message && r.status === "failed" && <span className="text-red-500">{r.message}</span>}
                                   <span className="ml-auto flex items-center gap-2">
-                                    {runOk && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline dark:text-sky-400">Unduh</a>}
+                                    {runOk && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline dark:text-sky-400">Unduh (.br)</a>}
+                                    {runOk && <a href={`/api/db/runs/${r.id}/download?format=sql`} className="text-sky-600 hover:underline dark:text-sky-400">Unduh SQL</a>}
                                     {runOk && <button onClick={() => openRestoreModal(r.id, { connection: { id: selected.connection.id, name: selected.connection.name }, databases: selected.databases })} disabled={busy} className="text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">Restore</button>}
                                     <button onClick={() => { if (confirm("Hapus catatan backup ini beserta filenya?")) { api(`/api/db/runs/${r.id}`, "DELETE").then(() => refreshRuns()); } }} disabled={busy} className="text-red-500 hover:underline disabled:opacity-50">Hapus</button>
                                   </span>

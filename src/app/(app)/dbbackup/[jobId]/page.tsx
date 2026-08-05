@@ -262,7 +262,8 @@ export default function JobDetailPage() {
                   {fmtDuration(r.startedAt, r.endedAt) && <span className="text-slate-400">⏱ {fmtDuration(r.startedAt, r.endedAt)}</span>}
                   {r.message && r.status === "failed" && <span className="text-red-500">{r.message}</span>}
                   <span className="ml-auto flex items-center gap-2">
-                    {r.status === "success" && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline">Unduh</a>}
+                    {r.status === "success" && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline">Unduh (.br)</a>}
+                    {r.status === "success" && <a href={`/api/db/runs/${r.id}/download?format=sql`} className="text-sky-600 hover:underline">Unduh SQL</a>}
                     {r.status === "success" && <button onClick={() => openRestoreModal(r.id)} disabled={busy} className="text-amber-600 hover:underline disabled:opacity-50">Restore</button>}
                   </span>
                 </div>
