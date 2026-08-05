@@ -16,9 +16,17 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["lzma-wasm", "ssh2"],
   // Standalone tracing follows the package's `import`/`default` conditions and
   // only copies the ESM build; force the CJS build in too (that's the one the
-  // runtime `require` actually loads).
+  // runtime `require` actually loads). Point at the single file (the wasm is
+  // inlined as base64 inside it) — a `**/*` glob here made Turbopack trace the
+  // whole project, blowing up build time/memory on the deploy server.
   outputFileTracingIncludes: {
-    "/*": ["node_modules/lzma-wasm/dist/cjs/**/*"],
+    "/*": ["node_modules/lzma-wasm/dist/cjs/index.cjs"],
+  },
+  // The deploy box is too slow to typecheck the whole app during `next build`
+  // (16+ min). Types are checked locally (`npx tsc --noEmit`) before pushing;
+  // enable this in the Docker builder via SKIP_TYPESCRIPT_CHECK=1.
+  typescript: {
+    ignoreBuildErrors: process.env.SKIP_TYPESCRIPT_CHECK === "1",
   },
 };
 
