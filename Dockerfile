@@ -74,7 +74,7 @@ COPY --from=prismacli /pcli/node_modules /opt/prisma/node_modules
 
 COPY prisma ./prisma
 COPY package.json ./package.json
-COPY scripts/docker-entrypoint.sh scripts/docker-start.mjs ./scripts/
+COPY scripts/docker-entrypoint.sh scripts/docker-start.mjs scripts/backfill-destpath.cjs ./scripts/
 RUN chmod +x scripts/docker-entrypoint.sh && mkdir -p /app/data
 
 EXPOSE 3000
