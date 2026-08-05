@@ -19,7 +19,21 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   // Upsert membership: super admin masuk sebagai admin
   await prisma.teamMember.upsert({
     where: { teamId_userId: { teamId: id, userId: user.id } },
-    create: { teamId: id, userId: user.id, role: "admin", canViewBilling: true, canSchedule: true, canBackup: true },
+    create: {
+      teamId: id,
+      userId: user.id,
+      role: "admin",
+      canViewBilling: true,
+      canViewCost: true,
+      canViewReports: true,
+      canSchedule: true,
+      canBackup: true,
+      canBackupDb: true,
+      canSsh: true,
+      canInfra: true,
+      canAccounts: true,
+      canNotify: true,
+    },
     update: {},
   });
 

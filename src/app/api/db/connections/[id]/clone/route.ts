@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { staffOf } from "@/lib/team";
+import { canUseFeature } from "@/lib/team";
 import { encryptSecret } from "@/lib/crypto";
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -15,7 +15,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { teamId } = await req.json();
   if (!teamId) return NextResponse.json({ ok: false, message: "teamId wajib diisi" }, { status: 400 });
   if (teamId === conn.teamId) return NextResponse.json({ ok: false, message: "Koneksi sudah ada di tim ini" }, { status: 400 });
-  if (!(await staffOf(user.id, teamId))) {
+  if (!(await canUseFeature(user.id, teamId, "backupDb"))) {
     return NextResponse.json({ ok: false, message: "Anda bukan admin di tim tujuan" }, { status: 403 });
   }
 

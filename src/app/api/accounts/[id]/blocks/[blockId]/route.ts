@@ -11,7 +11,7 @@ const patchSchema = z.union([
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string; blockId: string }> }) {
   const { id, blockId } = await ctx.params;
-  const c = await accountStaffCtx(id);
+  const c = await accountStaffCtx(id, "infra");
   if (c instanceof Response) return c;
   const parsed = patchSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, message: "Data tidak valid" }, { status: 400 });
@@ -28,7 +28,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string; blockId: string }> }) {
   const { id, blockId } = await ctx.params;
-  const c = await accountStaffCtx(id);
+  const c = await accountStaffCtx(id, "infra");
   if (c instanceof Response) return c;
   try {
     await c.client.blockDelete(blockId);

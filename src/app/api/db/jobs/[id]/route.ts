@@ -3,7 +3,7 @@ import { z } from "zod";
 import { CronExpressionParser } from "cron-parser";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { staffOf } from "@/lib/team";
+import { canUseFeature } from "@/lib/team";
 
 async function guardJob(userId: string, jobId: string) {
   const job = await prisma.dbBackupJob.findUnique({
@@ -11,7 +11,7 @@ async function guardJob(userId: string, jobId: string) {
     include: { connection: { select: { teamId: true } } },
   });
   if (!job?.connection.teamId) return null;
-  if (!(await staffOf(userId, job.connection.teamId))) return null;
+  if (!(await canUseFeature(userId, job.connection.teamId, "backupDb"))) return null;
   return job;
 }
 

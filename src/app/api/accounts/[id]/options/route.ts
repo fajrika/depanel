@@ -4,7 +4,7 @@ import { accountStaffCtx } from "@/lib/server-guard";
 /** Options needed to create an instance: locations, tiers, OS systems, size templates. */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const c = await accountStaffCtx(id);
+  const c = await accountStaffCtx(id, "infra");
   if (c instanceof Response) return c;
   try {
     const [locations, tiers, systems, sizes] = await Promise.all([

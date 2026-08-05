@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { staffOf } from "@/lib/team";
+import { canUseFeature } from "@/lib/team";
 import { getSshHistory } from "@/lib/sshmon";
 
 export async function GET(request: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -11,7 +11,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   const { id } = await ctx.params;
   const ssh = await prisma.sshConnection.findUnique({ where: { id } });
   if (!ssh?.teamId) return NextResponse.json({ ok: false, message: "Koneksi SSH tidak ditemukan" }, { status: 404 });
-  if (!(await staffOf(user.id, ssh.teamId))) {
+  if (!(await canUseFeature(user.id, ssh.teamId, "ssh"))) {
     return NextResponse.json({ ok: false, message: "Hanya owner/admin tim" }, { status: 403 });
   }
 

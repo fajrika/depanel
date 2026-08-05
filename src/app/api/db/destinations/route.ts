@@ -26,7 +26,9 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
   const team = await getActiveTeam(user);
-  if (team.role === "member") return NextResponse.json({ ok: false, message: "Hanya owner/admin tim" }, { status: 403 });
+  if (team.role === "member" && !team.canBackupDb) {
+    return NextResponse.json({ ok: false, message: "Anda tidak diberi izin membuka Backup DB" }, { status: 403 });
+  }
 
   const dests = await prisma.dbDest.findMany({
     where: { teamId: team.id },
@@ -71,7 +73,9 @@ export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
   const team = await getActiveTeam(user);
-  if (team.role === "member") return NextResponse.json({ ok: false, message: "Hanya owner/admin tim" }, { status: 403 });
+  if (team.role === "member" && !team.canBackupDb) {
+    return NextResponse.json({ ok: false, message: "Anda tidak diberi izin membuka Backup DB" }, { status: 403 });
+  }
 
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message ?? "Data tidak valid" }, { status: 400 });

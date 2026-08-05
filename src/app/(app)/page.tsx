@@ -113,6 +113,7 @@ export default function Dashboard() {
   const [isStaff, setIsStaff] = useState(false); // owner/admin tim aktif
   const [canSchedule, setCanSchedule] = useState(true);
   const [canBackup, setCanBackup] = useState(true);
+  const [canSsh, setCanSsh] = useState(false);
   const [teamName, setTeamName] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedSsh, setSelectedSsh] = useState<string | null>(null);
@@ -186,14 +187,15 @@ export default function Dashboard() {
         setIsStaff(role === "owner" || role === "admin");
         setCanSchedule(d?.activeTeam?.canSchedule ?? true);
         setCanBackup(d?.activeTeam?.canBackup ?? true);
+        setCanSsh(d?.activeTeam?.canSsh ?? false);
         setTeamName(d?.activeTeam?.name ?? "");
       })
       .catch(() => {});
   }, [load]);
 
-  // Koneksi SSH (monitoring) — hanya untuk owner/admin tim aktif.
+  // Koneksi SSH (monitoring) — untuk staff atau member dengan izin SSH.
   useEffect(() => {
-    if (!isStaff) {
+    if (!canSsh) {
       setSshList([]);
       return;
     }
@@ -201,7 +203,7 @@ export default function Dashboard() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d?.ok) setSshList(d.data ?? []); })
       .catch(() => {});
-  }, [isStaff]);
+  }, [canSsh]);
 
   // Dukungan deep-link ?ssh=<id> (tombol "Pantau" dari halaman SSH Koneksi).
   useEffect(() => {
@@ -547,7 +549,7 @@ export default function Dashboard() {
               );
             })}
 
-            {isStaff && sshList.length > 0 && (
+            {canSsh && sshList.length > 0 && (
               <section key="ssh" className="mb-5">
                 <button
                   onClick={() => setSshCollapsed((c) => !c)}

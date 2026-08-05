@@ -57,7 +57,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, message: "Akun tidak terhubung ke tim" }, { status: 400 });
   }
   const m = await membershipOf(user.id, firstAccount.teamId);
-  if (!m || (!isStaff(m.role) && !m.canViewBilling)) {
+  if (!m || (!isStaff(m.role) && !m.canViewReports)) {
     return NextResponse.json({ ok: false, message: "Anda tidak punya akses melihat laporan billing" }, { status: 403 });
   }
 

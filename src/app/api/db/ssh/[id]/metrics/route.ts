@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { staffOf } from "@/lib/team";
+import { canUseFeature } from "@/lib/team";
 
 const WINDOWS: Record<string, number> = { hour: 1, day: 24, week: 168, month: 720 };
 
@@ -12,8 +12,8 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   const { id } = await ctx.params;
   const ssh = await prisma.sshConnection.findUnique({ where: { id } });
   if (!ssh?.teamId) return NextResponse.json({ ok: false, message: "Koneksi SSH tidak ditemukan" }, { status: 404 });
-  if (!(await staffOf(user.id, ssh.teamId))) {
-    return NextResponse.json({ ok: false, message: "Hanya owner/admin tim" }, { status: 403 });
+  if (!(await canUseFeature(user.id, ssh.teamId, "ssh"))) {
+    return NextResponse.json({ ok: false, message: "Anda tidak diberi izin membuka SSH Koneksi" }, { status: 403 });
   }
 
   const periode = (new URL(request.url).searchParams.get("periode") ?? "hour") as keyof typeof WINDOWS;

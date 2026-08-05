@@ -45,8 +45,15 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
 const patchSchema = z.object({
   userId: z.string().min(1),
   canViewBilling: z.boolean().optional(),
+  canViewCost: z.boolean().optional(),
+  canViewReports: z.boolean().optional(),
   canSchedule: z.boolean().optional(),
   canBackup: z.boolean().optional(),
+  canBackupDb: z.boolean().optional(),
+  canSsh: z.boolean().optional(),
+  canInfra: z.boolean().optional(),
+  canAccounts: z.boolean().optional(),
+  canNotify: z.boolean().optional(),
   hiddenServerIds: z.array(z.string()).max(500).optional(),
   role: z.enum(["owner", "admin", "member"]).optional(),
 });
@@ -69,7 +76,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 
   const parsed = patchSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, message: "Data tidak valid" }, { status: 400 });
-  const { userId, role, canViewBilling, canSchedule, canBackup, hiddenServerIds } = parsed.data;
+  const { userId, role, canViewBilling, canViewCost, canViewReports, canSchedule, canBackup, canBackupDb, canSsh, canInfra, canAccounts, canNotify, hiddenServerIds } = parsed.data;
 
   const target = await prisma.teamMember.findUnique({ where: { teamId_userId: { teamId: id, userId } } });
   if (!target) return NextResponse.json({ ok: false, message: "Anggota tidak ditemukan" }, { status: 404 });
@@ -95,11 +102,29 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     await logActivity({ teamId: id, userId: user.id, action: "role-update", message: `Role ${userId} → ${role}` });
   }
 
-  // --- izin per-member (saldo / jadwal / backup) ---
-  const flags: { canViewBilling?: boolean; canSchedule?: boolean; canBackup?: boolean } = {};
+  // --- izin per-member (fitur) ---
+  const flags: {
+    canViewBilling?: boolean;
+    canViewCost?: boolean;
+    canViewReports?: boolean;
+    canSchedule?: boolean;
+    canBackup?: boolean;
+    canBackupDb?: boolean;
+    canSsh?: boolean;
+    canInfra?: boolean;
+    canAccounts?: boolean;
+    canNotify?: boolean;
+  } = {};
   if (canViewBilling !== undefined) flags.canViewBilling = canViewBilling;
+  if (canViewCost !== undefined) flags.canViewCost = canViewCost;
+  if (canViewReports !== undefined) flags.canViewReports = canViewReports;
   if (canSchedule !== undefined) flags.canSchedule = canSchedule;
   if (canBackup !== undefined) flags.canBackup = canBackup;
+  if (canBackupDb !== undefined) flags.canBackupDb = canBackupDb;
+  if (canSsh !== undefined) flags.canSsh = canSsh;
+  if (canInfra !== undefined) flags.canInfra = canInfra;
+  if (canAccounts !== undefined) flags.canAccounts = canAccounts;
+  if (canNotify !== undefined) flags.canNotify = canNotify;
   if (Object.keys(flags).length > 0) {
     if (target.role !== "member") {
       return NextResponse.json({ ok: false, message: "Owner/admin selalu punya izin penuh" }, { status: 400 });

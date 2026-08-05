@@ -5,7 +5,7 @@ import { logActivity } from "@/lib/power";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const c = await accountStaffCtx(id);
+  const c = await accountStaffCtx(id, "infra");
   if (c instanceof Response) return c;
   try {
     const keys = await c.client.sshKeys();
@@ -19,7 +19,7 @@ const schema = z.object({ title: z.string().min(1), key: z.string().min(20) });
 
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const c = await accountStaffCtx(id);
+  const c = await accountStaffCtx(id, "infra");
   if (c instanceof Response) return c;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, message: "Judul & public key wajib diisi" }, { status: 400 });

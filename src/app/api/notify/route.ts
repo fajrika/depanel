@@ -8,7 +8,9 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
   const team = await getActiveTeam(user);
-  if (team.role === "member") return NextResponse.json({ ok: false, message: "Hanya owner/admin tim" }, { status: 403 });
+  if (team.role === "member" && !team.canNotify) {
+    return NextResponse.json({ ok: false, message: "Anda tidak diberi izin membuka Notifikasi" }, { status: 403 });
+  }
 
   const channels = await prisma.notifyChannel.findMany({ where: { teamId: team.id }, orderBy: { createdAt: "asc" } });
   const full = await prisma.team.findUnique({ where: { id: team.id }, select: { lowBalanceThreshold: true } });
@@ -48,7 +50,9 @@ export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
   const team = await getActiveTeam(user);
-  if (team.role === "member") return NextResponse.json({ ok: false, message: "Hanya owner/admin tim" }, { status: 403 });
+  if (team.role === "member" && !team.canNotify) {
+    return NextResponse.json({ ok: false, message: "Anda tidak diberi izin membuka Notifikasi" }, { status: 403 });
+  }
 
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, message: "Data tidak valid" }, { status: 400 });
@@ -75,7 +79,9 @@ export async function PATCH(request: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
   const team = await getActiveTeam(user);
-  if (team.role === "member") return NextResponse.json({ ok: false, message: "Hanya owner/admin tim" }, { status: 403 });
+  if (team.role === "member" && !team.canNotify) {
+    return NextResponse.json({ ok: false, message: "Anda tidak diberi izin membuka Notifikasi" }, { status: 403 });
+  }
 
   const parsed = settingsSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, message: "Data tidak valid" }, { status: 400 });

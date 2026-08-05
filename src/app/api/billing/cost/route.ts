@@ -21,6 +21,9 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
   const team = await getActiveTeam(user);
+  if (team.role === "member" && !team.canViewCost) {
+    return NextResponse.json({ ok: false, message: "Anda tidak diberi izin melihat Biaya" }, { status: 403 });
+  }
 
   const servers = await prisma.server.findMany({
     where: { account: { teamId: team.id } },

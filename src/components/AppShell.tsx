@@ -5,7 +5,22 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 type Me = { id: string; name: string; email: string; role: string; uiLayout: string };
-type TeamInfo = { id: string; name: string; isPersonal: boolean; role: string; canViewBilling: boolean };
+type TeamInfo = {
+  id: string;
+  name: string;
+  isPersonal: boolean;
+  role: string;
+  canViewBilling: boolean;
+  canViewCost: boolean;
+  canViewReports: boolean;
+  canSchedule: boolean;
+  canBackup: boolean;
+  canBackupDb: boolean;
+  canSsh: boolean;
+  canInfra: boolean;
+  canAccounts: boolean;
+  canNotify: boolean;
+};
 
 /* ---------- switcher tim (dipakai topbar & sidebar) ---------- */
 function TeamSwitcher({
@@ -188,8 +203,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     window.location.href = "/superadmin";
   }
 
-  const staff = activeTeam ? activeTeam.role === "owner" || activeTeam.role === "admin" : false;
-  const billing = activeTeam?.canViewBilling ?? false;
+  const t = activeTeam;
 
   // Menu dikelompokkan agar rapih. Grup dengan label tampil sebagai dropdown (topbar)
   // atau seksi berjudul (sidebar/mobile). Grup tanpa label = tautan langsung.
@@ -199,26 +213,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       label: "Kelola",
       icon: "🧰",
       items: [
-        { href: "/infra", label: "Infra", icon: "🧱", show: staff },
-        { href: "/accounts", label: "Akun API", icon: "🔑", show: staff },
-        { href: "/dbbackup", label: "Backup DB", icon: "💾", show: staff },
-        { href: "/ssh", label: "SSH Koneksi", icon: "🔐", show: staff },
+        { href: "/infra", label: "Infra", icon: "🧱", show: t?.canInfra ?? false },
+        { href: "/accounts", label: "Akun API", icon: "🔑", show: t?.canAccounts ?? false },
+        { href: "/dbbackup", label: "Backup DB", icon: "💾", show: t?.canBackupDb ?? false },
+        { href: "/ssh", label: "SSH Koneksi", icon: "🔐", show: t?.canSsh ?? false },
       ],
     },
     {
       label: "Keuangan",
       icon: "💰",
       items: [
-        { href: "/billing", label: "Saldo", icon: "💰", show: billing },
-        { href: "/cost", label: "Biaya", icon: "📉", show: billing },
-        { href: "/reports/financial", label: "Laporan", icon: "📊", show: billing },
+        { href: "/billing", label: "Saldo", icon: "💰", show: t?.canViewBilling ?? false },
+        { href: "/cost", label: "Biaya", icon: "📉", show: t?.canViewCost ?? false },
+        { href: "/reports/financial", label: "Laporan", icon: "📊", show: t?.canViewReports ?? false },
       ],
     },
     {
       label: "Sistem",
       icon: "⚙️",
       items: [
-        { href: "/notifications", label: "Notifikasi", icon: "🔔", show: staff },
+        { href: "/notifications", label: "Notifikasi", icon: "🔔", show: t?.canNotify ?? false },
         { href: "/logs", label: "Log", icon: "📜", show: true },
         { href: "/teams", label: "Tim", icon: "👥", show: true },
         { href: "/superadmin", label: "Super Admin", icon: "⚡", show: superAdmin },

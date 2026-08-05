@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { staffOf } from "@/lib/team";
+import { canUseFeature } from "@/lib/team";
 
 async function guard(userId: string, id: string) {
   const ch = await prisma.notifyChannel.findUnique({ where: { id } });
   if (!ch) return null;
-  if (!(await staffOf(userId, ch.teamId))) return null;
+  if (!(await canUseFeature(userId, ch.teamId, "notify"))) return null;
   return ch;
 }
 

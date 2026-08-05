@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { staffOf } from "@/lib/team";
+import { canUseFeature } from "@/lib/team";
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
 import { testConnection } from "@/lib/dbbackup";
 
@@ -12,8 +12,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   const conn = await prisma.dbConnection.findUnique({ where: { id } });
   if (!conn?.teamId) return NextResponse.json({ ok: false, message: "Koneksi tidak ditemukan" }, { status: 404 });
-  if (!(await staffOf(user.id, conn.teamId))) {
-    return NextResponse.json({ ok: false, message: "Hanya owner/admin tim" }, { status: 403 });
+  if (!(await canUseFeature(user.id, conn.teamId, "backupDb"))) {
+    return NextResponse.json({ ok: false, message: "Anda tidak punya akses ke Backup DB" }, { status: 403 });
   }
 
   const body = await req.json();
@@ -84,8 +84,8 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const { id } = await ctx.params;
   const conn = await prisma.dbConnection.findUnique({ where: { id } });
   if (!conn?.teamId) return NextResponse.json({ ok: false, message: "Koneksi tidak ditemukan" }, { status: 404 });
-  if (!(await staffOf(user.id, conn.teamId))) {
-    return NextResponse.json({ ok: false, message: "Hanya owner/admin tim" }, { status: 403 });
+  if (!(await canUseFeature(user.id, conn.teamId, "backupDb"))) {
+    return NextResponse.json({ ok: false, message: "Anda tidak punya akses ke Backup DB" }, { status: 403 });
   }
 
   await prisma.dbConnection.delete({ where: { id } });

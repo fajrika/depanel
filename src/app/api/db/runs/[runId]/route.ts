@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { staffOf } from "@/lib/team";
+import { canUseFeature } from "@/lib/team";
 import { deleteRun } from "@/lib/dbbackup";
 
 async function guard(userId: string, runId: string) {
@@ -10,7 +10,7 @@ async function guard(userId: string, runId: string) {
     include: { job: { include: { connection: { select: { teamId: true } } } } },
   });
   if (!run?.job.connection.teamId) return null;
-  if (!(await staffOf(userId, run.job.connection.teamId))) return null;
+  if (!(await canUseFeature(userId, run.job.connection.teamId, "backupDb"))) return null;
   return run;
 }
 

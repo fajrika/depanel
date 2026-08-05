@@ -6,7 +6,7 @@ import { logActivity } from "@/lib/power";
 /** GET payment methods for a given amount. */
 export async function GET(request: Request, ctx: { params: Promise<{ accountId: string }> }) {
   const { accountId } = await ctx.params;
-  const c = await accountStaffCtx(accountId);
+  const c = await accountStaffCtx(accountId, "billing");
   if (c instanceof Response) return c;
   const amount = Number(new URL(request.url).searchParams.get("amount") ?? 100000);
   try {
@@ -31,7 +31,7 @@ const schema = z.object({
  */
 export async function POST(request: Request, ctx: { params: Promise<{ accountId: string }> }) {
   const { accountId } = await ctx.params;
-  const c = await accountStaffCtx(accountId);
+  const c = await accountStaffCtx(accountId, "billing");
   if (c instanceof Response) return c;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, message: "Data tidak valid" }, { status: 400 });

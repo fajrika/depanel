@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { staffOf } from "@/lib/team";
+import { canUseFeature } from "@/lib/team";
 import { decryptSecret } from "@/lib/crypto";
 
 /** Step 1: Redirect user to Google OAuth consent screen for a GDrive destination. */
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   if (!destId) return NextResponse.json({ ok: false, message: "destId wajib" }, { status: 400 });
 
   const dest = await prisma.dbDest.findUnique({ where: { id: destId } });
-  if (!dest || !dest.teamId || !(await staffOf(user.id, dest.teamId))) {
+  if (!dest || !dest.teamId || !(await canUseFeature(user.id, dest.teamId, "backupDb"))) {
     return NextResponse.json({ ok: false, message: "Koneksi tujuan tidak ditemukan / bukan wewenang Anda" }, { status: 403 });
   }
   if (dest.type !== "gdrive") {

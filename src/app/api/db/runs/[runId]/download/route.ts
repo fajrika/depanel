@@ -4,7 +4,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { staffOf } from "@/lib/team";
+import { canUseFeature } from "@/lib/team";
 import { fetchBackup, decompressBackup, destCfgFrom } from "@/lib/dbbackup";
 
 export async function GET(req: Request, ctx: { params: Promise<{ runId: string }> }) {
@@ -16,7 +16,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ runId: string }
     include: { job: { include: { connection: { select: { teamId: true } } } } },
   });
   if (!run?.job.connection.teamId) return NextResponse.json({ ok: false, message: "Run tidak ditemukan" }, { status: 404 });
-  if (!(await staffOf(user.id, run.job.connection.teamId))) {
+  if (!(await canUseFeature(user.id, run.job.connection.teamId, "backupDb"))) {
     return NextResponse.json({ ok: false, message: "Hanya owner/admin tim" }, { status: 403 });
   }
   if (!run.location) {

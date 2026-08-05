@@ -1,7 +1,7 @@
 // Shared guard for per-server depa passthrough routes (route handlers only).
 import { NextResponse } from "next/server";
 import { prisma } from "./db";
-import { staffOf, canTouchServer } from "./team";
+import { staffOf, canTouchServer, canUseFeature, type FeatureCap } from "./team";
 import { clientForAccount, type PowerAction } from "./power";
 import type { DepaClient } from "./depa";
 import { getCurrentUser } from "./auth";
@@ -44,14 +44,17 @@ export async function serverCtx(
   return { user, server: { id: s.id, uuid: s.uuid, hostname: s.hostname, accountId: s.accountId, teamId: s.account.teamId }, client };
 }
 
-/** Resolve an account + client, requiring the user to be owner/admin of the account's team. */
-export async function accountStaffCtx(accountId: string): Promise<{ user: { id: string }; teamId: string; client: DepaClient } | NextResponse> {
+/**
+ * Resolve an account + client, requiring the user to be staff OR a member with
+ * the given feature capability on the account's team.
+ */
+export async function accountStaffCtx(accountId: string, cap: FeatureCap = "accounts"): Promise<{ user: { id: string }; teamId: string; client: DepaClient } | NextResponse> {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
   const acc = await prisma.depaAccount.findUnique({ where: { id: accountId }, select: { teamId: true } });
   if (!acc?.teamId) return NextResponse.json({ ok: false, message: "Akun tidak ditemukan" }, { status: 404 });
-  if (!(await staffOf(user.id, acc.teamId))) {
-    return NextResponse.json({ ok: false, message: "Hanya owner/admin tim" }, { status: 403 });
+  if (!(await canUseFeature(user.id, acc.teamId, cap))) {
+    return NextResponse.json({ ok: false, message: "Anda tidak punya akses ke fitur ini" }, { status: 403 });
   }
   const client = await clientForAccount(accountId);
   return { user: { id: user.id }, teamId: acc.teamId, client };

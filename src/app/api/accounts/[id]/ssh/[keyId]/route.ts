@@ -4,7 +4,7 @@ import { logActivity } from "@/lib/power";
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string; keyId: string }> }) {
   const { id, keyId } = await ctx.params;
-  const c = await accountStaffCtx(id);
+  const c = await accountStaffCtx(id, "infra");
   if (c instanceof Response) return c;
   try {
     await c.client.sshKeyDelete(keyId);

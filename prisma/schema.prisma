@@ -81,9 +81,16 @@ model TeamMember {
   userId         String
   user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   role           String             @default("member") // "owner" (tepat 1) | "admin" | "member"
-  canViewBilling Boolean            @default(false) // owner/admin selalu boleh; member sesuai flag
-  canSchedule    Boolean            @default(true) // boleh mengatur jadwal nyala-mati
-  canBackup      Boolean            @default(true) // boleh membuka/mengelola tab Backup
+  canViewBilling Boolean            @default(false) // member boleh melihat Saldo
+  canViewCost    Boolean            @default(false) // member boleh melihat Biaya
+  canViewReports Boolean            @default(false) // member boleh melihat Laporan
+  canSchedule    Boolean            @default(true) // member boleh mengatur jadwal nyala-mati
+  canBackup      Boolean            @default(true) // member boleh membuka/mengelola tab Backup
+  canBackupDb    Boolean            @default(false) // member boleh membuka/mengelola Backup DB
+  canSsh         Boolean            @default(false) // member boleh membuka/mengelola SSH Koneksi
+  canInfra       Boolean            @default(false) // member boleh membuka halaman Infra
+  canAccounts    Boolean            @default(false) // member boleh membuka/mengelola Akun API
+  canNotify      Boolean            @default(false) // member boleh membuka halaman Notifikasi
   serverHides    MemberServerHide[]
 
   @@unique([teamId, userId])

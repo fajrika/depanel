@@ -5,7 +5,7 @@ import { logActivity } from "@/lib/power";
 
 export async function GET(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const c = await accountStaffCtx(id);
+  const c = await accountStaffCtx(id, "infra");
   if (c instanceof Response) return c;
   const loc = new URL(request.url).searchParams.get("location_id");
   try {
@@ -28,7 +28,7 @@ const schema = z.object({
 
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const c = await accountStaffCtx(id);
+  const c = await accountStaffCtx(id, "infra");
   if (c instanceof Response) return c;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, message: "Data tidak valid" }, { status: 400 });

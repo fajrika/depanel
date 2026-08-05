@@ -20,6 +20,11 @@ node /opt/prisma/node_modules/prisma/build/index.js db push \
 echo "→ Applying destPath backfill..."
 node scripts/backfill-destpath.cjs --apply
 
+# After the per-feature permission split, preserve legacy access: members who had
+# the "saldo" flag also get biaya+laporan. Idempotent no-op on later boots.
+echo "→ Backfilling per-feature permissions from legacy billing flag..."
+node scripts/backfill-perms.cjs
+
 # Seed a default admin on the very first boot (no-op once any user exists).
 node dist/seed.cjs
 

@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { staffOf } from "@/lib/team";
+import { canUseFeature } from "@/lib/team";
 import { encryptSecret } from "@/lib/crypto";
 
 async function guardDest(userId: string, destId: string) {
   const dest = await prisma.dbDest.findUnique({ where: { id: destId } });
   if (!dest?.teamId) return null;
-  if (!(await staffOf(userId, dest.teamId))) return null;
+  if (!(await canUseFeature(userId, dest.teamId, "backupDb"))) return null;
   return dest;
 }
 

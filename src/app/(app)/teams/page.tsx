@@ -8,8 +8,15 @@ type Member = {
   email: string;
   role: string;
   canViewBilling: boolean;
+  canViewCost: boolean;
+  canViewReports: boolean;
   canSchedule: boolean;
   canBackup: boolean;
+  canBackupDb: boolean;
+  canSsh: boolean;
+  canInfra: boolean;
+  canAccounts: boolean;
+  canNotify: boolean;
   hiddenServerIds: string[];
 };
 type Team = {
@@ -231,6 +238,76 @@ export default function TeamsPage() {
                                     className="h-3 w-3 accent-emerald-600"
                                   />
                                   backup
+                                </label>
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh melihat halaman Biaya">
+                                  <input
+                                    type="checkbox"
+                                    checked={m.canViewCost}
+                                    disabled={busy}
+                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canViewCost: !m.canViewCost })}
+                                    className="h-3 w-3 accent-emerald-600"
+                                  />
+                                  biaya
+                                </label>
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh melihat halaman Laporan">
+                                  <input
+                                    type="checkbox"
+                                    checked={m.canViewReports}
+                                    disabled={busy}
+                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canViewReports: !m.canViewReports })}
+                                    className="h-3 w-3 accent-emerald-600"
+                                  />
+                                  laporan
+                                </label>
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh membuka/mengelola Backup DB">
+                                  <input
+                                    type="checkbox"
+                                    checked={m.canBackupDb}
+                                    disabled={busy}
+                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canBackupDb: !m.canBackupDb })}
+                                    className="h-3 w-3 accent-emerald-600"
+                                  />
+                                  backup-db
+                                </label>
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh membuka/mengelola SSH Koneksi + monitoring">
+                                  <input
+                                    type="checkbox"
+                                    checked={m.canSsh}
+                                    disabled={busy}
+                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canSsh: !m.canSsh })}
+                                    className="h-3 w-3 accent-emerald-600"
+                                  />
+                                  ssh
+                                </label>
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh membuka halaman Infra">
+                                  <input
+                                    type="checkbox"
+                                    checked={m.canInfra}
+                                    disabled={busy}
+                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canInfra: !m.canInfra })}
+                                    className="h-3 w-3 accent-emerald-600"
+                                  />
+                                  infra
+                                </label>
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh membuka/mengelola Akun API">
+                                  <input
+                                    type="checkbox"
+                                    checked={m.canAccounts}
+                                    disabled={busy}
+                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canAccounts: !m.canAccounts })}
+                                    className="h-3 w-3 accent-emerald-600"
+                                  />
+                                  akun-api
+                                </label>
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh membuka halaman Notifikasi">
+                                  <input
+                                    type="checkbox"
+                                    checked={m.canNotify}
+                                    disabled={busy}
+                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canNotify: !m.canNotify })}
+                                    className="h-3 w-3 accent-emerald-600"
+                                  />
+                                  notifikasi
                                 </label>
                                 <button
                                   onClick={() => setServerEditor(serverEditor === `${t.id}:${m.id}` ? null : `${t.id}:${m.id}`)}

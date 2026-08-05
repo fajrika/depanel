@@ -18,14 +18,60 @@ export function isStaff(role: TeamRole | string): boolean {
   return role === "owner" || role === "admin";
 }
 
-export interface ActiveTeam {
+export type FeatureCap =
+  | "billing"
+  | "cost"
+  | "reports"
+  | "schedule"
+  | "backup"
+  | "backupDb"
+  | "ssh"
+  | "infra"
+  | "accounts"
+  | "notify";
+
+/** Kolom TeamMember yang menjadi sumber kebenaran tiap fitur. */
+export const FEATURE_FIELD: Record<FeatureCap, keyof CapRow> = {
+  billing: "canViewBilling",
+  cost: "canViewCost",
+  reports: "canViewReports",
+  schedule: "canSchedule",
+  backup: "canBackup",
+  backupDb: "canBackupDb",
+  ssh: "canSsh",
+  infra: "canInfra",
+  accounts: "canAccounts",
+  notify: "canNotify",
+};
+
+export const ALL_CAPS = Object.keys(FEATURE_FIELD) as FeatureCap[];
+
+/** Baris izin per-member (role + semua flag). */
+export type CapRow = {
+  role: string;
+  canViewBilling: boolean;
+  canViewCost: boolean;
+  canViewReports: boolean;
+  canSchedule: boolean;
+  canBackup: boolean;
+  canBackupDb: boolean;
+  canSsh: boolean;
+  canInfra: boolean;
+  canAccounts: boolean;
+  canNotify: boolean;
+};
+
+/** Staff (owner/admin) selalu punya semua izin; member mengikuti flag-nya. */
+export function featureAllowed(row: CapRow, cap: FeatureCap): boolean {
+  if (isStaff(row.role)) return true;
+  return row[FEATURE_FIELD[cap]] as boolean;
+}
+
+export interface ActiveTeam extends CapRow {
   id: string;
   name: string;
   isPersonal: boolean;
   role: TeamRole;
-  canViewBilling: boolean;
-  canSchedule: boolean;
-  canBackup: boolean;
 }
 
 /** Pastikan user punya tim pribadi; buat kalau belum ada. */
@@ -64,7 +110,7 @@ export async function getMyTeams(userId: string) {
     .sort((a, b) => (a.isPersonal === b.isPersonal ? a.name.localeCompare(b.name) : a.isPersonal ? -1 : 1));
 }
 
-function toActiveTeam(m: { role: string; canViewBilling: boolean; canSchedule: boolean; canBackup: boolean }, team: { id: string; name: string; isPersonal: boolean }): ActiveTeam {
+function toActiveTeam(m: CapRow, team: { id: string; name: string; isPersonal: boolean }): ActiveTeam {
   const staff = isStaff(m.role);
   return {
     id: team.id,
@@ -72,8 +118,15 @@ function toActiveTeam(m: { role: string; canViewBilling: boolean; canSchedule: b
     isPersonal: team.isPersonal,
     role: m.role as TeamRole,
     canViewBilling: staff || m.canViewBilling,
+    canViewCost: staff || m.canViewCost,
+    canViewReports: staff || m.canViewReports,
     canSchedule: staff || m.canSchedule,
     canBackup: staff || m.canBackup,
+    canBackupDb: staff || m.canBackupDb,
+    canSsh: staff || m.canSsh,
+    canInfra: staff || m.canInfra,
+    canAccounts: staff || m.canAccounts,
+    canNotify: staff || m.canNotify,
   };
 }
 
@@ -101,8 +154,15 @@ export async function getActiveTeam(user: { id: string; name: string; lastTeamId
     isPersonal: personal.isPersonal,
     role: "owner",
     canViewBilling: true,
+    canViewCost: true,
+    canViewReports: true,
     canSchedule: true,
     canBackup: true,
+    canBackupDb: true,
+    canSsh: true,
+    canInfra: true,
+    canAccounts: true,
+    canNotify: true,
   };
 }
 
@@ -115,6 +175,13 @@ export async function membershipOf(userId: string, teamId: string) {
 export async function staffOf(userId: string, teamId: string) {
   const m = await membershipOf(userId, teamId);
   return m && isStaff(m.role) ? m : null;
+}
+
+/** Apakah user boleh memakai fitur tertentu di tim ini (staff selalu boleh)? */
+export async function canUseFeature(userId: string, teamId: string, cap: FeatureCap): Promise<boolean> {
+  const m = await membershipOf(userId, teamId);
+  if (!m) return false;
+  return featureAllowed(m, cap);
 }
 
 /**

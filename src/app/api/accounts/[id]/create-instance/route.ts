@@ -19,7 +19,7 @@ const schema = z.object({
 
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const c = await accountStaffCtx(id);
+  const c = await accountStaffCtx(id, "infra");
   if (c instanceof Response) return c;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
