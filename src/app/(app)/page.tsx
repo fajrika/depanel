@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import ServerMonitor, { type PanelTab } from "@/components/ServerMonitor";
+import SshMonitorPanel, { type SshLastSample } from "@/components/SshMonitorPanel";
 
 type Server = {
   id: string;
@@ -23,6 +24,17 @@ type Server = {
   desiredState: "running" | "stopped" | null;
 };
 
+type SshConn = {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  authType: string;
+  createdAt: string;
+  last: SshLastSample | null;
+};
+
 function StatusBadge({ status }: { status: string }) {
   const s = status.toLowerCase();
   const on = s === "running";
@@ -37,6 +49,23 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${cls}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
       {status}
+    </span>
+  );
+}
+
+function SshStatus({ ok }: { ok: boolean | null }) {
+  const on = ok === true;
+  const off = ok === false;
+  const dot = on ? "bg-emerald-500" : off ? "bg-red-500" : "bg-slate-400";
+  const cls = on
+    ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:ring-emerald-900"
+    : off
+      ? "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/60 dark:text-red-400 dark:ring-red-900"
+      : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700";
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${cls}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+      {ok === true ? "Hidup" : ok === false ? "Gagal" : "Belum disampling"}
     </span>
   );
 }
@@ -86,6 +115,9 @@ export default function Dashboard() {
   const [canBackup, setCanBackup] = useState(true);
   const [teamName, setTeamName] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedSsh, setSelectedSsh] = useState<string | null>(null);
+  const [sshList, setSshList] = useState<SshConn[]>([]);
+  const [sshCollapsed, setSshCollapsed] = useState(false);
   const [panelTab, setPanelTab] = useState<PanelTab>("monitoring");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<Set<string>>(new Set()); // F5: seleksi aksi masal
@@ -159,6 +191,24 @@ export default function Dashboard() {
       .catch(() => {});
   }, [load]);
 
+  // Koneksi SSH (monitoring) — hanya untuk owner/admin tim aktif.
+  useEffect(() => {
+    if (!isStaff) {
+      setSshList([]);
+      return;
+    }
+    fetch("/api/db/ssh/monitor")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.ok) setSshList(d.data ?? []); })
+      .catch(() => {});
+  }, [isStaff]);
+
+  // Dukungan deep-link ?ssh=<id> (tombol "Pantau" dari halaman SSH Koneksi).
+  useEffect(() => {
+    const sshId = new URLSearchParams(window.location.search).get("ssh");
+    if (sshId) setSelectedSsh(sshId);
+  }, []);
+
   function selectServer(id: string, tab: PanelTab = "monitoring") {
     if (selectedId === id && tab === panelTab) {
       // klik ulang server yang sedang dipantau → tutup panel
@@ -167,7 +217,18 @@ export default function Dashboard() {
     }
     setPanelTab(tab);
     setSelectedId(id);
+    setSelectedSsh(null);
     // di HP panel menggantikan daftar — pastikan mulai dari atas
+    if (window.innerWidth < 1024) window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function selectSsh(id: string) {
+    if (selectedSsh === id) {
+      setSelectedSsh(null);
+      return;
+    }
+    setSelectedSsh(id);
+    setSelectedId(null);
     if (window.innerWidth < 1024) window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -309,7 +370,7 @@ export default function Dashboard() {
           </div>
           <div className="hidden flex-1 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 lg:block" />
         </div>
-      ) : servers.length === 0 ? (
+      ) : servers.length === 0 && sshList.length === 0 ? (
         <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 p-10 text-center dark:border-slate-700 dark:bg-slate-900/50">
           <p className="text-3xl">🖥️</p>
           <p className="mt-2 font-medium text-slate-700 dark:text-slate-200">Belum ada server</p>
@@ -485,28 +546,104 @@ export default function Dashboard() {
               </section>
               );
             })}
+
+            {isStaff && sshList.length > 0 && (
+              <section key="ssh" className="mb-5">
+                <button
+                  onClick={() => setSshCollapsed((c) => !c)}
+                  className="mb-3 flex w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-left shadow-sm transition hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-600"
+                >
+                  <span className={`text-slate-400 transition-transform duration-200 ${sshCollapsed ? "-rotate-90" : ""}`}>▾</span>
+                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-100 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                    SSH
+                  </span>
+                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Koneksi via SSH</span>
+                  <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500">{sshList.length} koneksi</span>
+                </button>
+                <div className={`space-y-4 overflow-hidden transition-all duration-300 ${sshCollapsed ? "max-h-0 opacity-0" : "max-h-[4000px] opacity-100"}`}>
+                  {sshList.map((c) => {
+                    const active = selectedSsh === c.id;
+                    const ok = c.last?.ok ?? null;
+                    return (
+                      <div
+                        key={c.id}
+                        onClick={() => selectSsh(c.id)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => e.key === "Enter" && selectSsh(c.id)}
+                        className={`group cursor-pointer rounded-2xl border bg-white p-4 transition-all duration-300 dark:bg-slate-900 ${
+                          active
+                            ? "-translate-y-0.5 border-emerald-400 shadow-lg shadow-emerald-100 ring-2 ring-emerald-300 dark:border-emerald-500 dark:shadow-emerald-950 dark:ring-emerald-700"
+                            : "border-slate-200 shadow-sm hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:hover:border-slate-600"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="truncate text-[15px] font-semibold text-slate-900 dark:text-slate-100">{c.name}</span>
+                              <SshStatus ok={ok} />
+                            </div>
+                            <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+                              {c.username}@{c.host}:{c.port}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-slate-100 pt-2.5 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
+                          <span>
+                            cek terakhir:{" "}
+                            {c.last ? new Date(c.last.at).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "—"}
+                          </span>
+                          <span className="tabular-nums">
+                            {c.last?.ok
+                              ? `CPU ${c.last.cpu ?? "—"}% · RAM ${c.last.memPct ?? "—"}%`
+                              : c.last?.error ?? "belum ada sampel"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
           </div>
 
           {/* KANAN — panel monitoring / placeholder */}
           <div className="w-full min-w-0 flex-1">
-            {selected ? (
-              <div key={selected.id} className="animate-slide-in-right">
+            {(selected || selectedSsh) ? (
+              <div key={selected ? selected.id : `ssh-${selectedSsh}`} className="animate-slide-in-right">
                 <button
-                  onClick={() => setSelectedId(null)}
+                  onClick={() => { setSelectedId(null); setSelectedSsh(null); }}
                   className="mb-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 lg:hidden"
                 >
                   ← daftar server
                 </button>
-                <ServerMonitor
-                  serverId={selected.id}
-                  managed={selected.managed}
-                  initialTab={panelTab}
-                  canSchedule={canSchedule}
-                  canBackup={canBackup}
-                  isStaff={isStaff}
-                  onClose={() => setSelectedId(null)}
-                  onScheduleSaved={load}
-                />
+                {selected ? (
+                  <ServerMonitor
+                    serverId={selected.id}
+                    managed={selected.managed}
+                    initialTab={panelTab}
+                    canSchedule={canSchedule}
+                    canBackup={canBackup}
+                    isStaff={isStaff}
+                    onClose={() => setSelectedId(null)}
+                    onScheduleSaved={load}
+                  />
+                ) : (
+                  (() => {
+                    const c = sshList.find((x) => x.id === selectedSsh) ?? null;
+                    return (
+                      <SshMonitorPanel
+                        sshId={selectedSsh ?? ""}
+                        name={c?.name ?? "Koneksi SSH"}
+                        host={c?.host ?? ""}
+                        username={c?.username ?? ""}
+                        port={c?.port ?? 22}
+                        initial={c?.last ?? null}
+                        onClose={() => setSelectedSsh(null)}
+                      />
+                    );
+                  })()
+                )}
               </div>
             ) : (
               /* placeholder hanya untuk desktop — di HP daftar server sudah memenuhi layar */

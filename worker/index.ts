@@ -12,6 +12,7 @@ import { reconcileAll } from "../src/lib/power";
 import { runDueJobs } from "../src/lib/dbbackup";
 import { runAlertChecks } from "../src/lib/alerts";
 import { sampleAllMetrics } from "../src/lib/metrics";
+import { sampleAllSshMetrics } from "../src/lib/sshmon";
 
 const CRON = process.env.RECONCILE_CRON || "*/5 * * * *"; // every 5 minutes
 
@@ -58,9 +59,19 @@ async function sampleMetrics() {
   }
 }
 
+async function sampleSsh() {
+  try {
+    const n = await sampleAllSshMetrics();
+    if (n) console.log(`[${new Date().toISOString()}] metrik SSH tersampel: ${n} koneksi`);
+  } catch (e) {
+    console.error(`[${new Date().toISOString()}] SSH metric sample error:`, (e as Error).message);
+  }
+}
+
 console.log(`🕒 Depa scheduler worker aktif. Reconcile: "${CRON}" · Backup DB: tiap menit · Alert & metrik: tiap 15 menit.`);
 runOnce("startup");
 cron.schedule(CRON, () => runOnce("tick"));
 cron.schedule("* * * * *", () => checkDbBackups());
 cron.schedule("*/15 * * * *", () => checkAlerts());
 cron.schedule("*/15 * * * *", () => sampleMetrics());
+cron.schedule("*/15 * * * *", () => sampleSsh());

@@ -197,6 +197,37 @@ model SshConnection {
   keyPassphraseEnc  String? // AES-256-GCM encrypted passphrase (opsional)
   createdAt         DateTime      @default(now())
   dbConns           DbConnection[]
+  metricSamples     SshMetricSample[]
+}
+
+/// Periodic metric/status sample of an SSH-connected server (collected by the worker).
+/// Values are parsed from read-only /proc + standard utilities on the remote host.
+model SshMetricSample {
+  id           String        @id @default(cuid())
+  sshId        String
+  ssh          SshConnection @relation(fields: [sshId], references: [id], onDelete: Cascade)
+  at           DateTime      @default(now())
+  ok           Boolean // false bila koneksi/eksekusi gagal (error diisi)
+  error        String? // pesan kegagalan (bila ok = false)
+  hostname     String?
+  osName       String? // e.g. "Ubuntu 22.04.3 LTS"
+  kernel       String? // e.g. "6.2.0-1017-azure"
+  cpu          Float? // % CPU terpakai (delta /proc/stat)
+  memPct       Float? // % RAM terpakai
+  memUsedMb    Int? // RAM terpakai (MiB)
+  memTotalMb   Int? // total RAM (MiB)
+  load1        Float?
+  load5        Float?
+  load15       Float?
+  uptimeSec    Int?
+  netInBps     Float? // kecepatan download (byte/s)
+  netOutBps    Float? // kecepatan upload (byte/s)
+  disk         String? // JSON [{mount,sizeMb,usedMb,pct}]
+  topProcs     String? // JSON [{pid,user,cpu,mem,comm}] top 10
+  ports        String? // JSON [{proto,port}] listening
+  failedSvcs   String? // JSON [name] service systemd gagal
+
+  @@index([sshId, at])
 }
 
 /// A scheduled MySQL backup job.
