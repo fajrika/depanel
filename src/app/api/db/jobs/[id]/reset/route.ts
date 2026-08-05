@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { staffOf } from "@/lib/team";
-import { runJob } from "@/lib/dbbackup";
+import { resetStuckJob } from "@/lib/dbbackup";
 import { logActivity } from "@/lib/power";
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -18,18 +18,13 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   if (!(await staffOf(user.id, job.connection.teamId))) {
     return NextResponse.json({ ok: false, message: "Hanya owner/admin tim" }, { status: 403 });
   }
-  const activeRun = await prisma.dbBackupRun.findFirst({ where: { jobId: id, status: "running" } });
-  if (activeRun && Date.now() - new Date(activeRun.startedAt).getTime() < 2 * 60 * 60 * 1000) {
-    return NextResponse.json({ ok: false, message: "Job sedang berjalan" }, { status: 409 });
-  }
 
+  await resetStuckJob(id);
   await logActivity({
     teamId: job.connection.teamId,
     userId: user.id,
-    action: "db-backup-run",
-    message: `Jalankan backup "${job.name}"`,
+    action: "db-backup-reset",
+    message: `Reset status backup "${job.name}" yang macet`,
   });
-  // fire-and-forget: progress terekam di DbBackupRun
-  void runJob(id, "manual");
-  return NextResponse.json({ ok: true, data: { started: true } });
+  return NextResponse.json({ ok: true });
 }

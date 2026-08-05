@@ -18,6 +18,8 @@ export default function AccountsPage() {
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch("/api/accounts");
@@ -28,6 +30,28 @@ export default function AccountsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editId) return;
+    setBusy(true);
+    setMsg(null);
+    const res = await fetch(`/api/accounts/${editId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: editName }),
+    });
+    const d = await res.json();
+    setBusy(false);
+    if (!res.ok || !d.ok) {
+      setMsg(d.message ?? "Gagal menyimpan");
+      return;
+    }
+    setEditId(null);
+    setEditName("");
+    setMsg("Nama akun diperbarui.");
+    load();
+  }
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -123,7 +147,27 @@ export default function AccountsPage() {
             <tbody>
               {accounts.map((a) => (
                 <tr key={a.id} className="border-t border-slate-100 dark:border-slate-800">
-                  <td className="px-4 py-2 font-medium">{a.name}</td>
+                  {editId === a.id ? (
+                    <td className="px-4 py-2">
+                      <form onSubmit={saveEdit} className="flex items-center gap-2">
+                        <input
+                          autoFocus
+                          required
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          className="w-48 rounded-md border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 px-3 py-1.5 text-sm"
+                        />
+                        <button type="submit" disabled={busy} className="text-slate-700 dark:text-slate-200 hover:underline">
+                          Simpan
+                        </button>
+                        <button type="button" onClick={() => setEditId(null)} className="text-slate-500 hover:underline">
+                          Batal
+                        </button>
+                      </form>
+                    </td>
+                  ) : (
+                    <td className="px-4 py-2 font-medium">{a.name}</td>
+                  )}
                   <td className="px-4 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{a.maskedKey}</td>
                   <td className="px-4 py-2">{a.serverCount}</td>
                   <td className="px-4 py-2 text-slate-500 dark:text-slate-400">
@@ -132,6 +176,13 @@ export default function AccountsPage() {
                   <td className="px-4 py-2 text-right">
                     <button onClick={() => sync(a.id)} disabled={busy} className="mr-2 text-slate-700 dark:text-slate-200 hover:underline">
                       Sync
+                    </button>
+                    <button
+                      onClick={() => { setEditId(a.id); setEditName(a.name); }}
+                      disabled={busy}
+                      className="mr-2 text-slate-700 dark:text-slate-200 hover:underline"
+                    >
+                      Edit
                     </button>
                     <button onClick={() => remove(a.id, a.name)} disabled={busy} className="text-red-600 hover:underline">
                       Hapus

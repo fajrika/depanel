@@ -11,19 +11,20 @@ interface GDriveOAuthDest {
   gdriveConnected?: boolean;
 }
 
-/** Get a valid access token for a GDrive job, refreshing if needed. */
-export async function getGDriveOAuthToken(jobId: string): Promise<string> {
-  const job = await prisma.dbBackupJob.findUnique({ where: { id: jobId } });
-  if (!job) throw new Error("Job tidak ditemukan");
+/** Get a valid access token for a GDrive destination, refreshing if needed. */
+export async function getGDriveOAuthToken(destId: string): Promise<string> {
+  const dest = await prisma.dbDest.findUnique({ where: { id: destId } });
+  if (!dest) throw new Error("Koneksi tujuan tidak ditemukan");
+  if (dest.type !== "gdrive") throw new Error("Koneksi tujuan bukan Google Drive");
 
-  const dest = JSON.parse(job.destConfig) as GDriveOAuthDest;
-  const clientId = dest.clientId;
-  const clientSecretEnc = dest.clientSecretEnc;
-  const accessTokenEnc = dest.accessTokenEnc;
-  const refreshTokenEnc = dest.refreshTokenEnc;
+  const cfg = JSON.parse(dest.config) as GDriveOAuthDest;
+  const clientId = cfg.clientId;
+  const clientSecretEnc = cfg.clientSecretEnc;
+  const accessTokenEnc = cfg.accessTokenEnc;
+  const refreshTokenEnc = cfg.refreshTokenEnc;
 
   if (!clientId || !clientSecretEnc || !refreshTokenEnc) {
-    throw new Error("Google Drive belum terkoneksi — silakan login Google dari form edit job");
+    throw new Error("Google Drive belum terkoneksi — silakan login Google dari halaman Tujuan");
   }
 
   const accessToken = accessTokenEnc ? decryptSecret(accessTokenEnc) : "";
@@ -49,7 +50,7 @@ export async function getGDriveOAuthToken(jobId: string): Promise<string> {
   const MAX_RETRIES = 3;
   let lastErr: string = "";
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    console.log(`[GDRIVE] Refreshing OAuth token for job ${jobId} (attempt ${attempt}/${MAX_RETRIES})...`);
+    console.log(`[GDRIVE] Refreshing OAuth token for destination ${destId} (attempt ${attempt}/${MAX_RETRIES})...`);
     const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -75,12 +76,12 @@ export async function getGDriveOAuthToken(jobId: string): Promise<string> {
 
       // If refresh token is revoked, mark as disconnected — no retry
       if (refreshData.error === "invalid_grant") {
-        const updatedDest = { ...dest, gdriveConnected: false };
-        await prisma.dbBackupJob.update({
-          where: { id: jobId },
-          data: { destConfig: JSON.stringify(updatedDest) },
+        const updatedCfg = { ...cfg, gdriveConnected: false };
+        await prisma.dbDest.update({
+          where: { id: destId },
+          data: { config: JSON.stringify(updatedCfg) },
         });
-        throw new Error("Google Drive token expired/revoked — silakan login Google ulang dari form edit job");
+        throw new Error("Google Drive token expired/revoked — silakan login Google ulang dari halaman Tujuan");
       }
 
       // Retry on transient errors (network, 5xx), wait before next attempt
@@ -94,11 +95,11 @@ export async function getGDriveOAuthToken(jobId: string): Promise<string> {
     }
 
     // Success — store refreshed access token
-    console.log(`[GDRIVE] Token refreshed successfully for job ${jobId}`);
-    const updatedDest = { ...dest, accessTokenEnc: encryptSecret(refreshData.access_token) };
-    await prisma.dbBackupJob.update({
-      where: { id: jobId },
-      data: { destConfig: JSON.stringify(updatedDest) },
+    console.log(`[GDRIVE] Token refreshed successfully for destination ${destId}`);
+    const updatedCfg = { ...cfg, accessTokenEnc: encryptSecret(refreshData.access_token) };
+    await prisma.dbDest.update({
+      where: { id: destId },
+      data: { config: JSON.stringify(updatedCfg) },
     });
     return refreshData.access_token;
   }

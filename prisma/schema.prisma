@@ -38,6 +38,8 @@ model Team {
   members       TeamMember[]
   accounts      DepaAccount[]
   dbConnections DbConnection[]
+  sshConnections SshConnection[]
+  dbDests       DbDest[]
   activityLogs  ActivityLog[]
   notifyChannels NotifyChannel[]
 }
@@ -174,8 +176,27 @@ model DbConnection {
   port        Int           @default(3306)
   username    String
   passwordEnc String // AES-256-GCM encrypted
+  sshId       String? // SSH jump host tunnel (optional)
+  ssh         SshConnection? @relation(fields: [sshId], references: [id], onDelete: SetNull)
   createdAt   DateTime      @default(now())
   jobs        DbBackupJob[]
+}
+
+/// A saved SSH jump-host connection (credentials encrypted at rest). Team-scoped.
+model SshConnection {
+  id                String        @id @default(cuid())
+  teamId            String?
+  team              Team?         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name              String
+  host              String
+  port              Int           @default(22)
+  username          String
+  authType          String        @default("password") // "password" | "key"
+  passwordEnc       String // AES-256-GCM encrypted (kosong bila authType = key)
+  privateKeyEnc     String? // AES-256-GCM encrypted PEM private key (bila authType = key)
+  keyPassphraseEnc  String? // AES-256-GCM encrypted passphrase (opsional)
+  createdAt         DateTime      @default(now())
+  dbConns           DbConnection[]
 }
 
 /// A scheduled MySQL backup job.
@@ -190,14 +211,30 @@ model DbBackupJob {
   dayOn        Int? // weekly: 0-6 (0=Sunday); monthly: 1-28 (tanggal)
   cronExpr     String? // for scheduleType "cron"
   timezone     String       @default("Asia/Jakarta")
-  destType     String // "local" | "ftp" | "s3" (SMB = mount ke path lokal)
-  destConfig   String // JSON config; secret fields encrypted
+  destType     String // "local" | "ftp" | "s3" | "gdrive"
+  destId       String?
+  dest         DbDest?      @relation(fields: [destId], references: [id], onDelete: SetNull)
+  destPath     String? // folder per job: local path / ftp folder / s3 prefix / gdrive folderId
   retention    Int          @default(0) // 0 = keep all, N = keep last N backups
+  compression  String       @default("brotli") // none | gzip | brotli | xz | xz_extreme
   enabled      Boolean      @default(true)
   lastRunAt    DateTime?
   lastStatus   String? // "success" | "failed" | "running"
   createdAt    DateTime     @default(now())
   runs         DbBackupRun[]
+}
+
+/// A backup destination connection (FTP / S3 / GDrive). Credentials only —
+/// the target folder/path stays on the job (DbBackupJob.destPath).
+model DbDest {
+  id        String       @id @default(cuid())
+  teamId    String?
+  team      Team?        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  type      String // "ftp" | "s3" | "gdrive"
+  name      String
+  config    String // JSON config; secret fields encrypted (incl. GDrive OAuth tokens)
+  createdAt DateTime     @default(now())
+  jobs      DbBackupJob[]
 }
 
 /// One execution of a backup job.
@@ -207,7 +244,8 @@ model DbBackupRun {
   job       DbBackupJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   status    String      @default("running") // running | success | failed
   message   String?
-  sizeBytes Int?
+  sizeBytes Int? // ukuran file terkompresi
+  sqlSizeBytes Int? // ukuran SQL asli (sebelum kompresi)
   location  String? // final path/URL of the backup file
   startedAt DateTime    @default(now())
   endedAt   DateTime?

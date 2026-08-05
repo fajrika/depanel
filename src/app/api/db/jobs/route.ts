@@ -4,7 +4,6 @@ import { CronExpressionParser } from "cron-parser";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { getActiveTeam } from "@/lib/team";
-import { encryptSecret } from "@/lib/crypto";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -17,35 +16,29 @@ export async function GET() {
     orderBy: { createdAt: "asc" },
     include: {
       connection: { select: { id: true, name: true, host: true } },
+      dest: { select: { id: true, type: true, name: true } },
     },
   });
-  const data = jobs.map((j) => {
-    const dest = JSON.parse(j.destConfig) as Record<string, unknown>;
-    // never expose encrypted/secret fields to the browser
-    delete dest.passwordEnc;
-    delete dest.secretKeyEnc;
-    delete dest.serviceAccountKeyEnc;
-    delete dest.clientSecretEnc;
-    delete dest.accessTokenEnc;
-    delete dest.refreshTokenEnc;
-    return {
-      id: j.id,
-      name: j.name,
-      connection: j.connection,
-      databases: JSON.parse(j.databases) as string[],
-      scheduleType: j.scheduleType,
-      timeAt: j.timeAt,
-      dayOn: j.dayOn,
-      cronExpr: j.cronExpr,
-      timezone: j.timezone,
-      destType: j.destType,
-      dest,
-      retention: j.retention,
-      enabled: j.enabled,
-      lastRunAt: j.lastRunAt,
-      lastStatus: j.lastStatus,
-    };
-  });
+  const data = jobs.map((j) => ({
+    id: j.id,
+    name: j.name,
+    connection: j.connection,
+    databases: JSON.parse(j.databases) as string[],
+    scheduleType: j.scheduleType,
+    timeAt: j.timeAt,
+    dayOn: j.dayOn,
+    cronExpr: j.cronExpr,
+    timezone: j.timezone,
+    destType: j.destType,
+    destId: j.destId,
+    destPath: j.destPath,
+    dest: j.dest,
+    retention: j.retention,
+    compression: j.compression,
+    enabled: j.enabled,
+    lastRunAt: j.lastRunAt,
+    lastStatus: j.lastStatus,
+  }));
   return NextResponse.json({ ok: true, data });
 }
 
@@ -61,8 +54,10 @@ const createSchema = z
     cronExpr: z.string().optional(),
     timezone: z.string().default("Asia/Jakarta"),
     destType: z.enum(["local", "ftp", "s3", "gdrive"]),
-    dest: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
+    destId: z.string().optional().nullable(),
+    destPath: z.string().optional().nullable(),
     retention: z.number().int().min(0).max(1000).default(0), // 0 = keep all, N = keep last N
+    compression: z.enum(["none", "gzip", "brotli", "xz", "xz_extreme"]).default("brotli"),
   })
   .superRefine((v, ctx) => {
     if (v.scheduleType === "cron") {
@@ -81,14 +76,10 @@ const createSchema = z
       ctx.addIssue({ code: "custom", message: "Pilih hari untuk backup mingguan" });
     if (v.scheduleType === "monthly" && (v.dayOn === undefined || v.dayOn < 1))
       ctx.addIssue({ code: "custom", message: "Pilih tanggal (1-28) untuk backup bulanan" });
-    if (v.destType === "local" && !v.dest.path)
-      ctx.addIssue({ code: "custom", message: "Path tujuan wajib diisi" });
-    if (v.destType === "ftp" && (!v.dest.host || !v.dest.username))
-      ctx.addIssue({ code: "custom", message: "Host & username FTP wajib diisi" });
-    if (v.destType === "s3" && (!v.dest.bucket || !v.dest.accessKeyId))
-      ctx.addIssue({ code: "custom", message: "Bucket & access key S3 wajib diisi" });
-    if (v.destType === "gdrive" && !v.dest.clientId)
-      ctx.addIssue({ code: "custom", message: "Google OAuth Client ID wajib diisi" });
+    if (v.destType === "local" && !v.destPath)
+      ctx.addIssue({ code: "custom", message: "Path folder tujuan wajib diisi" });
+    if (v.destType !== "local" && !v.destId)
+      ctx.addIssue({ code: "custom", message: "Pilih koneksi tujuan backup" });
   });
 
 export async function POST(request: Request) {
@@ -108,25 +99,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "Koneksi tidak ditemukan di tim ini" }, { status: 404 });
   }
 
-  // encrypt secrets inside dest config before storing
-  const dest: Record<string, unknown> = { ...v.dest };
-  if (typeof dest.password === "string" && dest.password) {
-    dest.passwordEnc = encryptSecret(dest.password);
-    delete dest.password;
+  if (v.destId) {
+    const dest = await prisma.dbDest.findUnique({ where: { id: v.destId } });
+    if (!dest || dest.teamId !== team.id) {
+      return NextResponse.json({ ok: false, message: "Koneksi tujuan tidak ditemukan di tim ini" }, { status: 404 });
+    }
   }
-  if (typeof dest.secretKey === "string" && dest.secretKey) {
-    dest.secretKeyEnc = encryptSecret(dest.secretKey);
-    delete dest.secretKey;
-  }
-  if (typeof dest.clientSecret === "string" && dest.clientSecret) {
-    dest.clientSecretEnc = encryptSecret(dest.clientSecret);
-    delete dest.clientSecret;
-  }
-  // strip OAuth tokens from creation (they come from callback only)
-  delete dest.accessTokenEnc;
-  delete dest.refreshTokenEnc;
-  delete dest.gdriveConnected;
-  delete dest.gdriveUserEmail;
 
   const job = await prisma.dbBackupJob.create({
     data: {
@@ -139,8 +117,10 @@ export async function POST(request: Request) {
       cronExpr: v.cronExpr ?? null,
       timezone: v.timezone,
       destType: v.destType,
-      destConfig: JSON.stringify(dest),
+      destId: v.destId ?? null,
+      destPath: v.destPath ?? null,
       retention: v.retention,
+      compression: v.compression,
     },
   });
   return NextResponse.json({ ok: true, data: { id: job.id } });

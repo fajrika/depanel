@@ -4,7 +4,6 @@ import { CronExpressionParser } from "cron-parser";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { staffOf } from "@/lib/team";
-import { encryptSecret } from "@/lib/crypto";
 
 async function guardJob(userId: string, jobId: string) {
   const job = await prisma.dbBackupJob.findUnique({
@@ -29,8 +28,10 @@ const patchSchema = z
     cronExpr: z.string().optional().nullable(),
     timezone: z.string().optional(),
     destType: z.enum(["local", "ftp", "s3", "gdrive"]).optional(),
-    dest: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+    destId: z.string().optional().nullable(),
+    destPath: z.string().optional().nullable(),
     retention: z.number().int().min(0).max(1000).optional(),
+    compression: z.enum(["none", "gzip", "brotli", "xz", "xz_extreme"]).optional(),
   })
   .superRefine((v, ctx) => {
     if (v.scheduleType === "cron") {
@@ -44,10 +45,10 @@ const patchSchema = z
     if (v.scheduleType === "weekly" && v.dayOn === undefined) ctx.addIssue({ code: "custom", message: "Pilih hari untuk backup mingguan" });
     if (v.scheduleType === "monthly" && (v.dayOn === undefined || v.dayOn === null || (typeof v.dayOn === "number" && v.dayOn < 1)))
       ctx.addIssue({ code: "custom", message: "Pilih tanggal (1-28) untuk backup bulanan" });
-    if (v.destType === "local" && v.dest && !v.dest.path) ctx.addIssue({ code: "custom", message: "Path tujuan wajib diisi" });
-    if (v.destType === "ftp" && v.dest && (!v.dest.host || !v.dest.username)) ctx.addIssue({ code: "custom", message: "Host & username FTP wajib diisi" });
-    if (v.destType === "s3" && v.dest && (!v.dest.bucket || !v.dest.accessKeyId)) ctx.addIssue({ code: "custom", message: "Bucket & access key S3 wajib diisi" });
-    if (v.destType === "gdrive" && v.dest && !v.dest.clientId) ctx.addIssue({ code: "custom", message: "Google OAuth Client ID wajib diisi" });
+    if (v.destType === "local" && v.destPath !== undefined && !v.destPath)
+      ctx.addIssue({ code: "custom", message: "Path folder tujuan wajib diisi" });
+    if (v.destType && v.destType !== "local" && v.destId !== undefined && !v.destId)
+      ctx.addIssue({ code: "custom", message: "Pilih koneksi tujuan backup" });
   });
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -68,6 +69,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   if (v.name !== undefined) data.name = v.name;
   if (v.timezone !== undefined) data.timezone = v.timezone;
   if (v.retention !== undefined) data.retention = v.retention;
+  if (v.compression !== undefined) data.compression = v.compression;
 
   if (v.connectionId !== undefined) {
     const conn = await prisma.dbConnection.findUnique({ where: { id: v.connectionId } });
@@ -83,28 +85,16 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   if (v.dayOn !== undefined) data.dayOn = v.dayOn;
   if (v.cronExpr !== undefined) data.cronExpr = v.cronExpr;
   if (v.destType !== undefined) data.destType = v.destType;
-
-  if (v.dest !== undefined) {
-    const dest: Record<string, unknown> = { ...v.dest };
-    if (typeof dest.password === "string" && dest.password) {
-      dest.passwordEnc = encryptSecret(dest.password);
-      delete dest.password;
+  if (v.destId !== undefined) {
+    if (v.destId) {
+      const dest = await prisma.dbDest.findUnique({ where: { id: v.destId } });
+      if (!dest || dest.teamId !== job.connection.teamId) {
+        return NextResponse.json({ ok: false, message: "Koneksi tujuan tidak ditemukan di tim ini" }, { status: 404 });
+      }
     }
-    if (typeof dest.secretKey === "string" && dest.secretKey) {
-      dest.secretKeyEnc = encryptSecret(dest.secretKey);
-      delete dest.secretKey;
-    }
-    if (typeof dest.clientSecret === "string" && dest.clientSecret) {
-      dest.clientSecretEnc = encryptSecret(dest.clientSecret);
-      delete dest.clientSecret;
-    }
-    // strip OAuth tokens from manual edit (they come from callback only)
-    delete dest.accessTokenEnc;
-    delete dest.refreshTokenEnc;
-    delete dest.gdriveConnected;
-    delete dest.gdriveUserEmail;
-    data.destConfig = JSON.stringify(dest);
+    data.destId = v.destId;
   }
+  if (v.destPath !== undefined) data.destPath = v.destPath;
 
   await prisma.dbBackupJob.update({ where: { id }, data });
   return NextResponse.json({ ok: true });

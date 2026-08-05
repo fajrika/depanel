@@ -4,9 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import TimeField from "@/components/TimeField";
 
-type Conn = { id: string; name: string; host: string; port: number; username: string; jobCount: number };
+type Conn = { id: string; name: string; host: string; port: number; username: string; sshId?: string | null; ssh?: { id: string; name: string } | null; jobCount: number };
+type Ssh = { id: string; name: string; host: string; port: number; username: string; connCount: number };
 type Team = { id: string; name: string };
-type Run = { id: string; status: string; message: string | null; sizeBytes: number | null; location: string | null; startedAt: string; endedAt: string | null };
+type DestCfg = { host?: string; port?: number; secure?: boolean; username?: string; bucket?: string; region?: string; endpoint?: string; accessKeyId?: string; clientId?: string; gdriveConnected?: boolean; gdriveUserEmail?: string };
+type Dest = { id: string; type: "ftp" | "s3" | "gdrive"; name: string; jobCount: number; config: DestCfg };
+type Run = { id: string; status: string; message: string | null; sizeBytes: number | null; sqlSizeBytes: number | null; location: string | null; startedAt: string; endedAt: string | null };
 type Job = {
   id: string;
   name: string;
@@ -17,8 +20,11 @@ type Job = {
   dayOn: number | null;
   cronExpr: string | null;
   destType: string;
-  dest: Record<string, unknown>;
+  destId: string | null;
+  destPath: string | null;
+  dest: { id: string; type: string; name: string } | null;
   retention: number;
+  compression: string;
   enabled: boolean;
   lastRunAt: string | null;
   lastStatus: string | null;
@@ -63,16 +69,18 @@ function scheduleLabel(j: Job): string {
 }
 
 function destLabel(j: Job): string {
-  if (j.destType === "local") return `📁 ${j.dest.path}`;
-  if (j.destType === "ftp") return `FTP ${j.dest.host}`;
-  if (j.destType === "gdrive") return "📂 Google Drive";
-  return `S3 ${j.dest.bucket}`;
+  if (j.destType === "local") return `📁 ${j.destPath}`;
+  if (j.destType === "gdrive") return `📂 ${j.dest?.name ?? "Google Drive"}`;
+  if (j.destType === "ftp") return `🌐 ${j.dest?.name ?? "FTP"}`;
+  return `☁️ ${j.dest?.name ?? "S3"}`;
 }
 
 export default function DbBackupPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<"koneksi" | "job">("koneksi");
+  const [tab, setTab] = useState<"sumber" | "tujuan" | "job">("sumber");
   const [conns, setConns] = useState<Conn[]>([]);
+  const [sshs, setSshs] = useState<Ssh[]>([]);
+  const [dests, setDests] = useState<Dest[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
@@ -81,8 +89,14 @@ export default function DbBackupPage() {
 
   // form koneksi
   const [showConnForm, setShowConnForm] = useState(false);
-  const [nc, setNc] = useState({ name: "", host: "", port: "3306", username: "", password: "" });
+  const [nc, setNc] = useState({ name: "", host: "", port: "3306", username: "", password: "", useSsh: false, sshId: "" });
   const [editConnId, setEditConnId] = useState<string | null>(null);
+  // form koneksi tujuan
+  const [showDestForm, setShowDestForm] = useState(false);
+  const [editDestId, setEditDestId] = useState<string | null>(null);
+  const [ndType, setNdType] = useState<"ftp" | "s3" | "gdrive">("gdrive");
+  const [ndName, setNdName] = useState("");
+  const [ndCfg, setNdCfg] = useState<Record<string, string>>({});
   // clone
   const [teams, setTeams] = useState<Team[]>([]);
   const [cloneConnId, setCloneConnId] = useState<string | null>(null);
@@ -100,8 +114,10 @@ export default function DbBackupPage() {
   const [jDate, setJDate] = useState(1);
   const [jCron, setJCron] = useState("0 2 * * *");
   const [jDest, setJDest] = useState("local");
-  const [dest, setDest] = useState<Record<string, string>>({});
+  const [jDestId, setJDestId] = useState("");
+  const [jDestPath, setJDestPath] = useState("");
   const [jRetention, setJRetention] = useState(0);
+  const [jCompression, setJCompression] = useState("brotli");
   // panel — selectedJobId always has a value when on job tab + not in form mode
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   // runs pagination
@@ -118,7 +134,7 @@ export default function DbBackupPage() {
   const [restoreProgress, setRestoreProgress] = useState<{ pct: number; text: string } | null>(null);
 
   const load = useCallback(async () => {
-    const [cRes, jRes, tRes] = await Promise.all([fetch("/api/db/connections"), fetch("/api/db/jobs"), fetch("/api/teams")]);
+    const [cRes, jRes, tRes, sRes, dRes] = await Promise.all([fetch("/api/db/connections"), fetch("/api/db/jobs"), fetch("/api/teams"), fetch("/api/db/ssh"), fetch("/api/db/destinations")]);
     if (cRes.status === 403) {
       setForbidden(true);
       setLoading(false);
@@ -127,7 +143,11 @@ export default function DbBackupPage() {
     const c = await cRes.json();
     const j = await jRes.json();
     const t = await tRes.json();
+    const s = await sRes.json();
+    const d = await dRes.json();
     setConns(c.data ?? []);
+    setSshs(s.data ?? []);
+    setDests(d.data ?? []);
     setJobs(j.data ?? []);
     setTeams(t.data ?? []);
     setLoading(false);
@@ -177,6 +197,8 @@ export default function DbBackupPage() {
     const params = new URLSearchParams(window.location.search);
     const ok = params.get("gdrive_ok");
     const err = params.get("gdrive_error");
+    const t = params.get("tab");
+    if (t === "tujuan") setTab("tujuan");
     if (ok) {
       setMsg({ text: `✅ Google Drive terkoneksi sebagai ${ok}`, ok: true });
       window.history.replaceState({}, "", window.location.pathname);
@@ -312,8 +334,11 @@ export default function DbBackupPage() {
       ...(jType === "cron" ? { cronExpr: jCron } : jType === "hourly" ? {} : { timeAt: jTime }),
       ...(jType === "weekly" ? { dayOn: jDay } : jType === "monthly" ? { dayOn: jDate } : {}),
       destType: jDest,
-      dest: Object.fromEntries(Object.entries(dest).filter(([, v]) => v !== "")),
+      ...(jDest === "local"
+        ? { destPath: jDestPath }
+        : { destId: jDestId, destPath: jDestPath }),
       retention: jRetention,
+      compression: jCompression,
     };
     const url = editJobId ? `/api/db/jobs/${editJobId}` : "/api/db/jobs";
     const method = editJobId ? "PATCH" : "POST";
@@ -323,8 +348,10 @@ export default function DbBackupPage() {
       setEditJobId(null);
       setJName("");
       setJDbs(new Set());
-      setDest({});
+      setJDestPath("");
+      setJDestId("");
       setJRetention(0);
+      setJCompression("brotli");
       setMsg({ text: editJobId ? "Job backup diperbarui." : "Job backup dibuat.", ok: true });
     }
   }
@@ -340,8 +367,10 @@ export default function DbBackupPage() {
     setJDate(j.dayOn ?? 1);
     setJCron(j.cronExpr ?? "0 2 * * *");
     setJDest(j.destType);
-    setDest(j.dest as Record<string, string>);
+    setJDestId(j.destId ?? "");
+    setJDestPath(j.destPath ?? "");
     setJRetention(j.retention);
+    setJCompression(j.compression || "brotli");
     setShowJobForm(true);
     loadDatabases(j.connection.id, true);
   }
@@ -361,8 +390,8 @@ export default function DbBackupPage() {
     return <p className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">Halaman ini hanya untuk admin.</p>;
   }
 
-  const D = (k: string) => dest[k] ?? "";
-  const setD = (k: string, v: string) => setDest((d) => ({ ...d, [k]: v }));
+  const ND = (k: string) => ndCfg[k] ?? "";
+  const setND = (k: string, v: string) => setNdCfg((d) => ({ ...d, [k]: v }));
 
   return (
     <div className="space-y-6">
@@ -376,10 +405,16 @@ export default function DbBackupPage() {
       {/* Tab navigation */}
       <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-700 dark:bg-slate-800 w-fit">
         <button
-          onClick={() => setTab("koneksi")}
-          className={`rounded-lg px-4 py-2 text-sm font-medium transition ${tab === "koneksi" ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100" : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"}`}
+          onClick={() => setTab("sumber")}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition ${tab === "sumber" ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100" : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"}`}
         >
-          Koneksi
+          Sumber
+        </button>
+        <button
+          onClick={() => setTab("tujuan")}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition ${tab === "tujuan" ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100" : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"}`}
+        >
+          Tujuan
         </button>
         <button
           onClick={() => setTab("job")}
@@ -405,12 +440,12 @@ export default function DbBackupPage() {
         </div>
       )}
 
-      {/* ===== TAB: KONEKSI ===== */}
-      {tab === "koneksi" && (
+      {/* ===== TAB: SUMBER ===== */}
+      {tab === "sumber" && (
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Koneksi</h2>
-            <button onClick={() => { setShowConnForm(!showConnForm); setEditConnId(null); setNc({ name: "", host: "", port: "3306", username: "", password: "" }); }} className={btnPrimary}>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Koneksi Sumber</h2>
+            <button onClick={() => { setShowConnForm(!showConnForm); setEditConnId(null); setNc({ name: "", host: "", port: "3306", username: "", password: "", useSsh: false, sshId: "" }); }} className={btnPrimary}>
               {showConnForm ? "Tutup form" : "+ Tambah koneksi"}
             </button>
           </div>
@@ -420,19 +455,20 @@ export default function DbBackupPage() {
               className={`${card} animate-fade-up mb-4 space-y-5`}
               onSubmit={async (e) => {
                 e.preventDefault();
+                const payload = { ...nc, port: Number(nc.port) || 3306, sshId: nc.useSsh ? nc.sshId : null };
                 if (editConnId) {
-                  const ok = await api(`/api/db/connections/${editConnId}`, "PATCH", { ...nc, port: Number(nc.port) || 3306 });
+                  const ok = await api(`/api/db/connections/${editConnId}`, "PATCH", payload);
                   if (ok) {
                     setShowConnForm(false);
                     setEditConnId(null);
-                    setNc({ name: "", host: "", port: "3306", username: "", password: "" });
+                    setNc({ name: "", host: "", port: "3306", username: "", password: "", useSsh: false, sshId: "" });
                     setMsg({ text: "Koneksi diperbarui.", ok: true });
                   }
                 } else {
-                  const ok = await api("/api/db/connections", "POST", { ...nc, port: Number(nc.port) || 3306 });
+                  const ok = await api("/api/db/connections", "POST", payload);
                   if (ok) {
                     setShowConnForm(false);
-                    setNc({ name: "", host: "", port: "3306", username: "", password: "" });
+                    setNc({ name: "", host: "", port: "3306", username: "", password: "", useSsh: false, sshId: "" });
                     setMsg({ text: "Koneksi tersimpan (tes koneksi berhasil).", ok: true });
                   }
                 }
@@ -463,6 +499,31 @@ export default function DbBackupPage() {
                 <div><label className={label}>Password</label><input type="password" value={nc.password} onChange={(e) => setNc({ ...nc, password: e.target.value })} placeholder={editConnId ? "Kosongkan jika tidak diubah" : ""} className={`${input} mt-1 w-44`} /></div>
               </div>
 
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+                <label className={label}>SSH Koneksi</label>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setNc({ ...nc, useSsh: !nc.useSsh })}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${nc.useSsh ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "bg-white text-slate-600 ring-1 ring-slate-300 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600"}`}
+                  >
+                    {nc.useSsh ? "✓ Pakai SSH" : "Tanpa SSH"}
+                  </button>
+                  {nc.useSsh && (
+                    <select value={nc.sshId} onChange={(e) => setNc({ ...nc, sshId: e.target.value })} required className={`${input} w-72`}>
+                      <option value="">— pilih koneksi SSH —</option>
+                      {sshs.map((s) => (<option key={s.id} value={s.id}>{s.name} ({s.username}@{s.host}:{s.port})</option>))}
+                    </select>
+                  )}
+                </div>
+                {nc.useSsh && sshs.length === 0 && (
+                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">Belum ada koneksi SSH. Tambahkan dulu lewat menu &ldquo;SSH Koneksi&rdquo;.</p>
+                )}
+                {nc.useSsh && (
+                  <p className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">Koneksi MySQL akan diakses lewat tunnel SSH ini (host MySQL di bawah dianggap host dalam server SSH).</p>
+                )}
+              </div>
+
               <div className="flex justify-end">
                 <button disabled={busy} className={btnPrimary}>{busy ? "…" : editConnId ? "Simpan edit" : "Tes & simpan"}</button>
               </div>
@@ -484,15 +545,170 @@ export default function DbBackupPage() {
                       <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{c.name}</p>
                       <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">MySQL</span>
                     </div>
-                    <p className="truncate text-xs text-slate-400">{c.username}@{c.host}:{c.port} · {c.jobCount} job</p>
+                    <p className="truncate text-xs text-slate-400">{c.username}@{c.host}:{c.port}{c.ssh ? ` · via SSH ${c.ssh.name}` : ""} · {c.jobCount} job</p>
                   </div>
                   <div className="flex shrink-0 gap-2 text-xs">
-                    <button onClick={() => { setEditConnId(c.id); setNc({ name: c.name, host: c.host, port: String(c.port), username: c.username, password: "" }); setShowConnForm(true); }} className="font-medium text-slate-500 hover:underline dark:text-slate-400">Edit</button>
+                    <button onClick={() => { setEditConnId(c.id); setNc({ name: c.name, host: c.host, port: String(c.port), username: c.username, password: "", useSsh: !!c.sshId, sshId: c.sshId ?? "" }); setShowConnForm(true); }} className="font-medium text-slate-500 hover:underline dark:text-slate-400">Edit</button>
                     <button onClick={() => { setCloneConnId(c.id); setCloneTeamId(""); }} className="font-medium text-sky-600 hover:underline dark:text-sky-400">Clone</button>
                     <button onClick={() => confirm(`Hapus koneksi "${c.name}" beserta job backup-nya?`) && api(`/api/db/connections/${c.id}`, "DELETE")} className="font-medium text-red-500 hover:underline">Hapus</button>
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ===== TAB: TUJUAN ===== */}
+      {tab === "tujuan" && (
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Koneksi Tujuan</h2>
+            <button onClick={() => { setShowDestForm(!showDestForm); setEditDestId(null); setNdName(""); setNdCfg({}); setNdType("gdrive"); }} className={btnPrimary}>
+              {showDestForm ? "Tutup form" : "+ Tambah tujuan"}
+            </button>
+          </div>
+
+          {showDestForm && (
+            <form
+              className={`${card} animate-fade-up mb-4 space-y-5`}
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const cfg: Record<string, unknown> = { ...ndCfg };
+                if (ndType === "ftp") { cfg.port = Number(cfg.port) || 21; cfg.secure = cfg.secure === "true" || cfg.secure === true; }
+                if (ndType === "s3") { cfg.region = (cfg.region as string) || "auto"; }
+                const body = { type: ndType, name: ndName, config: cfg };
+                const url = editDestId ? `/api/db/destinations/${editDestId}` : "/api/db/destinations";
+                const method = editDestId ? "PATCH" : "POST";
+                const ok = await api(url, method, body);
+                if (ok) {
+                  setShowDestForm(false);
+                  setEditDestId(null);
+                  setNdName("");
+                  setNdCfg({});
+                  setMsg({ text: editDestId ? "Koneksi tujuan diperbarui." : "Koneksi tujuan tersimpan.", ok: true });
+                }
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{editDestId ? "Edit Koneksi Tujuan" : "Buat Koneksi Tujuan"}</h3>
+                <button type="button" onClick={() => { setShowDestForm(false); setEditDestId(null); }} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">✕ Tutup</button>
+              </div>
+
+              <div>
+                <label className={label}>Tipe tujuan</label>
+                <div className="mt-2 flex gap-2">
+                  {[{ v: "ftp", l: "🌐 FTP" }, { v: "s3", l: "☁️ S3" }, { v: "gdrive", l: "📂 Google Drive" }].map((o) => (
+                    <button type="button" key={o.v} disabled={!!editDestId && o.v !== ndType}
+                      onClick={() => { setNdType(o.v as typeof ndType); setNdCfg({}); }}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${ndType === o.v ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"} ${editDestId && o.v !== ndType ? "cursor-not-allowed opacity-50" : ""}`}
+                    >{o.l}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-4">
+                <div><label className={label}>Nama</label><input required value={ndName} onChange={(e) => setNdName(e.target.value)} placeholder="mis. FTP Server A" className={`${input} mt-1 w-56`} /></div>
+                {ndType === "ftp" && (
+                  <>
+                    <div><label className={label}>Host</label><input required value={ND("host")} onChange={(e) => setND("host", e.target.value)} placeholder="ftp.example.com" className={`${input} mt-1 w-52`} /></div>
+                    <div><label className={label}>Port</label><input value={ND("port") || "21"} onChange={(e) => setND("port", e.target.value)} className={`${input} mt-1 w-20`} /></div>
+                    <div><label className={label}>Username</label><input required value={ND("username")} onChange={(e) => setND("username", e.target.value)} className={`${input} mt-1 w-40`} /></div>
+                    <div><label className={label}>Password</label><input type="password" required={!editDestId} value={ND("password")} onChange={(e) => setND("password", e.target.value)} placeholder={editDestId ? "Kosongkan jika tidak diubah" : ""} className={`${input} mt-1 w-40`} /></div>
+                    <div className="flex items-center gap-2 pt-6">
+                      <input id="ftp-secure" type="checkbox" checked={ND("secure") === "true"} onChange={(e) => setND("secure", e.target.checked ? "true" : "false")} className="h-4 w-4 accent-slate-900" />
+                      <label htmlFor="ftp-secure" className="text-xs text-slate-500 dark:text-slate-400">FTPS (Secure)</label>
+                    </div>
+                  </>
+                )}
+                {ndType === "s3" && (
+                  <>
+                    <div><label className={label}>Bucket</label><input required value={ND("bucket")} onChange={(e) => setND("bucket", e.target.value)} className={`${input} mt-1 w-40`} /></div>
+                    <div><label className={label}>Region</label><input value={ND("region")} onChange={(e) => setND("region", e.target.value)} placeholder="ap-southeast-1" className={`${input} mt-1 w-36`} /></div>
+                    <div><label className={label}>Endpoint (opsional)</label><input value={ND("endpoint")} onChange={(e) => setND("endpoint", e.target.value)} placeholder="https://…" className={`${input} mt-1 w-56`} /></div>
+                    <div><label className={label}>Access key</label><input required value={ND("accessKeyId")} onChange={(e) => setND("accessKeyId", e.target.value)} className={`${input} mt-1 w-44`} /></div>
+                    <div><label className={label}>Secret key</label><input required={!editDestId} type="password" value={ND("secretKey")} onChange={(e) => setND("secretKey", e.target.value)} placeholder={editDestId ? "Kosongkan jika tidak diubah" : ""} className={`${input} mt-1 w-44`} /></div>
+                  </>
+                )}
+                {ndType === "gdrive" && (
+                  <>
+                    <div className="w-full">
+                      <label className={label}>Google OAuth Client ID</label>
+                      <input required value={ND("clientId")} onChange={(e) => setND("clientId", e.target.value)} placeholder="xxxx.apps.googleusercontent.com" className={`${input} mt-1 w-80`} />
+                      <p className="mt-1 text-[11px] text-slate-400">Redirect URI: <code className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded">{typeof window !== "undefined" ? window.location.origin : ""}/api/db/gdrive/callback</code></p>
+                    </div>
+                    <div className="w-full">
+                      <label className={label}>Google OAuth Client Secret</label>
+                      <input type="password" required={!editDestId} value={ND("clientSecret")} onChange={(e) => setND("clientSecret", e.target.value)} placeholder={editDestId ? "Kosongkan jika tidak diubah" : "GOCSPX-..."} className={`${input} mt-1 w-80`} />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="flex justify-end">
+                <button disabled={busy} className={btnPrimary}>{busy ? "…" : editDestId ? "Simpan edit" : "Simpan tujuan"}</button>
+              </div>
+            </form>
+          )}
+
+          {loading ? (
+            <div className="h-16 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
+          ) : dests.length === 0 ? (
+            <p className="rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 p-8 text-center text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-900/40">
+              Belum ada koneksi tujuan. Tambahkan koneksi FTP, S3, atau Google Drive di sini.
+            </p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {dests.map((d) => {
+                const connected = d.config.gdriveConnected && !!d.config.gdriveUserEmail;
+                return (
+                  <div key={d.id} className={`${card} flex flex-col justify-between gap-3 !p-4`}>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+                          {d.type === "ftp" ? "🌐" : d.type === "s3" ? "☁️" : "📂"} {d.name}
+                        </p>
+                        <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">{d.type}</span>
+                      </div>
+                      <p className="mt-1 truncate text-xs text-slate-400">
+                        {d.type === "ftp" && `${d.config.username ?? ""}@${d.config.host ?? ""}:${d.config.port ?? 21}${d.config.secure ? " (FTPS)" : ""}`}
+                        {d.type === "s3" && `s3://${d.config.bucket ?? ""}${d.config.region && d.config.region !== "auto" ? ` · ${d.config.region}` : ""}`}
+                        {d.type === "gdrive" && (connected ? `✅ Terkoneksi sebagai ${d.config.gdriveUserEmail}` : "Belum login Google")}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">{d.jobCount} job menggunakan</p>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      {d.type === "gdrive" && (
+                        <a href={`/api/db/gdrive/auth?destId=${d.id}`} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 font-medium text-white transition hover:bg-blue-500">
+                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#fff"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#fff" opacity=".8"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#fff" opacity=".6"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#fff" opacity=".9"/></svg>
+                          {connected ? "Login ulang" : "Login Google"}
+                        </a>
+                      )}
+                      <button onClick={() => {
+                        setEditDestId(d.id);
+                        setNdType(d.type);
+                        setNdName(d.name);
+                        const prefill: Record<string, string> = {};
+                        if (d.type === "ftp") {
+                          if (d.config.host) prefill.host = d.config.host;
+                          prefill.port = String(d.config.port ?? 21);
+                          prefill.secure = d.config.secure ? "true" : "false";
+                        } else if (d.type === "s3") {
+                          if (d.config.bucket) prefill.bucket = d.config.bucket;
+                          if (d.config.region) prefill.region = d.config.region;
+                          if (d.config.endpoint) prefill.endpoint = d.config.endpoint;
+                          if (d.config.accessKeyId) prefill.accessKeyId = d.config.accessKeyId;
+                        } else {
+                          if (d.config.clientId) prefill.clientId = d.config.clientId;
+                        }
+                        setNdCfg(prefill);
+                        setShowDestForm(true);
+                      }} className="font-medium text-slate-500 hover:underline dark:text-slate-400">Edit</button>
+                      <button onClick={() => confirm(`Hapus koneksi tujuan "${d.name}"? Job yang memakainya akan kehilangan tujuan.`) && api(`/api/db/destinations/${d.id}`, "DELETE")} className="font-medium text-red-500 hover:underline">Hapus</button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
@@ -587,7 +803,7 @@ export default function DbBackupPage() {
         <section>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Job Backup</h2>
-            <button onClick={() => { setShowJobForm(!showJobForm); setEditJobId(null); setJName(""); setJDbs(new Set()); setDest({}); setJRetention(0); }} disabled={conns.length === 0} className={btnPrimary}>
+            <button onClick={() => { setShowJobForm(!showJobForm); setEditJobId(null); setJName(""); setJDbs(new Set()); setJDestPath(""); setJDestId(""); setJRetention(0); setJCompression("brotli"); }} disabled={conns.length === 0} className={btnPrimary}>
               {showJobForm ? "Tutup form" : "+ Buat job"}
             </button>
           </div>
@@ -657,80 +873,36 @@ export default function DbBackupPage() {
               </div>
 
               <div>
-                <label className={label}>Lokasi backup</label>
+                <label className={label}>Tujuan backup</label>
                 <div className="mt-2 flex gap-2">
-                  {[{ v: "local", l: "💾 Lokal / SMB-mount" }, { v: "ftp", l: "🌐 FTP" }, { v: "s3", l: "☁️ S3" }, { v: "gdrive", l: "📁 Google Drive" }].map((o) => (
-                    <button type="button" key={o.v} onClick={() => { setJDest(o.v); setDest({}); }}
+                  {[{ v: "local", l: "💾 Lokal / SMB-mount" }, { v: "ftp", l: "🌐 FTP" }, { v: "s3", l: "☁️ S3" }, { v: "gdrive", l: "📂 Google Drive" }].map((o) => (
+                    <button type="button" key={o.v} onClick={() => { setJDest(o.v); setJDestId(""); setJDestPath(""); }}
                       className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${jDest === o.v ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"}`}
                     >{o.l}</button>
                   ))}
                 </div>
                 <div className="mt-3 flex flex-wrap gap-3">
                   {jDest === "local" && (
-                    <div className="w-full"><label className={label}>Path folder tujuan</label><input required value={D("path")} onChange={(e) => setD("path", e.target.value)} placeholder="/home/user/backups atau /Volumes/NAS/backup" className={`${input} mt-1 w-full max-w-lg`} /></div>
+                    <div className="w-full"><label className={label}>Path folder tujuan</label><input required value={jDestPath} onChange={(e) => setJDestPath(e.target.value)} placeholder="/home/user/backups atau /Volumes/NAS/backup" className={`${input} mt-1 w-full max-w-lg`} /></div>
                   )}
-                  {jDest === "ftp" && (
+                  {jDest !== "local" && (
                     <>
-                      <div><label className={label}>Host</label><input required value={D("host")} onChange={(e) => setD("host", e.target.value)} className={`${input} mt-1 w-40`} /></div>
-                      <div><label className={label}>Port</label><input value={D("port") || "21"} onChange={(e) => setD("port", e.target.value)} className={`${input} mt-1 w-20`} /></div>
-                      <div><label className={label}>Username</label><input required value={D("username")} onChange={(e) => setD("username", e.target.value)} className={`${input} mt-1 w-32`} /></div>
-                      <div><label className={label}>Password</label><input type="password" value={D("password")} onChange={(e) => setD("password", e.target.value)} className={`${input} mt-1 w-32`} /></div>
-                      <div><label className={label}>Folder</label><input value={D("path") || "/"} onChange={(e) => setD("path", e.target.value)} className={`${input} mt-1 w-40`} /></div>
-                    </>
-                  )}
-                  {jDest === "s3" && (
-                    <>
-                      <div><label className={label}>Bucket</label><input required value={D("bucket")} onChange={(e) => setD("bucket", e.target.value)} className={`${input} mt-1 w-40`} /></div>
-                      <div><label className={label}>Region</label><input value={D("region")} onChange={(e) => setD("region", e.target.value)} placeholder="ap-southeast-1" className={`${input} mt-1 w-36`} /></div>
-                      <div><label className={label}>Endpoint (opsional)</label><input value={D("endpoint")} onChange={(e) => setD("endpoint", e.target.value)} placeholder="https://…" className={`${input} mt-1 w-56`} /></div>
-                      <div><label className={label}>Prefix folder</label><input value={D("prefix")} onChange={(e) => setD("prefix", e.target.value)} placeholder="mysql/" className={`${input} mt-1 w-32`} /></div>
-                      <div><label className={label}>Access key</label><input required value={D("accessKeyId")} onChange={(e) => setD("accessKeyId", e.target.value)} className={`${input} mt-1 w-44`} /></div>
-                      <div><label className={label}>Secret key</label><input required type="password" value={D("secretKey")} onChange={(e) => setD("secretKey", e.target.value)} className={`${input} mt-1 w-44`} /></div>
-                    </>
-                  )}
-                  {jDest === "gdrive" && (
-                    <>
-                      <div>
-                        <label className={label}>Google OAuth Client ID</label>
-                        <input required value={D("clientId")} onChange={(e) => setD("clientId", e.target.value)} placeholder="xxxx.apps.googleusercontent.com" className={`${input} mt-1 w-80`} />
-                        <p className="mt-1 text-[11px] text-slate-400">Redirect URI: <code className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded">{typeof window !== "undefined" ? window.location.origin : ""}/api/db/gdrive/callback</code></p>
+                      <div className="w-full">
+                        <label className={label}>Koneksi tujuan</label>
+                        <select required value={jDestId} onChange={(e) => setJDestId(e.target.value)} className={`${input} mt-1 w-72`}>
+                          <option value="">— pilih koneksi tujuan —</option>
+                          {dests.filter((d) => d.type === jDest).map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
+                        </select>
+                        {dests.filter((d) => d.type === jDest).length === 0 && (
+                          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">Belum ada koneksi tujuan {jDest === "gdrive" ? "Google Drive" : jDest.toUpperCase()}. Tambahkan dulu di tab &ldquo;Tujuan&rdquo;.</p>
+                        )}
                       </div>
-                      <div>
-                        <label className={label}>Google OAuth Client Secret</label>
-                        <input type="password" required value={D("clientSecret")} onChange={(e) => setD("clientSecret", e.target.value)} placeholder="GOCSPX-..." className={`${input} mt-1 w-80`} />
-                      </div>
-                      {D("gdriveConnected") === "true" && (
-                        <div className="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-400">
-                          ✅ Terkoneksi sebagai <b>{D("gdriveUserEmail") || "akun Google"}</b>
-                        </div>
-                      )}
-                      <div>
-                        <label className={label}>Folder ID (opsional)</label>
-                        <input value={D("folderId")} onChange={(e) => setD("folderId", e.target.value)} placeholder="Kosongkan = simpan di root My Drive" className={`${input} mt-1 w-64`} />
-                      </div>
-                      {D("clientId") && D("clientSecret") && (
-                        <div className="w-full">
-                          <button type="button" disabled={busy || !jName || !jConn || jDbs.size === 0} onClick={async () => {
-                            setBusy(true); setMsg(null);
-                            const body = { name: jName, connectionId: jConn, databases: [...jDbs], scheduleType: jType, ...(jType === "cron" ? { cronExpr: jCron } : jType === "hourly" ? {} : { timeAt: jTime }), ...(jType === "weekly" ? { dayOn: jDay } : jType === "monthly" ? { dayOn: jDate } : {}), destType: jDest, dest: Object.fromEntries(Object.entries(dest).filter(([, v]) => v !== "")), retention: jRetention };
-                            let jobId = editJobId;
-                            if (!jobId) {
-                              const createRes = await fetch("/api/db/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-                              if (!createRes.ok) { const d = await createRes.json().catch(() => ({})); setMsg({ text: d.message ?? "Gagal membuat job", ok: false }); setBusy(false); return; }
-                              const created = await createRes.json();
-                              jobId = created.data?.id;
-                              if (!jobId) { setMsg({ text: "Gagal mendapatkan ID job", ok: false }); setBusy(false); return; }
-                              load();
-                            } else {
-                              const saveRes = await fetch(`/api/db/jobs/${jobId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-                              if (!saveRes.ok) { const d = await saveRes.json().catch(() => ({})); setMsg({ text: d.message ?? "Gagal menyimpan", ok: false }); setBusy(false); return; }
-                            }
-                            window.location.href = `/api/db/gdrive/auth?jobId=${jobId}`;
-                          }} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-500 disabled:opacity-60">
-                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#fff"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#fff" opacity=".8"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#fff" opacity=".6"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#fff" opacity=".9"/></svg>
-                            {busy ? "Menyimpan…" : "Login Google"}
-                          </button>
-                        </div>
+                      {jDest === "gdrive" ? (
+                        <div><label className={label}>Folder ID (opsional)</label><input value={jDestPath} onChange={(e) => setJDestPath(e.target.value)} placeholder="Kosongkan = simpan di root My Drive" className={`${input} mt-1 w-64`} /></div>
+                      ) : jDest === "ftp" ? (
+                        <div><label className={label}>Folder tujuan</label><input value={jDestPath} onChange={(e) => setJDestPath(e.target.value)} placeholder="/backups" className={`${input} mt-1 w-40`} /></div>
+                      ) : (
+                        <div><label className={label}>Prefix folder</label><input value={jDestPath} onChange={(e) => setJDestPath(e.target.value)} placeholder="mysql/" className={`${input} mt-1 w-32`} /></div>
                       )}
                     </>
                   )}
@@ -743,6 +915,29 @@ export default function DbBackupPage() {
                   <input type="number" min={0} max={1000} value={jRetention} onChange={(e) => setJRetention(Number(e.target.value) || 0)} className={`${input} w-24`} />
                   <span className="text-xs text-slate-500 dark:text-slate-400">{jRetention === 0 ? "Simpan semua" : `Simpan ${jRetention} backup terakhir`}</span>
                 </div>
+              </div>
+
+              <div>
+                <label className={label}>Kompresi backup</label>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {(["none", "gzip", "brotli", "xz", "xz_extreme"] as const).map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setJCompression(c)}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${jCompression === c ? "border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900" : "border-slate-300 text-slate-600 hover:border-slate-400 dark:border-slate-700 dark:text-slate-300"}`}
+                    >
+                      {c === "none" ? "Tanpa" : c === "gzip" ? "Gzip" : c === "brotli" ? "Brotli" : c === "xz" ? "7z" : "7z Ekstrim"}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">
+                  {jCompression === "none" && "Tanpa kompresi — ukuran file = ukuran data asli. Paling cepat, mudah dibuka."}
+                  {jCompression === "gzip" && "Gzip — bisa langsung dibuka TablePlus/phpMyAdmin. Ukuran ±1.3× dari brotli."}
+                  {jCompression === "brotli" && "Brotli — seimbang. Contoh DB 121MB → ±10.6MB. Butuh aplikasi pendukung untuk membuka."}
+                  {jCompression === "xz" && "7z (standar) — lebih kecil dari brotli. Contoh DB 121MB → ±8.0MB. Butuh 7-Zip untuk membuka."}
+                  {jCompression === "xz_extreme" && "7z (ekstrim) — paling kecil. Contoh DB 121MB → ±7.3MB. Kompresi sedikit lebih lama. Butuh 7-Zip untuk membuka."}
+                </p>
               </div>
 
               <div className="flex justify-end">
@@ -781,7 +976,7 @@ export default function DbBackupPage() {
                       {j.connection.name} · {j.databases.length} db · {scheduleLabel(j)}
                     </p>
                     <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">
-                      → {destLabel(j)}{j.retention > 0 ? ` · Retensi: ${j.retention}` : ""}
+                      → {destLabel(j)}{j.retention > 0 ? ` · Retensi: ${j.retention}` : ""}{j.compression ? ` · ${j.compression === "none" ? "tanpa kompresi" : j.compression === "gzip" ? "gzip" : j.compression === "brotli" ? "brotli" : j.compression === "xz" ? "7z" : "7z ekstrim"}` : ""}
                     </p>
                   </button>
                 ))}
@@ -805,6 +1000,7 @@ export default function DbBackupPage() {
                       <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{scheduleLabel(selected)}</span>
                       <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">→ {destLabel(selected)}</span>
                       {selected.retention > 0 && <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">Retensi: {selected.retention}</span>}
+                      <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{selected.compression === "none" ? "tanpa kompresi" : selected.compression === "gzip" ? "gzip" : selected.compression === "brotli" ? "brotli" : selected.compression === "xz" ? "7z" : "7z ekstrim"}</span>
                       {selected.lastStatus && (
                         <span className={`rounded-lg px-2.5 py-1 font-semibold ${selected.lastStatus === "success" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400" : selected.lastStatus === "running" ? "bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-400" : "bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-400"}`}>
                           {selected.lastStatus === "running" ? "berjalan…" : selected.lastStatus}
@@ -814,6 +1010,9 @@ export default function DbBackupPage() {
 
                     <div className="mt-4 flex flex-wrap gap-2">
                       <button onClick={() => api(`/api/db/jobs/${selected.id}/run`, "POST")} disabled={busy || selected.lastStatus === "running"} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50">▶ Jalankan</button>
+                      {selected.lastStatus === "running" && (
+                        <button onClick={() => confirm('Job masih berstatus "berjalan" padahal prosesnya mungkin sudah mati. Reset status ini?') && api(`/api/db/jobs/${selected.id}/reset`, "POST").then(() => load())} disabled={busy} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-400 disabled:opacity-50">⟲ Reset</button>
+                      )}
                       <button onClick={() => api(`/api/db/jobs/${selected.id}`, "PATCH", { enabled: !selected.enabled })} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">
                         {selected.enabled ? "Nonaktifkan" : "Aktifkan"}
                       </button>
@@ -839,12 +1038,12 @@ export default function DbBackupPage() {
                                     {r.status === "success" ? "✓" : r.status === "running" ? "⟳" : "✕"} {r.status}
                                   </span>
                                   <span className="text-slate-500 dark:text-slate-400">{new Date(r.startedAt).toLocaleString("id-ID")}</span>
-                                  <span className="text-slate-500 dark:text-slate-400">{fmtSize(r.sizeBytes)}</span>
+                                  <span className="text-slate-500 dark:text-slate-400">{fmtSize(r.sizeBytes)}{r.sqlSizeBytes != null && r.sqlSizeBytes !== r.sizeBytes ? <> · <span className="text-slate-400 dark:text-slate-500">SQL {fmtSize(r.sqlSizeBytes)}</span></> : ""}</span>
                                   {fmtDuration(r.startedAt, r.endedAt) && <span className="text-slate-400 dark:text-slate-500">⏱ {fmtDuration(r.startedAt, r.endedAt)}</span>}
                                   {r.location && <span className="max-w-[200px] truncate font-mono text-slate-400">{r.location}</span>}
                                   {r.message && r.status === "failed" && <span className="text-red-500">{r.message}</span>}
                                   <span className="ml-auto flex items-center gap-2">
-                                    {runOk && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline dark:text-sky-400">Unduh (.br)</a>}
+                                    {runOk && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline dark:text-sky-400">Unduh</a>}
                                     {runOk && <a href={`/api/db/runs/${r.id}/download?format=sql`} className="text-sky-600 hover:underline dark:text-sky-400">Unduh SQL</a>}
                                     {runOk && <button onClick={() => openRestoreModal(r.id, { connection: { id: selected.connection.id, name: selected.connection.name }, databases: selected.databases })} disabled={busy} className="text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">Restore</button>}
                                     <button onClick={() => { if (confirm("Hapus catatan backup ini beserta filenya?")) { api(`/api/db/runs/${r.id}`, "DELETE").then(() => refreshRuns()); } }} disabled={busy} className="text-red-500 hover:underline disabled:opacity-50">Hapus</button>

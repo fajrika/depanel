@@ -202,6 +202,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         { href: "/infra", label: "Infra", icon: "🧱", show: staff },
         { href: "/accounts", label: "Akun API", icon: "🔑", show: staff },
         { href: "/dbbackup", label: "Backup DB", icon: "💾", show: staff },
+        { href: "/ssh", label: "SSH Koneksi", icon: "🔐", show: staff },
       ],
     },
     {

@@ -8,7 +8,9 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { pipeline } from "node:stream/promises";
+import type { Duplex } from "node:stream";
 import mysql, { type Connection } from "mysql2/promise";
+import { Client as SshClient } from "ssh2";
 import { Client as FtpClient } from "basic-ftp";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { CronExpressionParser } from "cron-parser";
@@ -16,6 +18,7 @@ import { prisma } from "./db";
 import { decryptSecret } from "./crypto";
 import { notifyTeam } from "./notify";
 import { getGDriveOAuthToken, gdriveOAuthUpload, gdriveOAuthDownload } from "./gdrive-oauth";
+import { xzCompress, xzDecompress } from "./xz";
 
 /** Escape a single identifier as a MySQL backtick-quoted name. */
 function escId(name: string): string {
@@ -226,57 +229,190 @@ export interface ConnCfg {
   port: number;
   username: string;
   password: string;
+  /** Optional SSH jump host: the MySQL connection is tunneled through it. */
+  ssh?: {
+    host: string;
+    port: number;
+    username: string;
+    authType: "password" | "key";
+    password: string;
+    privateKey?: string;
+    keyPassphrase?: string;
+  };
+}
+
+/** A row shape (Prisma DbConnection incl. ssh relation) sufficient to build a ConnCfg. */
+interface ConnRow {
+  host: string;
+  port: number;
+  username: string;
+  passwordEnc: string;
+  ssh?: {
+    host: string;
+    port: number;
+    username: string;
+    authType: string;
+    passwordEnc: string;
+    privateKeyEnc: string | null;
+    keyPassphraseEnc: string | null;
+  } | null;
+}
+
+/** Build a ConnCfg from a stored connection row, decrypting secrets and wiring the SSH tunnel. */
+export function connCfgFrom(c: ConnRow): ConnCfg {
+  return {
+    host: c.host,
+    port: c.port,
+    username: c.username,
+    password: decryptSecret(c.passwordEnc),
+    ssh: c.ssh
+      ? {
+          host: c.ssh.host,
+          port: c.ssh.port,
+          username: c.ssh.username,
+          authType: c.ssh.authType === "key" ? "key" : "password",
+          password: decryptSecret(c.ssh.passwordEnc),
+          privateKey: c.ssh.privateKeyEnc ? decryptSecret(c.ssh.privateKeyEnc) : undefined,
+          keyPassphrase: c.ssh.keyPassphraseEnc ? decryptSecret(c.ssh.keyPassphraseEnc) : undefined,
+        }
+      : undefined,
+  };
 }
 
 const SYSTEM_DBS = new Set(["information_schema", "performance_schema", "mysql", "sys"]);
 
-async function openConn(cfg: ConnCfg, database?: string): Promise<Connection> {
-  return mysql.createConnection({
-    host: cfg.host,
-    port: cfg.port,
-    user: cfg.username,
-    password: cfg.password,
-    database,
-    connectTimeout: 10_000,
-    // dump raw-ish values; keep types simple for re-INSERT
-    dateStrings: true,
-    supportBigNumbers: true,
-    bigNumberStrings: true,
+interface OpenedConn {
+  conn: Connection;
+  end: () => Promise<void>;
+}
+
+const MYSQL_OPTS = {
+  connectTimeout: 10_000,
+  // dump raw-ish values; keep types simple for re-INSERT
+  dateStrings: true,
+  supportBigNumbers: true,
+  bigNumberStrings: true,
+} as const;
+
+async function openSsh(ssh: NonNullable<ConnCfg["ssh"]>): Promise<SshClient> {
+  const client = new SshClient();
+  await new Promise<void>((resolve, reject) => {
+    client.once("ready", () => resolve());
+    client.once("error", reject);
+    client.connect({
+      host: ssh.host,
+      port: ssh.port,
+      username: ssh.username,
+      // authType "key" → pakai private key (password diabaikan); selain itu pakai password.
+      ...(ssh.authType === "key"
+        ? { privateKey: ssh.privateKey, ...(ssh.keyPassphrase ? { passphrase: ssh.keyPassphrase } : {}) }
+        : { password: ssh.password }),
+      readyTimeout: 10_000,
+    });
   });
+  return client;
+}
+
+/** Verify an SSH jump-host connection (password auth + handshake). */
+export async function testSshConnection(ssh: NonNullable<ConnCfg["ssh"]>): Promise<void> {
+  const client = await openSsh(ssh);
+  client.end();
+}
+
+async function openConn(cfg: ConnCfg, database?: string): Promise<OpenedConn> {
+  const creds = { user: cfg.username, password: cfg.password, database, ...MYSQL_OPTS };
+
+  if (!cfg.ssh) {
+    const conn = await mysql.createConnection({ host: cfg.host, port: cfg.port, ...creds });
+    return { conn, end: () => conn.end() };
+  }
+
+  // Tunnel: open an SSH session and forward a stream to the MySQL host:port,
+  // then let mysql2 speak over that stream (no local TCP listener needed).
+  const ssh = await openSsh(cfg.ssh).catch((e) => {
+    throw new Error(`SSH gagal terhubung ke ${cfg.ssh!.host}:${cfg.ssh!.port} (user: ${cfg.ssh!.username}): ${(e as Error).message}`);
+  });
+  const closeSsh = () => { try { ssh.end(); } catch {} };
+  try {
+    const stream = await new Promise<Duplex>((resolve, reject) => {
+      ssh.forwardOut("127.0.0.1", 0, cfg.host, cfg.port, (err, st) => (err ? reject(err) : resolve(st)));
+    });
+    const conn = await mysql.createConnection({ stream, ...creds });
+    return {
+      conn,
+      end: async () => {
+        try { await conn.end(); } catch {}
+        closeSsh();
+      },
+    };
+  } catch (e) {
+    closeSsh();
+    throw e;
+  }
 }
 
 export async function testConnection(cfg: ConnCfg): Promise<void> {
-  const conn = await openConn(cfg);
+  const { conn, end } = await openConn(cfg);
   try {
     await conn.ping();
   } finally {
-    await conn.end();
+    await end();
   }
 }
 
 export async function listDatabases(cfg: ConnCfg): Promise<string[]> {
-  const conn = await openConn(cfg);
+  const { conn, end } = await openConn(cfg);
   try {
     const [rows] = await conn.query("SHOW DATABASES");
     return (rows as { Database: string }[]).map((r) => r.Database).filter((d) => !SYSTEM_DBS.has(d));
   } finally {
-    await conn.end();
+    await end();
   }
 }
 
-/** Dump databases into a brotli-compressed SQL file inside the OS temp dir; returns the path. */
-export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase: string): Promise<string> {
-  const outPath = path.join(os.tmpdir(), `${fileBase}.sql.br`);
-  const compress = zlib.createBrotliCompress({ params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9 } });
-  const out = fs.createWriteStream(outPath);
-  const done = pipeline(compress, out);
+/**
+ * Dump databases into a compressed SQL file inside the OS temp dir.
+ * compression: none | gzip | brotli | xz | xz_extreme
+ * Returns the output path plus the uncompressed SQL byte count.
+ */
+export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase: string, compression = "brotli"): Promise<{ filePath: string; sqlSize: number }> {
+  const ext =
+    compression === "none" ? "sql" :
+    compression === "gzip" ? "sql.gz" :
+    compression === "xz" || compression === "xz_extreme" ? "sql.xz" : "sql.br";
+  const outPath = path.join(os.tmpdir(), `${fileBase}.${ext}`);
 
-  const write = (s: string) =>
-    new Promise<void>((resolve, reject) => {
-      compress.write(s, (e) => (e ? reject(e) : resolve()));
-    });
+  let out: fs.WriteStream | null = null;
+  let compressor: NodeJS.ReadWriteStream | null = null;
+  let done: Promise<unknown> | null = null;
+  let xzChunks: Buffer[] | null = null;
+  let sqlBytes = 0;
+  const isXz = compression === "xz" || compression === "xz_extreme";
 
-  const conn = await openConn(cfg);
+  let write: (s: string) => Promise<void>;
+  if (isXz) {
+    // xz compresses whole-buffer; collect chunks and compress at the end
+    xzChunks = [];
+    write = (s) => { sqlBytes += Buffer.byteLength(s); xzChunks!.push(Buffer.from(s, "utf8")); return Promise.resolve(); };
+  } else if (compression === "gzip") {
+    const c = zlib.createGzip({ level: 6 });
+    compressor = c;
+    out = fs.createWriteStream(outPath);
+    done = pipeline(c, out);
+    write = (s) => { sqlBytes += Buffer.byteLength(s); return new Promise<void>((res, rej) => c.write(s, (e) => (e ? rej(e) : res()))); };
+  } else if (compression === "brotli") {
+    const c = zlib.createBrotliCompress({ params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9 } });
+    compressor = c;
+    out = fs.createWriteStream(outPath);
+    done = pipeline(c, out);
+    write = (s) => { sqlBytes += Buffer.byteLength(s); return new Promise<void>((res, rej) => c.write(s, (e) => (e ? rej(e) : res()))); };
+  } else {
+    const o = fs.createWriteStream(outPath);
+    out = o;
+    write = (s) => { sqlBytes += Buffer.byteLength(s); return new Promise<void>((res, rej) => o.write(s, (e) => (e ? rej(e) : res()))); };
+  }
+
+  const { conn, end } = await openConn(cfg);
   try {
     await write(`-- Depanel MySQL backup\n-- Host: ${cfg.host}\nSET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\nSET UNIQUE_CHECKS=0;\nSET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n\n`);
     // Create ALL databases upfront — views in one database may reference
@@ -368,11 +504,24 @@ export async function dumpDatabases(cfg: ConnCfg, databases: string[], fileBase:
     }
     await write("SET FOREIGN_KEY_CHECKS=1;\nSET UNIQUE_CHECKS=1;\n");
   } finally {
-    await conn.end();
-    compress.end();
+    await end();
+    if (isXz) {
+      // not using a stream
+    } else if (compressor) {
+      compressor.end();
+    } else {
+      out?.end();
+    }
   }
-  await done;
-  return outPath;
+  if (isXz) {
+    const level = compression === "xz_extreme" ? 9 : 6;
+    console.log(`[DUMP] Mengompresi ${((xzChunks!.reduce((s, c) => s + c.length, 0)) / 1024 / 1024).toFixed(2)} MB SQL → xz level ${level}`);
+    const compressed = xzCompress(Buffer.concat(xzChunks!), level);
+    await fsp.writeFile(outPath, compressed);
+  } else {
+    await done;
+  }
+  return { filePath: outPath, sqlSize: sqlBytes };
 }
 
 // ---------- retry helper ----------
@@ -394,8 +543,31 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1000): 
 
 export type DestConfig = Record<string, string | number | boolean | undefined>;
 
+/**
+ * Resolve the destination config for a job. Local jobs read the folder from
+ * job.destPath; remote jobs (ftp/s3/gdrive) load the DbDest connection and merge
+ * the per-job folder/path (destPath) into the config.
+ */
+export async function destCfgFrom(job: {
+  destType: string;
+  destPath: string | null;
+  destId: string | null;
+}): Promise<DestConfig> {
+  if (job.destType === "local") {
+    return { path: job.destPath ?? "" };
+  }
+  if (!job.destId) throw new Error("Tujuan backup belum dipilih — pilih koneksi tujuan dulu");
+  const dest = await prisma.dbDest.findUnique({ where: { id: job.destId } });
+  if (!dest) throw new Error("Koneksi tujuan backup tidak ditemukan");
+  const cfg = JSON.parse(dest.config) as DestConfig;
+  if (job.destType === "ftp") return { ...cfg, path: job.destPath ?? "/" };
+  if (job.destType === "s3") return { ...cfg, prefix: job.destPath ?? "" };
+  if (job.destType === "gdrive") return { ...cfg, folderId: job.destPath ?? "" };
+  throw new Error(`Tujuan backup tidak dikenal: ${job.destType}`);
+}
+
 /** Deliver the dump file; returns a human-readable final location. */
-export async function deliver(destType: string, cfg: DestConfig, filePath: string, fileName: string, jobId?: string): Promise<string> {
+export async function deliver(destType: string, cfg: DestConfig, filePath: string, fileName: string, destId?: string): Promise<string> {
   if (destType === "local") {
     const dir = String(cfg.path || "");
     if (!dir) throw new Error("Path tujuan belum diisi");
@@ -447,8 +619,8 @@ export async function deliver(destType: string, cfg: DestConfig, filePath: strin
   }
 
   if (destType === "gdrive") {
-    if (!jobId) throw new Error("jobId wajib untuk Google Drive backup");
-    const token = await getGDriveOAuthToken(jobId);
+    if (!destId) throw new Error("Koneksi tujuan wajib untuk Google Drive backup");
+    const token = await getGDriveOAuthToken(destId);
     const folderId = String(cfg.folderId || "");
     if (!folderId) throw new Error("Folder ID wajib diisi untuk Google Drive");
     const fileBytes = await fsp.readFile(filePath);
@@ -463,7 +635,7 @@ export async function deliver(destType: string, cfg: DestConfig, filePath: strin
  * Fetch a backup file from any destination (local / FTP / S3) to a local temp path.
  * The caller is responsible for cleaning up the returned file.
  */
-export async function fetchBackup(destType: string, cfg: DestConfig, location: string, jobId?: string): Promise<string> {
+export async function fetchBackup(destType: string, cfg: DestConfig, location: string, destId?: string): Promise<string> {
   if (destType === "local") {
     try {
       await fsp.access(location);
@@ -520,9 +692,9 @@ export async function fetchBackup(destType: string, cfg: DestConfig, location: s
   }
 
   if (destType === "gdrive") {
-    if (!jobId) throw new Error("jobId wajib untuk Google Drive restore");
+    if (!destId) throw new Error("Koneksi tujuan wajib untuk Google Drive restore");
     try {
-      const token = await getGDriveOAuthToken(jobId);
+      const token = await getGDriveOAuthToken(destId);
       const fileId = location.replace(/^gdrive:\/\//, "");
       await withRetry(() => gdriveOAuthDownload(token, fileId, tmpFile));
       return tmpFile;
@@ -538,40 +710,52 @@ export async function fetchBackup(destType: string, cfg: DestConfig, location: s
 
 const runningJobs = new Set<string>();
 
+/** Dianggap macet jika run "running" berusia lebih dari batas ini (proses mati/crash). */
+const STALE_RUN_MS = 2 * 60 * 60 * 1000;
+
 export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "manual"): Promise<void> {
   if (runningJobs.has(jobId)) return; // sudah berjalan
   runningJobs.add(jobId);
 
-  const job = await prisma.dbBackupJob.findUnique({ where: { id: jobId }, include: { connection: true } });
+  const job = await prisma.dbBackupJob.findUnique({ where: { id: jobId }, include: { connection: { include: { ssh: true } } } });
   if (!job) {
     runningJobs.delete(jobId);
     return;
   }
+
+  // Auto-recovery: bersihkan sisa run "running" dari proses yang mati/crash
+  // sebelum memulai run baru, agar tidak menyumbat status job.
+  await prisma.dbBackupRun.updateMany({
+    where: { jobId, status: "running", startedAt: { lt: new Date(Date.now() - STALE_RUN_MS) } },
+    data: { status: "failed", message: "Proses terhenti (crash) — di-reset otomatis", endedAt: new Date() },
+  });
+
   const run = await prisma.dbBackupRun.create({ data: { jobId, status: "running", message: `trigger: ${trigger}` } });
   await prisma.dbBackupJob.update({ where: { id: jobId }, data: { lastStatus: "running" } });
 
   let tmpFile: string | null = null;
   try {
-    const cfg: ConnCfg = {
-      host: job.connection.host,
-      port: job.connection.port,
-      username: job.connection.username,
-      password: decryptSecret(job.connection.passwordEnc),
-    };
+    const cfg = connCfgFrom(job.connection);
     const databases = JSON.parse(job.databases) as string[];
     if (!databases.length) throw new Error("Tidak ada database yang dipilih");
 
+    const compression = job.compression || "brotli";
     const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     const fileBase = `${job.name.replace(/[^a-zA-Z0-9_-]+/g, "_")}-${stamp}`;
-    tmpFile = await dumpDatabases(cfg, databases, fileBase);
+    const ext =
+      compression === "none" ? "sql" :
+      compression === "gzip" ? "sql.gz" :
+      compression === "xz" || compression === "xz_extreme" ? "sql.xz" : "sql.br";
+    const dumped = await dumpDatabases(cfg, databases, fileBase, compression);
+    tmpFile = dumped.filePath;
     const size = (await fsp.stat(tmpFile)).size;
 
-    const destCfg = JSON.parse(job.destConfig) as DestConfig;
-    const location = await deliver(job.destType, destCfg, tmpFile, `${fileBase}.sql.br`, job.id);
+    const destCfg = await destCfgFrom(job);
+    const location = await deliver(job.destType, destCfg, tmpFile, `${fileBase}.${ext}`, job.destId ?? undefined);
 
     await prisma.dbBackupRun.update({
       where: { id: run.id },
-      data: { status: "success", sizeBytes: size, location, endedAt: new Date(), message: `${databases.length} database` },
+      data: { status: "success", sizeBytes: size, sqlSizeBytes: dumped.sqlSize, location, endedAt: new Date(), message: `${databases.length} database` },
     });
     await prisma.dbBackupJob.update({ where: { id: jobId }, data: { lastStatus: "success", lastRunAt: new Date() } });
 
@@ -601,6 +785,53 @@ export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "m
 // ---------- restore ----------
 
 /**
+ * Decompress a backup file into a Buffer. Auto-detects format via magic bytes:
+ * gzip (0x1f 0x8b), xz (0xfd 0x37 0x7a 0x58 0x5a 0x00), brotli, or plain SQL.
+ */
+export async function decompressBackup(file: string): Promise<Buffer> {
+  const head = Buffer.alloc(6);
+  const fh = fs.openSync(file, "r");
+  try {
+    fs.readSync(fh, head, 0, 6, 0);
+  } finally {
+    fs.closeSync(fh);
+  }
+  const isGzip = head[0] === 0x1f && head[1] === 0x8b;
+  const isXz =
+    head[0] === 0xfd && head[1] === 0x37 && head[2] === 0x7a &&
+    head[3] === 0x58 && head[4] === 0x5a && head[5] === 0x00;
+
+  if (isXz) {
+    return xzDecompress(await fsp.readFile(file));
+  }
+
+  const gunzip = async () => {
+    const decompress = zlib.createGunzip();
+    const chunks: Buffer[] = [];
+    await pipeline(fs.createReadStream(file), decompress, async function* (source) {
+      for await (const c of source) chunks.push(c as Buffer);
+      yield; // satisfy pipeline sink
+    });
+    return Buffer.concat(chunks);
+  };
+
+  if (isGzip) return gunzip();
+
+  // Not gzip/xz — try brotli, fall back to plain SQL if it isn't compressed
+  try {
+    const decompress = zlib.createBrotliDecompress();
+    const chunks: Buffer[] = [];
+    await pipeline(fs.createReadStream(file), decompress, async function* (source) {
+      for await (const c of source) chunks.push(c as Buffer);
+      yield; // satisfy pipeline sink
+    });
+    return Buffer.concat(chunks);
+  } catch {
+    return fsp.readFile(file);
+  }
+}
+
+/**
  * Restore a completed run's dump back into its connection's MySQL server.
  * Only supported for the "local" destination (file readable on disk). The dump
  * carries CREATE DATABASE/USE, so it restores into the original database names.
@@ -613,32 +844,27 @@ export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "m
 export async function restoreRun(runId: string, targetConnId?: string, restoreId?: string): Promise<{ ok: boolean; message: string; warnings?: string[] }> {
   const run = await prisma.dbBackupRun.findUnique({
     where: { id: runId },
-    include: { job: { include: { connection: true } } },
+    include: { job: { include: { connection: { include: { ssh: true } } } } },
   });
   if (!run) return { ok: false, message: "Run tidak ditemukan" };
   if (run.status !== "success" || !run.location) return { ok: false, message: "Run ini tidak punya arsip yang valid" };
 
   let connRow;
   if (targetConnId) {
-    connRow = await prisma.dbConnection.findUnique({ where: { id: targetConnId } });
+    connRow = await prisma.dbConnection.findUnique({ where: { id: targetConnId }, include: { ssh: true } });
     if (!connRow) return { ok: false, message: "Koneksi tujuan tidak ditemukan" };
   } else {
     connRow = run.job.connection;
   }
 
-  const cfg: ConnCfg = {
-    host: connRow.host,
-    port: connRow.port,
-    username: connRow.username,
-    password: decryptSecret(connRow.passwordEnc),
-  };
+  const cfg = connCfgFrom(connRow);
 
-  // Fetch the backup file (local path, or download from FTP/S3)
-  const destCfg = JSON.parse(run.job.destConfig) as DestConfig;
+  // Fetch the backup file (local path, or download from FTP/S3/GDrive)
+  const destCfg = await destCfgFrom(run.job);
   let tmpFile: string | null = null;
   let file: string;
   try {
-    file = await fetchBackup(run.job.destType, destCfg, run.location, run.job.id);
+    file = await fetchBackup(run.job.destType, destCfg, run.location, run.job.destId ?? undefined);
     if (file !== run.location) tmpFile = file;
   } catch (e) {
     const detail = (e as Error).message;
@@ -648,23 +874,10 @@ export async function restoreRun(runId: string, targetConnId?: string, restoreId
   // Decompress the dump (gzip for old backups, brotli for new) into a string
   let sql: string;
   try {
-    const head = Buffer.alloc(2);
-    const fh = fs.openSync(file, "r");
-    try {
-      fs.readSync(fh, head, 0, 2, 0);
-    } finally {
-      fs.closeSync(fh);
-    }
-    const isGzip = head[0] === 0x1f && head[1] === 0x8b;
-    const decompress = isGzip ? zlib.createGunzip() : zlib.createBrotliDecompress();
-    const chunks: Buffer[] = [];
     const t0 = Date.now();
-    await pipeline(fs.createReadStream(file), decompress, async function* (source) {
-      for await (const c of source) chunks.push(c as Buffer);
-      yield; // satisfy pipeline sink
-    });
-    sql = Buffer.concat(chunks).toString("utf8");
-    console.log(`[RESTORE] Decompress (${isGzip ? "gzip" : "brotli"}) selesai dalam ${((Date.now() - t0) / 1000).toFixed(1)}s — ${(sql.length / 1024 / 1024).toFixed(2)} MB`);
+    const raw = await decompressBackup(file);
+    sql = raw.toString("utf8");
+    console.log(`[RESTORE] Decompress selesai dalam ${((Date.now() - t0) / 1000).toFixed(1)}s — ${(sql.length / 1024 / 1024).toFixed(2)} MB`);
   } catch (e) {
     const detail = (e as Error).message;
     return { ok: false, message: `Gagal membaca file backup (decompress): ${detail}. File mungkin korup atau bukan file backup yang valid.` };
@@ -687,25 +900,19 @@ export async function restoreRun(runId: string, targetConnId?: string, restoreId
   let conn: Connection;
   let adminConn: Connection;
   let connThreadId: number | null = null;
+  const openEnds: Array<() => Promise<void>> = [];
   try {
-    conn = await mysql.createConnection({
-      host: cfg.host,
-      port: cfg.port,
-      user: cfg.username,
-      password: cfg.password,
-      connectTimeout: 15_000,
-    });
+    const primary = await openConn(cfg);
+    conn = primary.conn;
+    openEnds.push(primary.end);
     // Second connection for killing hung queries
-    adminConn = await mysql.createConnection({
-      host: cfg.host,
-      port: cfg.port,
-      user: cfg.username,
-      password: cfg.password,
-      connectTimeout: 15_000,
-    });
+    const admin = await openConn(cfg);
+    adminConn = admin.conn;
+    openEnds.push(admin.end);
     const [rows] = await conn.query("SELECT CONNECTION_ID() AS id");
     connThreadId = (rows as Array<{ id: number }>)[0]?.id ?? null;
   } catch (e) {
+    for (const end of openEnds) await end().catch(() => {});
     const detail = (e as Error).message;
     return { ok: false, message: `Gagal koneksi ke MySQL ${cfg.host}:${cfg.port} (user: ${cfg.username}): ${detail}. Periksa host, port, username, password, dan pastikan MySQL server aktif dan bisa diakses dari server ini.` };
   }
@@ -721,10 +928,10 @@ export async function restoreRun(runId: string, targetConnId?: string, restoreId
     }
     // Force-close so pending query promise rejects
     try { conn.destroy(); } catch {}
-    // Reconnect
-    conn = await mysql.createConnection({
-      host: cfg.host, port: cfg.port, user: cfg.username, password: cfg.password, connectTimeout: 15_000,
-    });
+    // Reconnect (opens a fresh tunnel when SSH is used)
+    const next = await openConn(cfg);
+    conn = next.conn;
+    openEnds.push(next.end);
     const [r2] = await conn.query("SELECT CONNECTION_ID() AS id");
     connThreadId = (r2 as Array<{ id: number }>)[0]?.id ?? null;
     await conn.query("SET FOREIGN_KEY_CHECKS=0");
@@ -842,8 +1049,7 @@ export async function restoreRun(runId: string, targetConnId?: string, restoreId
   } catch (e) {
     return { ok: false, message: `Restore gagal (tidak terduga): ${(e as Error).message}` };
   } finally {
-    await conn.end().catch(() => {});
-    await adminConn.end().catch(() => {});
+    for (const end of openEnds) await end().catch(() => {});
     if (tmpFile) await fsp.rm(tmpFile, { force: true }).catch(() => {});
   }
 }
@@ -855,7 +1061,27 @@ export async function deleteRun(runId: string): Promise<void> {
   if (run.job.destType === "local" && run.location) {
     await fsp.rm(run.location, { force: true }).catch(() => {});
   }
-  await prisma.dbBackupRun.delete({ where: { id: runId } }).catch(() => {});
+  const deleted = await prisma.dbBackupRun.delete({ where: { id: runId } }).catch(() => null);
+  if (deleted?.status === "running" && run.job.lastStatus === "running") {
+    const latest = await prisma.dbBackupRun.findFirst({ where: { jobId: run.jobId }, orderBy: { startedAt: "desc" } });
+    await prisma.dbBackupJob.update({
+      where: { id: run.jobId },
+      data: { lastStatus: latest?.status ?? null, lastRunAt: latest?.startedAt ?? null },
+    });
+  }
+}
+
+/** Reset job yang macet berstatus "running" setelah proses mati di tengah jalan. */
+export async function resetStuckJob(jobId: string): Promise<void> {
+  runningJobs.delete(jobId);
+  await prisma.dbBackupRun.updateMany({
+    where: { jobId, status: "running" },
+    data: { status: "failed", message: "Proses terhenti — di-reset manual", endedAt: new Date() },
+  });
+  await prisma.dbBackupJob.update({
+    where: { id: jobId },
+    data: { lastStatus: "failed", lastRunAt: new Date() },
+  });
 }
 
 // ---------- retention management ----------

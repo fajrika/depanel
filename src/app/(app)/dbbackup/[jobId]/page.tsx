@@ -3,7 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-type Run = { id: string; status: string; message: string | null; sizeBytes: number | null; location: string | null; startedAt: string; endedAt: string | null };
+type Run = { id: string; status: string; message: string | null; sizeBytes: number | null; sqlSizeBytes: number | null; location: string | null; startedAt: string; endedAt: string | null };
 type Conn = { id: string; name: string; host: string; port: number; username: string };
 type Job = {
   id: string;
@@ -15,8 +15,11 @@ type Job = {
   dayOn: number | null;
   cronExpr: string | null;
   destType: string;
-  dest: Record<string, unknown>;
+  destId: string | null;
+  destPath: string | null;
+  dest: { id: string; type: string; name: string } | null;
   retention: number;
+  compression: string;
   enabled: boolean;
   lastRunAt: string | null;
   lastStatus: string | null;
@@ -57,10 +60,10 @@ function scheduleLabel(j: Job): string {
 }
 
 function destLabel(j: Job): string {
-  if (j.destType === "local") return `📁 ${j.dest.path}`;
-  if (j.destType === "ftp") return `FTP ${j.dest.host}`;
-  if (j.destType === "gdrive") return "📂 Google Drive";
-  return `S3 ${j.dest.bucket}`;
+  if (j.destType === "local") return `📁 ${j.destPath}`;
+  if (j.destType === "gdrive") return `📂 ${j.dest?.name ?? "Google Drive"}`;
+  if (j.destType === "ftp") return `🌐 ${j.dest?.name ?? "FTP"}`;
+  return `☁️ ${j.dest?.name ?? "S3"}`;
 }
 
 export default function JobDetailPage() {
@@ -235,9 +238,13 @@ export default function JobDetailPage() {
           <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{scheduleLabel(job)}</span>
           <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">→ {destLabel(job)}</span>
           {job.retention > 0 && <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">Retensi: {job.retention}</span>}
+          <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{(job.compression || "brotli") === "none" ? "tanpa kompresi" : (job.compression || "brotli") === "gzip" ? "gzip" : (job.compression || "brotli") === "brotli" ? "brotli" : (job.compression || "brotli") === "xz" ? "7z" : "7z ekstrim"}</span>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <button onClick={() => api(`/api/db/jobs/${job.id}/run`, "POST")} disabled={busy || job.lastStatus === "running"} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">▶ Jalankan</button>
+          {job.lastStatus === "running" && (
+            <button onClick={() => confirm('Job masih berstatus "berjalan" padahal prosesnya mungkin sudah mati. Reset status ini?') && api(`/api/db/jobs/${job.id}/reset`, "POST").then(() => window.location.reload())} disabled={busy} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white">⟲ Reset</button>
+          )}
           <button onClick={() => api(`/api/db/jobs/${job.id}`, "PATCH", { enabled: !job.enabled })} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600">{job.enabled ? "Nonaktifkan" : "Aktifkan"}</button>
           <button onClick={() => confirm(`Hapus job "${job.name}"?`) && api(`/api/db/jobs/${job.id}`, "DELETE")} disabled={busy} className="rounded-lg px-4 py-2 text-sm font-medium text-red-500">Hapus</button>
         </div>
@@ -258,11 +265,11 @@ export default function JobDetailPage() {
                     {r.status === "success" ? "✓" : r.status === "running" ? "⟳" : "✕"} {r.status}
                   </span>
                   <span className="text-slate-500">{new Date(r.startedAt).toLocaleString("id-ID")}</span>
-                  <span className="text-slate-500">{fmtSize(r.sizeBytes)}</span>
+                  <span className="text-slate-500">{fmtSize(r.sizeBytes)}{r.sqlSizeBytes != null && r.sqlSizeBytes !== r.sizeBytes ? <> · <span className="text-slate-400">SQL {fmtSize(r.sqlSizeBytes)}</span></> : ""}</span>
                   {fmtDuration(r.startedAt, r.endedAt) && <span className="text-slate-400">⏱ {fmtDuration(r.startedAt, r.endedAt)}</span>}
                   {r.message && r.status === "failed" && <span className="text-red-500">{r.message}</span>}
                   <span className="ml-auto flex items-center gap-2">
-                    {r.status === "success" && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline">Unduh (.br)</a>}
+                    {r.status === "success" && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline">Unduh</a>}
                     {r.status === "success" && <a href={`/api/db/runs/${r.id}/download?format=sql`} className="text-sky-600 hover:underline">Unduh SQL</a>}
                     {r.status === "success" && <button onClick={() => openRestoreModal(r.id)} disabled={busy} className="text-amber-600 hover:underline disabled:opacity-50">Restore</button>}
                   </span>

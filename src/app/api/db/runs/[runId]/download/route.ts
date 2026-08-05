@@ -2,11 +2,10 @@ import { NextResponse } from "next/server";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import zlib from "node:zlib";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { staffOf } from "@/lib/team";
-import { fetchBackup, type DestConfig } from "@/lib/dbbackup";
+import { fetchBackup, decompressBackup, destCfgFrom } from "@/lib/dbbackup";
 
 export async function GET(req: Request, ctx: { params: Promise<{ runId: string }> }) {
   const user = await getCurrentUser();
@@ -29,25 +28,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ runId: string }
 
   let tmpFile: string | null = null;
   try {
-    const destCfg = JSON.parse(run.job.destConfig) as DestConfig;
-    const file = await fetchBackup(run.job.destType, destCfg, run.location, run.job.id);
+    const destCfg = await destCfgFrom(run.job);
+    const file = await fetchBackup(run.job.destType, destCfg, run.location, run.job.destId ?? undefined);
     if (file !== run.location) tmpFile = file; // fetched from FTP/S3, needs cleanup
 
-    const base = path.basename(run.location).replace(/\.(sql\.gz|sql\.br)$/, "");
+    const base = path.basename(run.location).replace(/\.(sql|sql\.gz|sql\.br|sql\.xz)$/, "");
 
     if (asPlain) {
-      // Detect format via gzip magic bytes, then stream-decompress to plain .sql
-      const head = Buffer.alloc(2);
-      const fh = fs.openSync(file, "r");
-      try {
-        fs.readSync(fh, head, 0, 2, 0);
-      } finally {
-        fs.closeSync(fh);
-      }
-      const isGzip = head[0] === 0x1f && head[1] === 0x8b;
-      const decompress = isGzip ? zlib.createGunzip() : zlib.createBrotliDecompress();
-      const stream = fs.createReadStream(file).pipe(decompress) as unknown as ReadableStream;
-      return new Response(stream, {
+      // Decompress to plain .sql for manual import (TablePlus, etc.)
+      const buf = await decompressBackup(file);
+      return new Response(new Uint8Array(buf), {
         headers: {
           "Content-Type": "application/sql",
           "Content-Disposition": `attachment; filename="${base}.sql"`,
@@ -55,12 +45,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ runId: string }
       });
     }
 
-    const name = `${base}.sql.br`;
+    const rawExt = path.basename(run.location).match(/\.(sql|sql\.gz|sql\.br|sql\.xz)$/)?.[1] ?? "sql.br";
     const stream = fs.createReadStream(file) as unknown as ReadableStream;
     return new Response(stream, {
       headers: {
         "Content-Type": "application/octet-stream",
-        "Content-Disposition": `attachment; filename="${name}"`,
+        "Content-Disposition": `attachment; filename="${base}.${rawExt}"`,
       },
     });
   } catch (e) {

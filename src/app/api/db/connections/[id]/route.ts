@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { staffOf } from "@/lib/team";
-import { encryptSecret } from "@/lib/crypto";
-import mysql from "mysql2/promise";
+import { encryptSecret, decryptSecret } from "@/lib/crypto";
+import { testConnection } from "@/lib/dbbackup";
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -24,13 +24,38 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   const newPort = Number(port) || 3306;
   const newPassword = password || conn.passwordEnc;
+  const newSshId = body.sshId === undefined ? conn.sshId : body.sshId || null;
 
-  // If password is provided and changed, test the connection first
-  if (password) {
+  // Validate SSH reference if changed
+  const sshChanged = newSshId !== conn.sshId;
+  let sshRow: { host: string; port: number; username: string; authType: string; passwordEnc: string; privateKeyEnc: string | null; keyPassphraseEnc: string | null; teamId: string | null } | null = null;
+  if (newSshId) {
+    sshRow = await prisma.sshConnection.findUnique({ where: { id: newSshId } });
+    if (!sshRow || sshRow.teamId !== conn.teamId) {
+      return NextResponse.json({ ok: false, message: "Koneksi SSH tidak ditemukan di tim ini" }, { status: 400 });
+    }
+  }
+
+  // Test the connection when the password changed, the SSH tunnel changed, or SSH is enabled now
+  if (password || sshChanged) {
     try {
-      const c = await mysql.createConnection({ host, port: newPort, user: username, password, connectTimeout: 8000 });
-      await c.query("SELECT 1");
-      await c.end();
+      await testConnection({
+        host,
+        port: newPort,
+        username,
+        password,
+        ssh: sshRow
+          ? {
+              host: sshRow.host,
+              port: sshRow.port,
+              username: sshRow.username,
+              authType: sshRow.authType === "key" ? "key" : "password",
+              password: decryptSecret(sshRow.passwordEnc),
+              privateKey: sshRow.privateKeyEnc ? decryptSecret(sshRow.privateKeyEnc) : undefined,
+              keyPassphrase: sshRow.keyPassphraseEnc ? decryptSecret(sshRow.keyPassphraseEnc) : undefined,
+            }
+          : undefined,
+      });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ ok: false, message: `Koneksi gagal: ${msg}` }, { status: 400 });
@@ -44,6 +69,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       host,
       port: newPort,
       username,
+      sshId: newSshId,
       passwordEnc: password ? encryptSecret(password) : conn.passwordEnc,
     },
   });

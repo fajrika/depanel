@@ -9,7 +9,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!user) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
 
   const { id } = await ctx.params;
-  const conn = await prisma.dbConnection.findUnique({ where: { id }, include: { jobs: true } });
+  const conn = await prisma.dbConnection.findUnique({ where: { id }, include: { jobs: true, ssh: true } });
   if (!conn?.teamId) return NextResponse.json({ ok: false, message: "Koneksi tidak ditemukan" }, { status: 404 });
 
   const { teamId } = await req.json();
@@ -17,6 +17,25 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (teamId === conn.teamId) return NextResponse.json({ ok: false, message: "Koneksi sudah ada di tim ini" }, { status: 400 });
   if (!(await staffOf(user.id, teamId))) {
     return NextResponse.json({ ok: false, message: "Anda bukan admin di tim tujuan" }, { status: 403 });
+  }
+
+  // Clone the SSH tunnel to the target team first (credentials are team-scoped)
+  let sshId: string | null = null;
+  if (conn.ssh) {
+    const newSsh = await prisma.sshConnection.create({
+      data: {
+        teamId,
+        name: `${conn.ssh.name} (clone)`,
+        host: conn.ssh.host,
+        port: conn.ssh.port,
+        username: conn.ssh.username,
+        authType: conn.ssh.authType,
+        passwordEnc: conn.ssh.passwordEnc, // Same encryption key, same team deployment
+        privateKeyEnc: conn.ssh.privateKeyEnc,
+        keyPassphraseEnc: conn.ssh.keyPassphraseEnc,
+      },
+    });
+    sshId = newSsh.id;
   }
 
   // Clone connection to target team
@@ -28,6 +47,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       port: conn.port,
       username: conn.username,
       passwordEnc: conn.passwordEnc, // Same encryption key, same team deployment
+      sshId,
     },
   });
 
@@ -43,7 +63,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         dayOn: job.dayOn,
         cronExpr: job.cronExpr,
         destType: job.destType,
-        destConfig: job.destConfig,
+        destId: job.destId,
+        destPath: job.destPath,
         enabled: false, // Start disabled
         retention: job.retention,
       },
