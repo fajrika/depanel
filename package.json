@@ -21,12 +21,14 @@
     "bcryptjs": "^3.0.3",
     "cron-parser": "^5.6.1",
     "jose": "^6.2.3",
+    "lzma-wasm": "^1.0.7",
     "mysql2": "^3.22.6",
     "next": "16.2.10",
     "node-cron": "^4.6.0",
     "prisma": "^6.19.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "ssh2": "^1.17.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -36,6 +38,7 @@
     "@types/node-cron": "^3.0.11",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ssh2": "^1.15.5",
     "esbuild": "^0.28.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",

@@ -46,7 +46,7 @@ RUN npm init -y >/dev/null 2>&1 \
 FROM base AS workerdeps
 WORKDIR /wd
 RUN npm init -y >/dev/null 2>&1 \
-  && npm install mysql2@3.22.6 basic-ftp@6.0.1 cron-parser@5.6.1 node-cron@4.6.0 bcryptjs@3.0.3 --omit=dev --no-audit --no-fund
+  && npm install mysql2@3.22.6 basic-ftp@6.0.1 cron-parser@5.6.1 node-cron@4.6.0 bcryptjs@3.0.3 lzma-wasm@1.0.7 ssh2@1.17.0 --omit=dev --omit=optional --no-audit --no-fund
 
 # ---- 5. runner ----
 FROM base AS runner

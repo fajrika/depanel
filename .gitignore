@@ -54,6 +54,10 @@ dev.db
 # Claude Code local settings
 .claude/settings.local.json
 
+# agent rules & work log
+AGENTS.md
+/conversations
+
 # OS
 Thumbs.db
 /dist
