@@ -54,6 +54,9 @@ const patchSchema = z.object({
   canInfra: z.boolean().optional(),
   canAccounts: z.boolean().optional(),
   canNotify: z.boolean().optional(),
+  canFirewall: z.boolean().optional(),
+  canConsole: z.boolean().optional(),
+  canManage: z.boolean().optional(),
   hiddenServerIds: z.array(z.string()).max(500).optional(),
   role: z.enum(["owner", "admin", "member"]).optional(),
 });
@@ -76,7 +79,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 
   const parsed = patchSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, message: "Data tidak valid" }, { status: 400 });
-  const { userId, role, canViewBilling, canViewCost, canViewReports, canSchedule, canBackup, canBackupDb, canSsh, canInfra, canAccounts, canNotify, hiddenServerIds } = parsed.data;
+  const { userId, role, canViewBilling, canViewCost, canViewReports, canSchedule, canBackup, canBackupDb, canSsh, canInfra, canAccounts, canNotify, canFirewall, canConsole, canManage, hiddenServerIds } = parsed.data;
 
   const target = await prisma.teamMember.findUnique({ where: { teamId_userId: { teamId: id, userId } } });
   if (!target) return NextResponse.json({ ok: false, message: "Anggota tidak ditemukan" }, { status: 404 });
@@ -114,6 +117,9 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     canInfra?: boolean;
     canAccounts?: boolean;
     canNotify?: boolean;
+    canFirewall?: boolean;
+    canConsole?: boolean;
+    canManage?: boolean;
   } = {};
   if (canViewBilling !== undefined) flags.canViewBilling = canViewBilling;
   if (canViewCost !== undefined) flags.canViewCost = canViewCost;
@@ -125,6 +131,9 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   if (canInfra !== undefined) flags.canInfra = canInfra;
   if (canAccounts !== undefined) flags.canAccounts = canAccounts;
   if (canNotify !== undefined) flags.canNotify = canNotify;
+  if (canFirewall !== undefined) flags.canFirewall = canFirewall;
+  if (canConsole !== undefined) flags.canConsole = canConsole;
+  if (canManage !== undefined) flags.canManage = canManage;
   if (Object.keys(flags).length > 0) {
     if (target.role !== "member") {
       return NextResponse.json({ ok: false, message: "Owner/admin selalu punya izin penuh" }, { status: 400 });

@@ -79,6 +79,9 @@ export default function ServerMonitor({
   initialTab = "monitoring",
   canSchedule = true,
   canBackup = true,
+  canFirewall = false,
+  canConsole = false,
+  canManage = false,
   isStaff = false,
   onScheduleSaved,
 }: {
@@ -88,6 +91,9 @@ export default function ServerMonitor({
   initialTab?: PanelTab;
   canSchedule?: boolean;
   canBackup?: boolean;
+  canFirewall?: boolean;
+  canConsole?: boolean;
+  canManage?: boolean;
   isStaff?: boolean;
   onScheduleSaved?: () => void;
 }) {
@@ -159,9 +165,9 @@ export default function ServerMonitor({
     { v: "monitoring", l: "📊 Monitoring" },
     ...(canSchedule ? [{ v: "jadwal" as PanelTab, l: "🕒 Jadwal" }] : []),
     ...(canBackup ? [{ v: "backup" as PanelTab, l: "💾 Backup" }] : []),
-    ...(isStaff ? [{ v: "firewall" as PanelTab, l: "🛡️ Firewall" }] : []),
-    ...(isStaff ? [{ v: "console" as PanelTab, l: "🖥️ Console" }] : []),
-    ...(isStaff ? [{ v: "kelola" as PanelTab, l: "⚙️ Kelola" }] : []),
+    ...(canFirewall ? [{ v: "firewall" as PanelTab, l: "🛡️ Firewall" }] : []),
+    ...(canConsole ? [{ v: "console" as PanelTab, l: "🖥️ Console" }] : []),
+    ...(canManage ? [{ v: "kelola" as PanelTab, l: "⚙️ Kelola" }] : []),
   ];
 
   return (
@@ -349,13 +355,13 @@ export default function ServerMonitor({
       {tab === "backup" && canBackup && <BackupPanel serverId={serverId} hostname={serverName} />}
 
       {/* ===== TAB: FIREWALL (F7) ===== */}
-      {tab === "firewall" && isStaff && <FirewallPanel serverId={serverId} isStaff={isStaff} />}
+      {tab === "firewall" && canFirewall && <FirewallPanel serverId={serverId} isStaff={isStaff} />}
 
       {/* ===== TAB: CONSOLE (F8) ===== */}
-      {tab === "console" && isStaff && <ConsolePanel serverId={serverId} hostname={serverName} />}
+      {tab === "console" && canConsole && <ConsolePanel serverId={serverId} hostname={serverName} />}
 
       {/* ===== TAB: KELOLA — resize/tier/reinstall/hapus (F9/F10/F11) ===== */}
-      {tab === "kelola" && isStaff && <ManagePanel serverId={serverId} hostname={serverName} onChanged={onScheduleSaved} />}
+      {tab === "kelola" && canManage && <ManagePanel serverId={serverId} hostname={serverName} onChanged={onScheduleSaved} />}
     </div>
   );
 }

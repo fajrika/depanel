@@ -9,6 +9,7 @@
     "lint": "eslint",
     "user": "tsx scripts/create-user.ts",
     "worker": "tsx worker/index.ts",
+    "dev:ws": "tsx scripts/ws-server.ts",
     "all": "node scripts/run-all.mjs dev",
     "all:prod": "node scripts/run-all.mjs prod",
     "db:push": "prisma db push",

@@ -33,6 +33,9 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
       canInfra: true,
       canAccounts: true,
       canNotify: true,
+      canFirewall: true,
+      canConsole: true,
+      canManage: true,
     },
     update: {},
   });

@@ -92,6 +92,9 @@ model TeamMember {
   canInfra       Boolean            @default(false) // member boleh membuka halaman Infra
   canAccounts    Boolean            @default(false) // member boleh membuka/mengelola Akun API
   canNotify      Boolean            @default(false) // member boleh membuka halaman Notifikasi
+  canFirewall    Boolean            @default(false) // member boleh mengakses tab Firewall
+  canConsole     Boolean            @default(false) // member boleh mengakses tab Console
+  canManage      Boolean            @default(false) // member boleh mengakses tab Kelola
   serverHides    MemberServerHide[]
 
   @@unique([teamId, userId])

@@ -17,6 +17,9 @@ type Member = {
   canInfra: boolean;
   canAccounts: boolean;
   canNotify: boolean;
+  canFirewall: boolean;
+  canConsole: boolean;
+  canManage: boolean;
   hiddenServerIds: string[];
 };
 type Team = {
@@ -308,6 +311,36 @@ export default function TeamsPage() {
                                     className="h-3 w-3 accent-emerald-600"
                                   />
                                   notifikasi
+                                </label>
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh mengakses tab Firewall di server">
+                                  <input
+                                    type="checkbox"
+                                    checked={m.canFirewall}
+                                    disabled={busy}
+                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canFirewall: !m.canFirewall })}
+                                    className="h-3 w-3 accent-emerald-600"
+                                  />
+                                  firewall
+                                </label>
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh mengakses tab Console di server">
+                                  <input
+                                    type="checkbox"
+                                    checked={m.canConsole}
+                                    disabled={busy}
+                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canConsole: !m.canConsole })}
+                                    className="h-3 w-3 accent-emerald-600"
+                                  />
+                                  console
+                                </label>
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh mengakses tab Kelola di server">
+                                  <input
+                                    type="checkbox"
+                                    checked={m.canManage}
+                                    disabled={busy}
+                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canManage: !m.canManage })}
+                                    className="h-3 w-3 accent-emerald-600"
+                                  />
+                                  kelola
                                 </label>
                                 <button
                                   onClick={() => setServerEditor(serverEditor === `${t.id}:${m.id}` ? null : `${t.id}:${m.id}`)}

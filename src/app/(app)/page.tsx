@@ -118,6 +118,9 @@ export default function Dashboard() {
   const [canSchedule, setCanSchedule] = useState(true);
   const [canBackup, setCanBackup] = useState(true);
   const [canSsh, setCanSsh] = useState(false);
+  const [canFirewall, setCanFirewall] = useState(false);
+  const [canConsole, setCanConsole] = useState(false);
+  const [canManage, setCanManage] = useState(false);
   const [teamName, setTeamName] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedSsh, setSelectedSsh] = useState<string | null>(null);
@@ -193,6 +196,9 @@ export default function Dashboard() {
         setCanSchedule(d?.activeTeam?.canSchedule ?? true);
         setCanBackup(d?.activeTeam?.canBackup ?? true);
         setCanSsh(d?.activeTeam?.canSsh ?? false);
+        setCanFirewall(d?.activeTeam?.canFirewall ?? false);
+        setCanConsole(d?.activeTeam?.canConsole ?? false);
+        setCanManage(d?.activeTeam?.canManage ?? false);
         setTeamName(d?.activeTeam?.name ?? "");
       })
       .catch(() => {});
@@ -655,6 +661,9 @@ export default function Dashboard() {
                     initialTab={panelTab}
                     canSchedule={canSchedule}
                     canBackup={canBackup}
+                    canFirewall={canFirewall}
+                    canConsole={canConsole}
+                    canManage={canManage}
                     isStaff={isStaff}
                     onClose={() => setSelectedId(null)}
                     onScheduleSaved={load}

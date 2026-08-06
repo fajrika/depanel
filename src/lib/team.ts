@@ -28,7 +28,10 @@ export type FeatureCap =
   | "ssh"
   | "infra"
   | "accounts"
-  | "notify";
+  | "notify"
+  | "firewall"
+  | "console"
+  | "manage";
 
 /** Kolom TeamMember yang menjadi sumber kebenaran tiap fitur. */
 export const FEATURE_FIELD: Record<FeatureCap, keyof CapRow> = {
@@ -42,6 +45,9 @@ export const FEATURE_FIELD: Record<FeatureCap, keyof CapRow> = {
   infra: "canInfra",
   accounts: "canAccounts",
   notify: "canNotify",
+  firewall: "canFirewall",
+  console: "canConsole",
+  manage: "canManage",
 };
 
 export const ALL_CAPS = Object.keys(FEATURE_FIELD) as FeatureCap[];
@@ -59,6 +65,9 @@ export type CapRow = {
   canInfra: boolean;
   canAccounts: boolean;
   canNotify: boolean;
+  canFirewall: boolean;
+  canConsole: boolean;
+  canManage: boolean;
 };
 
 /** Staff (owner/admin) selalu punya semua izin; member mengikuti flag-nya. */
@@ -127,6 +136,9 @@ function toActiveTeam(m: CapRow, team: { id: string; name: string; isPersonal: b
     canInfra: staff || m.canInfra,
     canAccounts: staff || m.canAccounts,
     canNotify: staff || m.canNotify,
+    canFirewall: staff || m.canFirewall,
+    canConsole: staff || m.canConsole,
+    canManage: staff || m.canManage,
   };
 }
 
@@ -163,6 +175,9 @@ export async function getActiveTeam(user: { id: string; name: string; lastTeamId
     canInfra: true,
     canAccounts: true,
     canNotify: true,
+    canFirewall: true,
+    canConsole: true,
+    canManage: true,
   };
 }
 

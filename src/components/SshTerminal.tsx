@@ -88,7 +88,7 @@ export default function SshTerminal({ sshId, name, host, username, port, onClose
       ws.onerror = () => {
         if (!disposed) {
           setStatus("error");
-          setErrorMsg("WebSocket connection failed");
+          setErrorMsg("WebSocket server tidak berjalan. Jalankan: npm run dev:ws atau npm run all");
         }
       };
 
