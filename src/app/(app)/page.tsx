@@ -1,8 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import ServerMonitor, { type PanelTab } from "@/components/ServerMonitor";
 import SshMonitorPanel, { type SshLastSample } from "@/components/SshMonitorPanel";
+
+const SshTerminal = dynamic(() => import("@/components/SshTerminal"), { ssr: false });
 
 type Server = {
   id: string;
@@ -32,6 +35,7 @@ type SshConn = {
   username: string;
   authType: string;
   createdAt: string;
+  groupName: string | null;
   last: SshLastSample | null;
 };
 
@@ -119,6 +123,7 @@ export default function Dashboard() {
   const [selectedSsh, setSelectedSsh] = useState<string | null>(null);
   const [sshList, setSshList] = useState<SshConn[]>([]);
   const [sshCollapsed, setSshCollapsed] = useState(false);
+  const [terminalSsh, setTerminalSsh] = useState<{ id: string; name: string; host: string; username: string; port: number } | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>("monitoring");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<Set<string>>(new Set()); // F5: seleksi aksi masal
@@ -562,48 +567,72 @@ export default function Dashboard() {
                   <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Koneksi via SSH</span>
                   <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500">{sshList.length} koneksi</span>
                 </button>
-                <div className={`space-y-4 overflow-hidden transition-all duration-300 ${sshCollapsed ? "max-h-0 opacity-0" : "max-h-[4000px] opacity-100"}`}>
-                  {sshList.map((c) => {
-                    const active = selectedSsh === c.id;
-                    const ok = c.last?.ok ?? null;
-                    return (
-                      <div
-                        key={c.id}
-                        onClick={() => selectSsh(c.id)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => e.key === "Enter" && selectSsh(c.id)}
-                        className={`group cursor-pointer rounded-2xl border bg-white p-4 transition-all duration-300 dark:bg-slate-900 ${
-                          active
-                            ? "-translate-y-0.5 border-emerald-400 shadow-lg shadow-emerald-100 ring-2 ring-emerald-300 dark:border-emerald-500 dark:shadow-emerald-950 dark:ring-emerald-700"
-                            : "border-slate-200 shadow-sm hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:hover:border-slate-600"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="truncate text-[15px] font-semibold text-slate-900 dark:text-slate-100">{c.name}</span>
-                              <SshStatus ok={ok} />
-                            </div>
-                            <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
-                              {c.username}@{c.host}:{c.port}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-slate-100 pt-2.5 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
-                          <span>
-                            cek terakhir:{" "}
-                            {c.last ? new Date(c.last.at).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "—"}
-                          </span>
-                          <span className="tabular-nums">
-                            {c.last?.ok
-                              ? `CPU ${c.last.cpu ?? "—"}% · RAM ${c.last.memPct ?? "—"}%`
-                              : c.last?.error ?? "belum ada sampel"}
-                          </span>
+                <div className={`space-y-3 overflow-hidden transition-all duration-300 ${sshCollapsed ? "max-h-0 opacity-0" : "max-h-[4000px] opacity-100"}`}>
+                  {(() => {
+                    const groups = new Map<string, SshConn[]>();
+                    for (const c of sshList) {
+                      const g = c.groupName ?? "";
+                      if (!groups.has(g)) groups.set(g, []);
+                      groups.get(g)!.push(c);
+                    }
+                    const sorted = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+                    return sorted.map(([groupName, items]) => (
+                      <div key={groupName || "__ungrouped__"}>
+                        {groupName && (
+                          <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{groupName}</p>
+                        )}
+                        <div className="space-y-2">
+                          {items.map((c) => {
+                            const active = selectedSsh === c.id;
+                            const ok = c.last?.ok ?? null;
+                            return (
+                              <div
+                                key={c.id}
+                                onClick={() => selectSsh(c.id)}
+                                role="button"
+                                tabIndex={0}
+                                onKeyDown={(e) => e.key === "Enter" && selectSsh(c.id)}
+                                className={`group cursor-pointer rounded-2xl border bg-white p-4 transition-all duration-300 dark:bg-slate-900 ${
+                                  active
+                                    ? "-translate-y-0.5 border-emerald-400 shadow-lg shadow-emerald-100 ring-2 ring-emerald-300 dark:border-emerald-500 dark:shadow-emerald-950 dark:ring-emerald-700"
+                                    : "border-slate-200 shadow-sm hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:hover:border-slate-600"
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="truncate text-[15px] font-semibold text-slate-900 dark:text-slate-100">{c.name}</span>
+                                      <SshStatus ok={ok} />
+                                    </div>
+                                    <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+                                      {c.username}@{c.host}:{c.port}
+                                    </p>
+                                  </div>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setTerminalSsh({ id: c.id, name: c.name, host: c.host, username: c.username, port: c.port }); }}
+                                    className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium text-emerald-600 transition hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950"
+                                  >
+                                    Terminal
+                                  </button>
+                                </div>
+                                <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-slate-100 pt-2.5 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
+                                  <span>
+                                    cek terakhir:{" "}
+                                    {c.last ? new Date(c.last.at).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "—"}
+                                  </span>
+                                  <span className="tabular-nums">
+                                    {c.last?.ok
+                                      ? `CPU ${c.last.cpu ?? "—"}% · RAM ${c.last.memPct ?? "—"}%`
+                                      : c.last?.error ?? "belum ada sampel"}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                    );
-                  })}
+                    ));
+                  })()}
                 </div>
               </section>
             )}
@@ -657,6 +686,22 @@ export default function Dashboard() {
                 </p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Terminal panel */}
+      {terminalSsh && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="h-[80vh] w-full max-w-5xl">
+            <SshTerminal
+              sshId={terminalSsh.id}
+              name={terminalSsh.name}
+              host={terminalSsh.host}
+              username={terminalSsh.username}
+              port={terminalSsh.port}
+              onClose={() => setTerminalSsh(null)}
+            />
           </div>
         </div>
       )}

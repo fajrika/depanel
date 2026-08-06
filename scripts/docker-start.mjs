@@ -1,6 +1,7 @@
-// Production launcher for the Docker image: runs the Next.js server and the
-// scheduler worker in one container. If either exits, the other is stopped too
-// (so the platform restarts the whole container — never web without scheduler).
+// Production launcher for the Docker image: runs the Next.js server, the
+// scheduler worker, and the SSH terminal WebSocket server in one container.
+// If any exits, the others are stopped too (so the platform restarts the
+// whole container).
 import { spawn } from "node:child_process";
 
 const procs = [];
@@ -30,8 +31,10 @@ function run(name, cmd, args) {
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
 
-console.log("🚀 Depanel — starting web + scheduler worker");
+console.log("🚀 Depanel — starting web + scheduler worker + SSH terminal WS");
 // Next.js standalone server (respects PORT / HOSTNAME env)
 run("web", "node", ["server.js"]);
 // Compiled scheduler worker
 run("worker", "node", ["dist/worker.cjs"]);
+// SSH terminal WebSocket server
+run("ws-ssh", "node", ["dist/ws-server.cjs"]);

@@ -17,9 +17,9 @@ export async function GET() {
   const sshs = await prisma.sshConnection.findMany({
     where: { teamId: team.id },
     orderBy: { createdAt: "asc" },
-    select: { id: true, name: true, host: true, port: true, username: true, authType: true, createdAt: true, _count: { select: { dbConns: true } } },
+    select: { id: true, name: true, host: true, port: true, username: true, authType: true, groupId: true, createdAt: true, _count: { select: { dbConns: true } }, group: { select: { id: true, name: true } } },
   });
-  return NextResponse.json({ ok: true, data: sshs.map((s) => ({ ...s, connCount: s._count.dbConns })) });
+  return NextResponse.json({ ok: true, data: sshs.map((s) => ({ ...s, connCount: s._count.dbConns, groupName: s.group?.name ?? null })) });
 }
 
 const createSchema = z
@@ -32,6 +32,7 @@ const createSchema = z
     password: z.string().optional(),
     privateKey: z.string().optional(),
     keyPassphrase: z.string().optional(),
+    groupId: z.string().nullable().optional(),
   })
   .superRefine((d, ctx) => {
     if (d.authType === "key" && !d.privateKey?.trim()) {
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message ?? "Data tidak valid" }, { status: 400 });
   }
-  const { name, host, port, username, authType, password, privateKey, keyPassphrase } = parsed.data;
+  const { name, host, port, username, authType, password, privateKey, keyPassphrase, groupId } = parsed.data;
 
   try {
     await testSshConnection({
@@ -81,6 +82,7 @@ export async function POST(request: Request) {
       privateKeyEnc: authType === "key" && privateKey ? encryptSecret(privateKey) : null,
       keyPassphraseEnc: keyPassphrase ? encryptSecret(keyPassphrase) : null,
       teamId: team.id,
+      groupId: groupId || null,
     },
   });
   return NextResponse.json({ ok: true, data: { id: ssh.id } });

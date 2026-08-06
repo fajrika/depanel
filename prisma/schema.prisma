@@ -39,6 +39,7 @@ model Team {
   accounts      DepaAccount[]
   dbConnections DbConnection[]
   sshConnections SshConnection[]
+  sshGroups      SshGroup[]
   dbDests       DbDest[]
   activityLogs  ActivityLog[]
   notifyChannels NotifyChannel[]
@@ -194,6 +195,8 @@ model SshConnection {
   id                String        @id @default(cuid())
   teamId            String?
   team              Team?         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  groupId           String?
+  group             SshGroup?     @relation(fields: [groupId], references: [id], onDelete: SetNull)
   name              String
   host              String
   port              Int           @default(22)
@@ -205,6 +208,19 @@ model SshConnection {
   createdAt         DateTime      @default(now())
   dbConns           DbConnection[]
   metricSamples     SshMetricSample[]
+}
+
+/// Grouping container for SSH connections. Team-scoped, 1 level only.
+model SshGroup {
+  id            String          @id @default(cuid())
+  teamId        String?
+  team          Team?           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name          String
+  sortOrder     Int             @default(0)
+  createdAt     DateTime        @default(now())
+  connections   SshConnection[]
+
+  @@unique([teamId, name])
 }
 
 /// Periodic metric/status sample of an SSH-connected server (collected by the worker).

@@ -14,7 +14,7 @@ export async function GET() {
   const sshs = await prisma.sshConnection.findMany({
     where: { teamId: team.id },
     orderBy: { createdAt: "asc" },
-    select: { id: true, name: true, host: true, port: true, username: true, authType: true, createdAt: true },
+    select: { id: true, name: true, host: true, port: true, username: true, authType: true, createdAt: true, groupId: true, group: { select: { id: true, name: true } } },
   });
 
   const samples = await prisma.sshMetricSample.findMany({
@@ -36,6 +36,7 @@ export async function GET() {
       username: s.username,
       authType: s.authType,
       createdAt: s.createdAt,
+      groupName: s.group?.name ?? null,
       last: l
         ? {
             at: l.at,

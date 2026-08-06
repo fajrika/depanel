@@ -17,7 +17,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   const body = await req.json();
-  const { name, host, port, username, authType, password, privateKey, keyPassphrase } = body ?? {};
+  const { name, host, port, username, authType, password, privateKey, keyPassphrase, groupId } = body ?? {};
   if (!name || !host || !username) {
     return NextResponse.json({ ok: false, message: "nama, host, username wajib diisi" }, { status: 400 });
   }
@@ -69,6 +69,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       passwordEnc: newAuth === "password" ? encryptSecret(testCfg.password) : "",
       privateKeyEnc: newAuth === "key" && testCfg.privateKey ? encryptSecret(testCfg.privateKey) : null,
       keyPassphraseEnc: newPassphrase ? encryptSecret(newPassphrase) : ssh.keyPassphraseEnc,
+      groupId: groupId !== undefined ? (groupId || null) : ssh.groupId,
     },
   });
 

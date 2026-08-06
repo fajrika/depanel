@@ -52,13 +52,14 @@ FROM base AS workerdeps
 WORKDIR /wd
 RUN --mount=type=cache,target=/root/.npm \
     npm init -y >/dev/null 2>&1 \
-  && npm install mysql2@3.22.6 basic-ftp@6.0.1 cron-parser@5.6.1 node-cron@4.6.0 bcryptjs@3.0.3 lzma-wasm@1.0.7 ssh2@1.17.0 --omit=dev --omit=optional --no-audit --no-fund
+  && npm install mysql2@3.22.6 basic-ftp@6.0.1 cron-parser@5.6.1 node-cron@4.6.0 bcryptjs@3.0.3 lzma-wasm@1.0.7 ssh2@1.17.0 ws@8.18.0 --omit=dev --omit=optional --no-audit --no-fund
 
 # ---- 5. runner ----
 FROM base AS runner
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+ENV SSH_WS_PORT=3001
 
 # Next.js standalone server: /app/server.js + a minimal traced node_modules.
 COPY --from=builder /app/.next/standalone ./
@@ -83,7 +84,7 @@ COPY package.json ./package.json
 COPY scripts/docker-entrypoint.sh scripts/docker-start.mjs scripts/backfill-destpath.cjs scripts/backfill-perms.cjs ./scripts/
 RUN chmod +x scripts/docker-entrypoint.sh && mkdir -p /app/data
 
-EXPOSE 3000
+EXPOSE 3000 3001
 
 # Persist the SQLite database across restarts (mount this in Coolify).
 VOLUME ["/app/data"]
