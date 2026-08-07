@@ -11,8 +11,6 @@ type Props = {
   onClose: () => void;
 };
 
-const WS_URL = process.env.NEXT_PUBLIC_SSH_WS_URL || "";
-
 export default function SshTerminal({ sshId, name, host, username, port, onClose }: Props) {
   const termRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"connecting" | "connected" | "disconnected" | "error">("connecting");
@@ -22,8 +20,18 @@ export default function SshTerminal({ sshId, name, host, username, port, onClose
 
   useEffect(() => {
     let disposed = false;
+    let wsUrl = "";
 
     async function init() {
+      // Fetch WS URL from server (runtime config, not build-time)
+      try {
+        const res = await fetch("/api/config/ssh-ws");
+        const d = await res.json();
+        wsUrl = d.url || "";
+      } catch {
+        wsUrl = "";
+      }
+
       const { Terminal } = await import("xterm");
       const { FitAddon } = await import("@xterm/addon-fit");
       const { WebLinksAddon } = await import("@xterm/addon-web-links");
@@ -59,7 +67,7 @@ export default function SshTerminal({ sshId, name, host, username, port, onClose
       fitAddon.fit();
       termInstanceRef.current = term;
 
-      const baseWsUrl = WS_URL || `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.hostname}:3001`;
+      const baseWsUrl = wsUrl || `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.hostname}:3001`;
       const ws = new WebSocket(`${baseWsUrl}?sshId=${sshId}`);
       wsRef.current = ws;
 
