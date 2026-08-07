@@ -60,6 +60,9 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 ENV SSH_WS_PORT=3001
+# Set NEXT_PUBLIC_SSH_WS_URL in Coolify env vars to custom WS domain
+# e.g. wss://ws-depanel.mantapsys.com (without trailing slash)
+# If empty, defaults to wss://<current-hostname>:3001
 
 # Next.js standalone server: /app/server.js + a minimal traced node_modules.
 COPY --from=builder /app/.next/standalone ./
