@@ -35,9 +35,22 @@ export default function AccountsPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
-    const [aRes, sRes] = await Promise.all([fetch("/api/accounts"), fetch("/api/servers")]);
-    if (aRes.ok) setAccounts((await aRes.json()).data ?? []);
-    if (sRes.ok) setServers((await sRes.json()).data ?? []);
+    const aRes = await fetch("/api/accounts");
+    const accountsData = aRes.ok ? (await aRes.json()).data ?? [] : [];
+    setAccounts(accountsData);
+
+    // Fetch ALL servers per account (including inactive ones)
+    const allServers: Server[] = [];
+    await Promise.all(
+      accountsData.map(async (a: Account) => {
+        const sRes = await fetch(`/api/accounts/${a.id}/servers`);
+        if (sRes.ok) {
+          const d = await sRes.json();
+          allServers.push(...(d.data ?? []));
+        }
+      })
+    );
+    setServers(allServers);
     setLoading(false);
   }, []);
 
