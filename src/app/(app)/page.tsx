@@ -459,6 +459,9 @@ export default function Dashboard() {
                             <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
                               {[s.ipAddress, s.location].filter(Boolean).join(" · ") || s.uuid}
                             </p>
+                            {s.storageGb && (
+                              <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">💾 {s.storageGb} GB</p>
+                            )}
                             </div>
                           </div>
                           {isStaff && (
@@ -623,8 +626,11 @@ export default function Dashboard() {
                                 </div>
                                 <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-slate-100 pt-2.5 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
                                   <span>
-                                    cek terakhir:{" "}
-                                    {c.last ? new Date(c.last.at).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "—"}
+                                    {c.last?.disk?.[0] ? (
+                                      <>💾 {c.last.disk[0].usedMb >= 1024 ? `${(c.last.disk[0].usedMb / 1024).toFixed(1)} Gb` : `${c.last.disk[0].usedMb} Mb`} / {c.last.disk[0].sizeMb >= 1024 ? `${(c.last.disk[0].sizeMb / 1024).toFixed(1)} Gb` : `${c.last.disk[0].sizeMb} Mb`} ({c.last.disk[0].pct}%)</>
+                                    ) : (
+                                      <>cek terakhir: {c.last ? new Date(c.last.at).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "—"}</>
+                                    )}
                                   </span>
                                   <span className="tabular-nums">
                                     {c.last?.ok
