@@ -16,6 +16,7 @@ type Server = {
   uuid: string;
   hostname: string;
   status: string;
+  isActive: boolean;
   ipAddress: string | null;
   location: string | null;
   account: { id: string; name: string };
@@ -48,6 +49,18 @@ export default function AccountsPage() {
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  }
+
+  async function toggleServerActive(serverId: string, current: boolean) {
+    const res = await fetch(`/api/servers/${serverId}/active`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive: !current }),
+    });
+    const d = await res.json();
+    if (d.ok) {
+      setServers((prev) => prev.map((s) => s.id === serverId ? { ...s, isActive: !current } : s));
+    }
   }
 
   async function saveEdit(e: React.FormEvent) {
@@ -109,7 +122,7 @@ export default function AccountsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Akun API depa</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          API key disimpan terenkripsi di server. Pilih akun untuk melihat server yang terdaftar.
+          API key disimpan terenkripsi di server. Pilih server yang aktif untuk di-manage oleh anggota tim.
         </p>
       </div>
 
@@ -139,6 +152,7 @@ export default function AccountsPage() {
         <div className="space-y-3">
           {accounts.map((a) => {
             const accServers = servers.filter((s) => s.account.id === a.id);
+            const activeCount = accServers.filter((s) => s.isActive).length;
             const isExpanded = expanded.has(a.id);
             return (
               <div key={a.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -158,7 +172,7 @@ export default function AccountsPage() {
                         <span className="font-mono text-xs text-slate-400">{a.maskedKey}</span>
                       </div>
                       <p className="mt-0.5 text-xs text-slate-400">
-                        {accServers.length} server · sync: {a.lastSyncedAt ? new Date(a.lastSyncedAt).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "—"}
+                        {activeCount}/{accServers.length} server aktif · sync: {a.lastSyncedAt ? new Date(a.lastSyncedAt).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "—"}
                       </p>
                     </div>
                   )}
@@ -184,8 +198,15 @@ export default function AccountsPage() {
                           const off = s.status.toLowerCase() === "stopped";
                           return (
                             <div key={s.id} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                              <button
+                                onClick={() => toggleServerActive(s.id, s.isActive)}
+                                title={s.isActive ? "Nonaktifkan server ini" : "Aktifkan server ini"}
+                                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${s.isActive ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"}`}
+                              >
+                                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${s.isActive ? "translate-x-[18px]" : "translate-x-[2px]"}`} />
+                              </button>
                               <span className={`h-1.5 w-1.5 rounded-full ${on ? "bg-emerald-500" : off ? "bg-slate-400" : "bg-amber-500 animate-pulse"}`} />
-                              <span className="min-w-0 flex-1 truncate font-medium text-slate-800 dark:text-slate-100">{s.hostname}</span>
+                              <span className={`min-w-0 flex-1 truncate font-medium ${s.isActive ? "text-slate-800 dark:text-slate-100" : "text-slate-400 dark:text-slate-500"}`}>{s.hostname}</span>
                               <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${on ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:ring-emerald-900" : off ? "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700" : "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/60 dark:text-amber-400 dark:ring-amber-900"}`}>
                                 {s.status}
                               </span>

@@ -141,6 +141,7 @@ model Server {
   storageGb     Int?
   managed       Boolean       @default(false) // eligible for panel control + scheduling
   isProduction  Boolean       @default(false) // safety flag: never auto-stopped
+  isActive      Boolean       @default(true) // server aktif di panel (bisa di-toggle per akun)
   sortOrder     Int           @default(0) // urutan tampil di daftar (diatur owner/admin)
   raw           String? // last raw JSON from depa (list endpoint)
   detailJson    String? // cached JSON from depa /detail endpoint

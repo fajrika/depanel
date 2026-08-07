@@ -212,13 +212,15 @@ export async function canTouchServer(
 ): Promise<boolean> {
   const server = await prisma.server.findUnique({
     where: { id: serverId },
-    select: { account: { select: { teamId: true } } },
+    select: { account: { select: { teamId: true } }, isActive: true },
   });
   if (!server?.account.teamId) return false;
   const m = await membershipOf(userId, server.account.teamId);
   if (!m) return false;
   if (isStaff(m.role)) return true;
 
+  // server harus aktif (diakun) dan tidak di-hide untuk member ini
+  if (!server.isActive) return false;
   const hidden = await prisma.memberServerHide.findUnique({
     where: { memberId_serverId: { memberId: m.id, serverId } },
   });

@@ -10,15 +10,16 @@ export async function GET() {
   const team = await getActiveTeam(user);
   const staff = isStaff(team.role);
 
-  // member: sembunyikan server yang di-hide khusus untuknya
-  let hideFilter = {};
+  // member: sembunyikan server yang di-hide atau tidak aktif untuknya
+  let serverFilter: Record<string, unknown> = {};
   if (!staff) {
     const m = await membershipOf(user.id, team.id);
-    if (m) hideFilter = { hiddenFor: { none: { memberId: m.id } } };
+    if (m) serverFilter = { AND: [{ isActive: true }, { hiddenFor: { none: { memberId: m.id } } }] };
+    else serverFilter = { isActive: true };
   }
 
   const servers = await prisma.server.findMany({
-    where: { account: { teamId: team.id }, ...hideFilter },
+    where: { account: { teamId: team.id }, ...serverFilter },
     orderBy: [{ accountId: "asc" }, { sortOrder: "asc" }, { hostname: "asc" }],
     include: {
       account: { select: { id: true, name: true } },
