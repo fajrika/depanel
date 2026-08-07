@@ -57,9 +57,11 @@ export default function AccountsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isActive: !current }),
     });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({ ok: false }));
     if (d.ok) {
       setServers((prev) => prev.map((s) => s.id === serverId ? { ...s, isActive: !current } : s));
+    } else {
+      setMsg(d.message ?? "Gagal mengubah status server");
     }
   }
 

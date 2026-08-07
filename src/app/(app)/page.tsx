@@ -20,6 +20,7 @@ type Server = {
   storageGb: number | null;
   managed: boolean;
   isProduction: boolean;
+  isActive: boolean;
   lastSyncedAt: string | null;
   account: { id: string; name: string };
   scheduleEnabled: boolean;

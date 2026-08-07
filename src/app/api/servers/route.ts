@@ -10,12 +10,16 @@ export async function GET() {
   const team = await getActiveTeam(user);
   const staff = isStaff(team.role);
 
-  // member: sembunyikan server yang di-hide atau tidak aktif untuknya
+  // filter: staff tetap lihat semua server (termasuk non-active), tapi member hanya yang aktif
+  // NOTE: isActive filter juga berlaku untuk staff di dashboard agar konsisten dengan layer 1
   let serverFilter: Record<string, unknown> = {};
   if (!staff) {
     const m = await membershipOf(user.id, team.id);
     if (m) serverFilter = { AND: [{ isActive: true }, { hiddenFor: { none: { memberId: m.id } } }] };
     else serverFilter = { isActive: true };
+  } else {
+    // staff: tetap harus filter isActive (layer 1 dari akun API)
+    serverFilter = { isActive: true };
   }
 
   const servers = await prisma.server.findMany({
@@ -52,6 +56,7 @@ export async function GET() {
       storageGb: s.storageGb,
       managed: s.managed,
       isProduction: s.isProduction,
+      isActive: s.isActive,
       lastSyncedAt: s.lastSyncedAt,
       account: s.account,
       scheduleEnabled: s.schedule?.enabled ?? false,
