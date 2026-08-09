@@ -730,8 +730,16 @@ export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "m
     data: { status: "failed", message: "Proses terhenti (crash) — di-reset otomatis", endedAt: new Date() },
   });
 
-  const run = await prisma.dbBackupRun.create({ data: { jobId, status: "running", message: `trigger: ${trigger}` } });
-  await prisma.dbBackupJob.update({ where: { id: jobId }, data: { lastStatus: "running" } });
+  let runId: string;
+  try {
+    const run = await prisma.dbBackupRun.create({ data: { jobId, status: "running", message: `trigger: ${trigger}` } });
+    runId = run.id;
+    await prisma.dbBackupJob.update({ where: { id: jobId }, data: { lastStatus: "running" } });
+  } catch (e) {
+    console.error(`[BACKUP] Job "${job.name}" gagal memulai run: ${(e as Error).message}`);
+    runningJobs.delete(jobId);
+    return;
+  }
 
   let tmpFile: string | null = null;
   try {
@@ -754,7 +762,7 @@ export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "m
     const location = await deliver(job.destType, destCfg, tmpFile, `${fileBase}.${ext}`, job.destId ?? undefined);
 
     await prisma.dbBackupRun.update({
-      where: { id: run.id },
+      where: { id: runId },
       data: { status: "success", sizeBytes: size, sqlSizeBytes: dumped.sqlSize, location, endedAt: new Date(), message: `${databases.length} database` },
     });
     await prisma.dbBackupJob.update({ where: { id: jobId }, data: { lastStatus: "success", lastRunAt: new Date() } });
@@ -771,7 +779,7 @@ export async function runJob(jobId: string, trigger: "manual" | "scheduler" = "m
     const detail = err.stack ? `\nStack: ${err.stack}` : "";
     console.error(`[BACKUP] Job "${job.name}" failed: ${msg}${detail}`);
     await prisma.dbBackupRun.update({
-      where: { id: run.id },
+      where: { id: runId },
       data: { status: "failed", message: msg, endedAt: new Date() },
     });
     await prisma.dbBackupJob.update({ where: { id: jobId }, data: { lastStatus: "failed", lastRunAt: new Date() } });
@@ -1169,7 +1177,11 @@ export async function runDueJobs(now: Date = new Date()): Promise<string[]> {
   for (const j of jobs) {
     if (jobIsDue(j, now)) {
       started.push(j.name);
-      void runJob(j.id, "scheduler");
+      // fire-and-forget, tapi jangan sampai rejection yang tidak tertangani
+      // (mis. koneksi DB sesaat) mematikan proses worker.
+      void runJob(j.id, "scheduler").catch((e) => {
+        console.error(`[BACKUP] Job "${j.name}" gagal dijalankan: ${(e as Error).message}`);
+      });
     }
   }
   return started;

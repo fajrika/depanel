@@ -16,7 +16,16 @@ import { sampleAllSshMetrics } from "../src/lib/sshmon";
 
 const CRON = process.env.RECONCILE_CRON || "*/5 * * * *"; // every 5 minutes
 
+// Reconcile bisa berjalan lama (sync depa API sekuensial, bisa 1-2 menit).
+// Jangan biarkan tick berikutnya menumpuk — lewati bila sesi masih berjalan.
+let reconcileBusy = false;
+
 async function runOnce(reason: string) {
+  if (reconcileBusy) {
+    console.log(`[${new Date().toISOString()}] reconcile dilewati — sesi sebelumnya masih berjalan (${reason})`);
+    return;
+  }
+  reconcileBusy = true;
   const start = Date.now();
   try {
     const actions = await reconcileAll();
@@ -28,6 +37,8 @@ async function runOnce(reason: string) {
     );
   } catch (e) {
     console.error(`[${new Date().toISOString()}] reconcile error:`, (e as Error).message);
+  } finally {
+    reconcileBusy = false;
   }
 }
 
@@ -72,6 +83,7 @@ console.log(`🕒 Depa scheduler worker aktif. Reconcile: "${CRON}" · Backup DB
 runOnce("startup");
 cron.schedule(CRON, () => runOnce("tick"));
 cron.schedule("* * * * *", () => checkDbBackups());
-cron.schedule("*/15 * * * *", () => checkAlerts());
-cron.schedule("*/15 * * * *", () => sampleMetrics());
-cron.schedule("*/15 * * * *", () => sampleSsh());
+// di-offset agar alert, metrik depa, dan metrik SSH tidak menulis DB di menit yang sama
+cron.schedule("1-59/15 * * * *", () => checkAlerts());
+cron.schedule("2-59/15 * * * *", () => sampleMetrics());
+cron.schedule("3-59/15 * * * *", () => sampleSsh());
