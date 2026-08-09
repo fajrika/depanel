@@ -126,7 +126,6 @@ export default function Dashboard() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedSsh, setSelectedSsh] = useState<string | null>(null);
   const [sshList, setSshList] = useState<SshConn[]>([]);
-  const [sshCollapsed, setSshCollapsed] = useState(false);
   const [terminalSsh, setTerminalSsh] = useState<{ id: string; name: string; host: string; username: string; port: number } | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>("monitoring");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -397,6 +396,11 @@ export default function Dashboard() {
         <div className="flex flex-col items-start gap-6 lg:flex-row">
           {/* KIRI — daftar server (di HP disembunyikan saat panel terbuka) */}
           <div className={`w-full shrink-0 lg:w-[400px] ${selected ? "hidden lg:block" : ""}`}>
+            {servers.length > 0 && (
+              <p className="mb-3 px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Depa API
+              </p>
+            )}
             {Object.entries(groups).map(([account, list]) => {
               const isCollapsed = collapsed.has(account);
               const groupRunning = list.filter((s) => s.status === "running").length;
@@ -566,32 +570,34 @@ export default function Dashboard() {
 
             {canSsh && sshList.length > 0 && (
               <section key="ssh" className="mb-5">
-                <button
-                  onClick={() => setSshCollapsed((c) => !c)}
-                  className="mb-3 flex w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-left shadow-sm transition hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-600"
-                >
-                  <span className={`text-slate-400 transition-transform duration-200 ${sshCollapsed ? "-rotate-90" : ""}`}>▾</span>
-                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-100 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                    SSH
-                  </span>
-                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Koneksi via SSH</span>
-                  <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500">{sshList.length} koneksi</span>
-                </button>
-                <div className={`space-y-3 overflow-hidden transition-all duration-300 ${sshCollapsed ? "max-h-0 opacity-0" : "max-h-[4000px] opacity-100"}`}>
-                  {(() => {
-                    const groups = new Map<string, SshConn[]>();
-                    for (const c of sshList) {
-                      const g = c.groupName ?? "";
-                      if (!groups.has(g)) groups.set(g, []);
-                      groups.get(g)!.push(c);
-                    }
-                    const sorted = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
-                    return sorted.map(([groupName, items]) => (
-                      <div key={groupName || "__ungrouped__"}>
-                        {groupName && (
-                          <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{groupName}</p>
-                        )}
-                        <div className="space-y-2">
+                <p className="mb-3 px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Koneksi via SSH
+                </p>
+                {(() => {
+                  const sshGroups = new Map<string, SshConn[]>();
+                  for (const c of sshList) {
+                    const g = c.groupName ?? "";
+                    if (!sshGroups.has(g)) sshGroups.set(g, []);
+                    sshGroups.get(g)!.push(c);
+                  }
+                  const sorted = [...sshGroups.entries()].sort(([a], [b]) => a.localeCompare(b));
+                  return sorted.map(([groupName, items]) => {
+                    const key = `ssh:${groupName || "__ungrouped__"}`;
+                    const isCollapsed = collapsed.has(key);
+                    return (
+                      <section key={key} className="mb-4">
+                        <button
+                          onClick={() => toggleGroup(key)}
+                          className="mb-3 flex w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-left shadow-sm transition hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-600"
+                        >
+                          <span className={`text-slate-400 transition-transform duration-200 ${isCollapsed ? "-rotate-90" : ""}`}>▾</span>
+                          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-100 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                            {groupName ? groupName.slice(0, 2).toUpperCase() : "··"}
+                          </span>
+                          <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{groupName || "Tanpa grup"}</span>
+                          <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500">{items.length} koneksi</span>
+                        </button>
+                        <div className={`space-y-2 overflow-hidden transition-all duration-300 ${isCollapsed ? "max-h-0 opacity-0" : "max-h-[4000px] opacity-100"}`}>
                           {items.map((c) => {
                             const active = selectedSsh === c.id;
                             const ok = c.last?.ok ?? null;
@@ -642,11 +648,12 @@ export default function Dashboard() {
                               </div>
                             );
                           })}
+                          </div>
                         </div>
-                      </div>
-                    ));
-                  })()}
-                </div>
+                      </section>
+                    );
+                  });
+                })()}
               </section>
             )}
           </div>
