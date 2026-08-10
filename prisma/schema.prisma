@@ -43,6 +43,7 @@ model Team {
   dbDests       DbDest[]
   activityLogs  ActivityLog[]
   notifyChannels NotifyChannel[]
+  dirCloneJobs  DirCloneJob[]
 }
 
 /// A notification target for a team (Telegram, Discord, or generic webhook).
@@ -212,6 +213,8 @@ model SshConnection {
   createdAt         DateTime      @default(now())
   dbConns           DbConnection[]
   metricSamples     SshMetricSample[]
+  cloneSourceJobs   DirCloneJob[] @relation("DirCloneSource")
+  cloneDestJobs     DirCloneJob[] @relation("DirCloneDest")
 }
 
 /// Grouping container for SSH connections. Team-scoped, 1 level only.
@@ -328,6 +331,50 @@ model DbRestoreRun {
   endedAt   DateTime?
 
   @@index([id])
+}
+
+/// A scheduled clone of a directory from an SSH server to a destination
+/// (local path on the panel host / Google Drive / another SSH server).
+/// Like DbBackupJob, the schedule is driven by the worker every minute.
+model DirCloneJob {
+  id           String        @id @default(cuid())
+  teamId       String?
+  team         Team?         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name         String
+  sourceSshId  String
+  sourceSsh    SshConnection @relation("DirCloneSource", fields: [sourceSshId], references: [id], onDelete: Cascade)
+  sourcePath   String // direktori absolut di server sumber, mis. /var/www/html
+  destType     String // "local" | "gdrive" | "ssh"
+  destSshId    String? // untuk destType "ssh"
+  destSsh      SshConnection? @relation("DirCloneDest", fields: [destSshId], references: [id], onDelete: SetNull)
+  destGdriveId String? // DbDest.id (type "gdrive") untuk destType "gdrive"
+  destPath     String? // path lokal di host / folder GDrive (folderId) / path tujuan di server SSH
+  scheduleType String        @default("manual") // manual | daily | weekly | monthly | cron
+  timeAt       String? // "HH:MM" untuk daily/weekly/monthly
+  dayOn        Int? // weekly: 0-6 (0=Sunday); monthly: 1-28
+  cronExpr     String? // untuk scheduleType "cron"
+  timezone     String        @default("Asia/Jakarta")
+  retention    Int           @default(0) // 0 = simpan semua, N = simpan N run terakhir
+  enabled      Boolean       @default(true)
+  lastRunAt    DateTime?
+  lastStatus   String? // "success" | "failed" | "running"
+  createdAt    DateTime      @default(now())
+  runs         DirCloneRun[]
+}
+
+/// One execution of a directory clone job.
+model DirCloneRun {
+  id        String      @id @default(cuid())
+  jobId     String
+  job       DirCloneJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  status    String      @default("running") // running | success | failed
+  message   String?
+  sizeBytes Int? // ukuran file .tar.gz
+  location  String? // path/URL hasil clone
+  startedAt DateTime    @default(now())
+  endedAt   DateTime?
+
+  @@index([jobId, startedAt])
 }
 
 /// Audit trail: who did what, when (userId null = scheduler/system). Team-scoped.
