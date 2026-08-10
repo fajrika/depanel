@@ -29,6 +29,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       isActive: true,
       ipAddress: true,
       location: true,
+      account: { select: { id: true, name: true } },
     },
   });
 
