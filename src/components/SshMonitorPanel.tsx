@@ -11,6 +11,7 @@ type LiveSample = {
   osName?: string;
   kernel?: string;
   cpu?: number;
+  cpuCores?: number;
   memPct?: number;
   memUsedMb?: number;
   memTotalMb?: number;
@@ -43,6 +44,7 @@ export type SshLastSample = {
   osName?: string | null;
   kernel?: string | null;
   cpu?: number | null;
+  cpuCores?: number | null;
   memPct?: number | null;
   memUsedMb?: number | null;
   memTotalMb?: number | null;
@@ -286,6 +288,14 @@ export default function SshMonitorPanel({
           {/* Kartu info utama */}
           <div className="mb-5 grid grid-cols-2 gap-x-6 gap-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-3">
             <Info label="CPU" value={sample.cpu !== undefined ? <span className="tabular-nums">{sample.cpu}%</span> : undefined} />
+            <Info
+              label="Core"
+              value={
+                sample.cpuCores !== undefined
+                  ? <span className="tabular-nums">{sample.cpuCores} core</span>
+                  : undefined
+              }
+            />
             <Info
               label="Memori"
               value={

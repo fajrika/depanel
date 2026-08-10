@@ -240,6 +240,7 @@ model SshMetricSample {
   osName       String? // e.g. "Ubuntu 22.04.3 LTS"
   kernel       String? // e.g. "6.2.0-1017-azure"
   cpu          Float? // % CPU terpakai (delta /proc/stat)
+  cpuCores     Int? // jumlah core CPU (nproc)
   memPct       Float? // % RAM terpakai
   memUsedMb    Int? // RAM terpakai (MiB)
   memTotalMb   Int? // total RAM (MiB)

@@ -32,6 +32,7 @@ export type LiveSample = {
   osName?: string;
   kernel?: string;
   cpu?: number;
+  cpuCores?: number;
   memPct?: number;
   memUsedMb?: number;
   memTotalMb?: number;
@@ -258,13 +259,14 @@ export async function collectSshMetrics(cfg: SshAuthCfg): Promise<LiveSample> {
     closeSsh(client);
   }, TOTAL_DEADLINE_MS);
   try {
-    const [osOut, kernelOut, hostnameOut, loadOut, upOut, memOut] = await Promise.all([
+    const [osOut, kernelOut, hostnameOut, loadOut, upOut, memOut, coresOut] = await Promise.all([
       exec(client, "cat /etc/os-release"),
       exec(client, "uname -sr"),
       exec(client, "cat /etc/hostname"),
       exec(client, "cat /proc/loadavg"),
       exec(client, "cat /proc/uptime"),
       exec(client, "cat /proc/meminfo"),
+      exec(client, "nproc"),
     ]);
 
     const stat1 = await exec(client, "cat /proc/stat");
@@ -291,6 +293,7 @@ export async function collectSshMetrics(cfg: SshAuthCfg): Promise<LiveSample> {
       osName,
       kernel: kernelOut.trim() || undefined,
       cpu,
+      cpuCores: num(coresOut),
       ...mem,
       ...load,
       uptimeSec: parseUptime(upOut),
@@ -325,6 +328,7 @@ export async function sampleSshConnection(sshId: string): Promise<{ ok: boolean;
         osName: sample.osName,
         kernel: sample.kernel,
         cpu: sample.cpu,
+        cpuCores: sample.cpuCores,
         memPct: sample.memPct,
         memUsedMb: sample.memUsedMb,
         memTotalMb: sample.memTotalMb,
