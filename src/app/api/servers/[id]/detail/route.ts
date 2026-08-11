@@ -22,6 +22,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   const force = new URL(request.url).searchParams.get("refresh") === "1";
   try {
     const detail = await getServerDetail(id, force);
+    const detailObj = detail as Record<string, unknown>;
     return NextResponse.json({
       ok: true,
       data: {
@@ -30,6 +31,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
           cpu: server.cpu,
           memoryGb: server.memoryMb ? Math.round(server.memoryMb / 1024) : null,
           storageGb: server.storageGb,
+          useDedicatedCpu: detailObj.is_cpu_dedicated === true,
         },
         detail,
       },

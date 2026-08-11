@@ -10,7 +10,7 @@ const btn = "rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white 
 type Tier = { id?: number; tier_id?: number; name?: string; tier?: string };
 type OS = { template_id?: number; id?: number; name?: string; version?: string };
 
-export default function ManagePanel({ serverId, hostname, spec, onChanged }: { serverId: string; hostname: string; spec?: { cpu: number | null; memoryGb: number | null; storageGb: number | null } | null; onChanged?: () => void }) {
+export default function ManagePanel({ serverId, hostname, spec, onChanged }: { serverId: string; hostname: string; spec?: { cpu: number | null; memoryGb: number | null; storageGb: number | null; useDedicatedCpu?: boolean | null } | null; onChanged?: () => void }) {
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [rz, setRz] = useState({ cpu: 2, memory: 4, storage: 20, use_dedicated_cpu: false });
@@ -27,7 +27,7 @@ export default function ManagePanel({ serverId, hostname, spec, onChanged }: { s
         cpu: spec.cpu ?? 2,
         memory: spec.memoryGb ?? 4,
         storage: spec.storageGb ?? 20,
-        use_dedicated_cpu: false,
+        use_dedicated_cpu: spec.useDedicatedCpu === true,
       });
     }
   }, [spec]);
