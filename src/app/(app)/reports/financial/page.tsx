@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import TimeField from "@/components/TimeField";
 import { useLang } from "@/lib/i18n";
 
 type CreditRow = { id: number; type: string; description: string; amount: string; balance_after: string; created_at: string };
@@ -64,12 +65,284 @@ function fmtDate(d?: string): string {
 }
 
 const card = "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900";
+const label = "block text-xs font-medium text-slate-500 dark:text-slate-400";
 const th = "px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500";
 const td = "px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200";
 const input =
   "rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300";
 const btnPrimary =
   "rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300";
+
+type ScheduledReport = {
+  id: string;
+  name: string;
+  type: string;
+  scheduleType: string;
+  timeAt: string | null;
+  dayOn: number | null;
+  cronExpr: string | null;
+  timezone: string;
+  enabled: boolean;
+  lastRunAt: string | null;
+};
+
+const RPT_DAY_NAMES = ["srp.day.0", "srp.day.1", "srp.day.2", "srp.day.3", "srp.day.4", "srp.day.5", "srp.day.6"];
+
+function rptTypeLabel(type: string, t: (k: string) => string): string {
+  if (type === "cost") return t("srp.typeCost");
+  if (type === "activity") return t("srp.typeActivity");
+  return t("srp.typeBackup");
+}
+
+function rptScheduleLabel(r: ScheduledReport, t: (k: string) => string): string {
+  if (r.scheduleType === "daily") return `${t("srp.schedDaily")} ${r.timeAt}`;
+  if (r.scheduleType === "weekly") return `${t("srp.schedWeekly")}, ${t(RPT_DAY_NAMES[r.dayOn ?? 0])} ${r.timeAt}`;
+  if (r.scheduleType === "monthly") return `${t("srp.schedMonthly")}, ${t("srp.monthPrefix")} ${r.dayOn} ${r.timeAt}`;
+  return `${t("srp.schedCron")}: ${r.cronExpr}`;
+}
+
+function ScheduledReportSection() {
+  const { t } = useLang();
+  const [reports, setReports] = useState<ScheduledReport[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [rName, setRName] = useState("");
+  const [rType, setRType] = useState("cost");
+  const [rSched, setRSched] = useState("daily");
+  const [rTime, setRTime] = useState("08:00");
+  const [rDay, setRDay] = useState(0);
+  const [rDate, setRDate] = useState(1);
+  const [rCron, setRCron] = useState("0 2 * * *");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/reports/scheduled");
+      const d = await res.json();
+      if (d.ok) setReports(d.data ?? []);
+      else setMsg({ text: d.message ?? t("srp.errLoad"), ok: false });
+    } catch {
+      setMsg({ text: t("srp.errLoad"), ok: false });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const startEdit = (r: ScheduledReport) => {
+    setEditId(r.id);
+    setRName(r.name);
+    setRType(r.type);
+    setRSched(r.scheduleType);
+    setRTime(r.timeAt ?? "08:00");
+    setRDay(r.dayOn ?? 0);
+    setRDate(r.dayOn ?? 1);
+    setRCron(r.cronExpr ?? "0 2 * * *");
+    setShowForm(true);
+  };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    try {
+      const body = {
+        name: rName,
+        type: rType,
+        scheduleType: rSched,
+        ...(rSched === "cron" ? { cronExpr: rCron } : { timeAt: rTime }),
+        ...(rSched === "weekly" ? { dayOn: rDay } : rSched === "monthly" ? { dayOn: rDate } : {}),
+      };
+      const res = await fetch(editId ? `/api/reports/scheduled/${editId}` : "/api/reports/scheduled", {
+        method: editId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await res.json();
+      if (!d.ok) throw new Error(d.message ?? t("srp.errSave"));
+      setMsg({ text: t("srp.saved"), ok: true });
+      setShowForm(false);
+      setEditId(null);
+      setRName("");
+      await load();
+    } catch (err) {
+      setMsg({ text: (err as Error).message, ok: false });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleEnabled = async (r: ScheduledReport) => {
+    const res = await fetch(`/api/reports/scheduled/${r.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: !r.enabled }),
+    });
+    const d = await res.json();
+    if (!d.ok) {
+      setMsg({ text: d.message ?? t("srp.errSave"), ok: false });
+      return;
+    }
+    setReports((prev) => prev.map((x) => (x.id === r.id ? { ...x, enabled: !r.enabled } : x)));
+  };
+
+  const remove = async (r: ScheduledReport) => {
+    if (!window.confirm(`${t("srp.deleteConfirm")} "${r.name}"? ${t("srp.deleteConfirm2")}`)) return;
+    const res = await fetch(`/api/reports/scheduled/${r.id}`, { method: "DELETE" });
+    const d = await res.json();
+    if (!d.ok) {
+      setMsg({ text: d.message ?? t("srp.errDelete"), ok: false });
+      return;
+    }
+    setMsg({ text: t("srp.deleted"), ok: true });
+    setReports((prev) => prev.filter((x) => x.id !== r.id));
+  };
+
+  return (
+    <div className={card}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("srp.title")}</h2>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t("srp.subtitle")}</p>
+        </div>
+        <button
+          onClick={() => { setShowForm(!showForm); setEditId(null); setRName(""); }}
+          className={btnPrimary}
+        >
+          {showForm ? t("srp.closeForm") : t("srp.addReport")}
+        </button>
+      </div>
+
+      {msg && (
+        <p className={`mt-3 rounded-lg px-4 py-2 text-sm ${msg.ok ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400" : "bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300"}`}>
+          {msg.text}
+        </p>
+      )}
+
+      {showForm && (
+        <form onSubmit={submit} className="mt-4 space-y-5 border-t border-slate-100 pt-4 dark:border-slate-800">
+          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+            {editId ? t("srp.editTitle") : t("srp.createTitle")}
+          </h3>
+
+          <div className="flex flex-wrap items-end gap-4">
+            <div>
+              <label className={label}>{t("srp.name")}</label>
+              <input required value={rName} onChange={(e) => setRName(e.target.value)} placeholder={t("srp.phName")} className={`${input} mt-1 w-56`} />
+            </div>
+            <div>
+              <label className={label}>{t("srp.type")}</label>
+              <select value={rType} onChange={(e) => setRType(e.target.value)} className={`${input} mt-1`}>
+                <option value="cost">{t("srp.typeCost")}</option>
+                <option value="activity">{t("srp.typeActivity")}</option>
+                <option value="backup">{t("srp.typeBackup")}</option>
+              </select>
+            </div>
+            <div>
+              <label className={label}>{t("srp.schedule")}</label>
+              <select value={rSched} onChange={(e) => setRSched(e.target.value)} className={`${input} mt-1`}>
+                <option value="daily">{t("srp.optDaily")}</option>
+                <option value="weekly">{t("srp.optWeekly")}</option>
+                <option value="monthly">{t("srp.optMonthly")}</option>
+                <option value="cron">{t("srp.optCron")}</option>
+              </select>
+            </div>
+            {rSched === "weekly" && (
+              <div>
+                <label className={label}>{t("srp.dayLabel")}</label>
+                <select value={rDay} onChange={(e) => setRDay(Number(e.target.value))} className={`${input} mt-1`}>
+                  {RPT_DAY_NAMES.map((d, i) => (
+                    <option key={i} value={i}>{t(d)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {rSched === "monthly" && (
+              <div>
+                <label className={label}>{t("srp.dateLabel")}</label>
+                <select value={rDate} onChange={(e) => setRDate(Number(e.target.value))} className={`${input} mt-1`}>
+                  {Array.from({ length: 28 }, (_, i) => (
+                    <option key={i + 1} value={i + 1}>{i + 1}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {rSched === "cron" ? (
+              <div>
+                <label className={label}>{t("srp.cronHelp")}</label>
+                <input value={rCron} onChange={(e) => setRCron(e.target.value)} placeholder={t("srp.phCron")} className={`${input} mt-1 w-40 font-mono`} />
+              </div>
+            ) : (
+              <div>
+                <label className={label}>{t("srp.timeLabel")}</label>
+                <div className="mt-1"><TimeField value={rTime} onChange={setRTime} /></div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-slate-400 dark:text-slate-500">{t("srp.tzHint")}</p>
+            <button disabled={busy} className={btnPrimary}>
+              {busy ? t("srp.saving") : editId ? t("srp.update") : t("srp.save")}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {loading ? (
+        <div className="mt-4 space-y-2">
+          {[1, 2].map((i) => (
+            <div key={i} className="h-14 animate-pulse rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
+          ))}
+        </div>
+      ) : reports.length === 0 ? (
+        <p className="mt-4 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-6 text-center text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-900/40">
+          {t("srp.empty")}
+        </p>
+      ) : (
+        <div className="mt-4 space-y-2">
+          {reports.map((r) => (
+            <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/50">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{r.name}</p>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${r.enabled ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"}`}>
+                    {r.enabled ? t("srp.enabledBadge") : t("srp.disabledBadge")}
+                  </span>
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  {rptTypeLabel(r.type, t)} · {rptScheduleLabel(r, t)}
+                </p>
+                <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">
+                  {t("srp.lastRun")}: {r.lastRunAt ? new Date(r.lastRunAt).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : t("srp.never")}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button onClick={() => toggleEnabled(r)} title={r.enabled ? t("srp.disable") : t("srp.enable")}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${r.enabled ? "bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-400 dark:hover:bg-amber-950/60" : "bg-emerald-600 text-white shadow-sm hover:bg-emerald-500"}`}>
+                  {r.enabled ? t("srp.disable") : t("srp.enable")}
+                </button>
+                <button onClick={() => startEdit(r)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
+                  {t("srp.edit")}
+                </button>
+                <button onClick={() => remove(r)} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-100 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-950/70">
+                  {t("srp.delete")}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function FinancialReportPage() {
   const { t } = useLang();
@@ -424,6 +697,9 @@ export default function FinancialReportPage() {
           {t("rep.emptyAll")}
         </div>
       )}
+
+      {/* Laporan Terjadwal */}
+      <ScheduledReportSection />
     </div>
   );
 }
