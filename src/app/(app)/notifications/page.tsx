@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 type Channel = {
   id: string;
@@ -23,12 +24,13 @@ const btn =
   "rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300";
 
 const TYPE_HINT: Record<string, string> = {
-  telegram: "Butuh Bot Token & Chat ID (config: {botToken, chatId})",
-  discord: "Butuh URL webhook Discord (config: {url})",
-  webhook: "URL webhook generik, dikirim {text} (config: {url})",
+  telegram: "notif.hint.telegram",
+  discord: "notif.hint.discord",
+  webhook: "notif.hint.webhook",
 };
 
 export default function NotificationsPage() {
+  const { t } = useLang();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [threshold, setThreshold] = useState<string>("");
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
@@ -71,10 +73,10 @@ export default function NotificationsPage() {
     setBusy(null);
     if (d.ok) {
       setEditId(null);
-      setMsg({ text: "Channel diperbarui.", ok: true });
+      setMsg({ text: t("notif.updated"), ok: true });
       load();
     } else {
-      setMsg({ text: d.message ?? "Gagal menyimpan perubahan", ok: false });
+      setMsg({ text: d.message ?? t("notif.errSave"), ok: false });
     }
   }
 
@@ -106,7 +108,7 @@ export default function NotificationsPage() {
     });
     const d = await res.json();
     setBusy(null);
-    setMsg(d.ok ? { text: "Ambang saldo disimpan.", ok: true } : { text: d.message ?? "Gagal", ok: false });
+    setMsg(d.ok ? { text: t("notif.thresholdSaved"), ok: true } : { text: d.message ?? t("notif.failed"), ok: false });
   }
 
   async function addChannel() {
@@ -121,14 +123,14 @@ export default function NotificationsPage() {
     const d = await res.json();
     setBusy(null);
     if (d.ok) {
-      setMsg({ text: "Channel ditambahkan.", ok: true });
+      setMsg({ text: t("notif.added"), ok: true });
       setLabel("");
       setToken("");
       setChatId("");
       setUrl("");
       load();
     } else {
-      setMsg({ text: d.message ?? "Gagal menambah channel", ok: false });
+      setMsg({ text: d.message ?? t("notif.errAdd"), ok: false });
     }
   }
 
@@ -138,7 +140,7 @@ export default function NotificationsPage() {
   }
 
   async function removeChannel(id: string) {
-    if (!confirm("Hapus channel ini?")) return;
+    if (!confirm(t("notif.confirmDelete"))) return;
     await fetch(`/api/notify/${id}`, { method: "DELETE" });
     load();
   }
@@ -149,14 +151,14 @@ export default function NotificationsPage() {
     const res = await fetch(`/api/notify/${id}/test`, { method: "POST" });
     const d = await res.json();
     setBusy(null);
-    setMsg(d.ok ? { text: "Pesan uji terkirim.", ok: true } : { text: d.message ?? "Gagal mengirim uji", ok: false });
+    setMsg(d.ok ? { text: t("notif.testSent"), ok: true } : { text: d.message ?? t("notif.testFailed"), ok: false });
   }
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Notifikasi</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{t("notif.title")}</h1>
       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-        Kirim peringatan power, backup, error, dan saldo rendah ke Telegram / Discord / webhook.
+        {t("notif.subtitle")}
       </p>
 
       {msg && (
@@ -166,10 +168,10 @@ export default function NotificationsPage() {
       {/* Ambang saldo */}
       <div className={`${card} mt-5 flex flex-wrap items-end gap-3`}>
         <div>
-          <label className="block text-[11px] text-slate-500 dark:text-slate-400">Ambang saldo rendah (IDR) — kosongkan untuk mematikan</label>
-          <input value={threshold} onChange={(e) => setThreshold(e.target.value.replace(/[^\d]/g, ""))} placeholder="mis. 50000" className={`${input} mt-1 w-48`} />
+          <label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("notif.thresholdLabel")}</label>
+          <input value={threshold} onChange={(e) => setThreshold(e.target.value.replace(/[^\d]/g, ""))} placeholder={t("notif.thresholdPlaceholder")} className={`${input} mt-1 w-48`} />
         </div>
-        <button onClick={saveThreshold} disabled={busy === "threshold"} className={btn}>Simpan ambang</button>
+        <button onClick={saveThreshold} disabled={busy === "threshold"} className={btn}>{t("notif.saveThreshold")}</button>
       </div>
 
       {/* Daftar channel */}
@@ -177,7 +179,7 @@ export default function NotificationsPage() {
         {loading ? (
           <div className="h-20 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
         ) : channels.length === 0 ? (
-          <p className="text-sm text-slate-400">Belum ada channel notifikasi.</p>
+          <p className="text-sm text-slate-400">{t("notif.empty")}</p>
         ) : (
           channels.map((c) => (
             <div key={c.id} className={card}>
@@ -185,13 +187,13 @@ export default function NotificationsPage() {
                 <div className="flex items-center gap-2">
                   <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{c.type}</span>
                   <span className="font-medium text-slate-800 dark:text-slate-100">{c.label}</span>
-                  {!c.enabled && <span className="text-[11px] text-slate-400">(nonaktif)</span>}
+                  {!c.enabled && <span className="text-[11px] text-slate-400">({t("notif.disabled")})</span>}
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => testChannel(c.id)} disabled={busy === "test" + c.id} className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">Uji</button>
-                  <button onClick={() => (editId === c.id ? setEditId(null) : startEdit(c))} className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">{editId === c.id ? "Tutup" : "Edit"}</button>
-                  <button onClick={() => patchChannel(c.id, { enabled: !c.enabled })} className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">{c.enabled ? "Nonaktifkan" : "Aktifkan"}</button>
-                  <button onClick={() => removeChannel(c.id)} className="rounded-lg border border-red-300 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950/40">Hapus</button>
+                  <button onClick={() => testChannel(c.id)} disabled={busy === "test" + c.id} className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">{t("notif.test")}</button>
+                  <button onClick={() => (editId === c.id ? setEditId(null) : startEdit(c))} className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">{editId === c.id ? t("notif.close") : t("notif.edit")}</button>
+                  <button onClick={() => patchChannel(c.id, { enabled: !c.enabled })} className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">{c.enabled ? t("notif.disable") : t("notif.enable")}</button>
+                  <button onClick={() => removeChannel(c.id)} className="rounded-lg border border-red-300 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950/40">{t("notif.delete")}</button>
                 </div>
               </div>
 
@@ -200,36 +202,36 @@ export default function NotificationsPage() {
                 <div className="mt-3 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
                   <div className="flex flex-wrap items-end gap-3">
                     <div>
-                      <label className="block text-[11px] text-slate-500 dark:text-slate-400">Label</label>
+                      <label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("notif.label")}</label>
                       <input value={edit.label} onChange={(e) => setEdit({ ...edit, label: e.target.value })} className={`${input} mt-1 w-40`} />
                     </div>
                     {c.type === "telegram" ? (
                       <>
                         <div>
-                          <label className="block text-[11px] text-slate-500 dark:text-slate-400">Chat ID</label>
+                          <label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("notif.chatId")}</label>
                           <input value={edit.chatId} onChange={(e) => setEdit({ ...edit, chatId: e.target.value })} className={`${input} mt-1 w-40`} />
                         </div>
                         <div>
-                          <label className="block text-[11px] text-slate-500 dark:text-slate-400">Bot Token {c.hasToken && <span className="text-slate-400">(kosongkan = pakai lama)</span>}</label>
-                          <input value={edit.token} onChange={(e) => setEdit({ ...edit, token: e.target.value })} placeholder={c.hasToken ? "•••• tersimpan" : ""} className={`${input} mt-1 w-56`} />
+                          <label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("notif.botToken")} {c.hasToken && <span className="text-slate-400">({t("notif.tokenKeepOld")})</span>}</label>
+                          <input value={edit.token} onChange={(e) => setEdit({ ...edit, token: e.target.value })} placeholder={c.hasToken ? t("notif.tokenSaved") : ""} className={`${input} mt-1 w-56`} />
                         </div>
                       </>
                     ) : (
                       <div className="min-w-0 flex-1">
-                        <label className="block text-[11px] text-slate-500 dark:text-slate-400">Webhook URL</label>
+                        <label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("notif.webhookUrl")}</label>
                         <input value={edit.url} onChange={(e) => setEdit({ ...edit, url: e.target.value })} className={`${input} mt-1 w-full`} />
                       </div>
                     )}
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => saveEdit(c)} disabled={busy === "edit" + c.id} className={btn}>{busy === "edit" + c.id ? "Menyimpan…" : "Simpan perubahan"}</button>
-                    <button onClick={() => setEditId(null)} className="rounded-lg px-3 py-2 text-sm text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200">Batal</button>
+                    <button onClick={() => saveEdit(c)} disabled={busy === "edit" + c.id} className={btn}>{busy === "edit" + c.id ? t("notif.saving") : t("notif.saveChanges")}</button>
+                    <button onClick={() => setEditId(null)} className="rounded-lg px-3 py-2 text-sm text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200">{t("notif.cancel")}</button>
                   </div>
                 </div>
               )}
 
               <div className="mt-3 flex flex-wrap gap-3">
-                {([["onPower", "Power"], ["onBackup", "Backup"], ["onError", "Error"], ["onBalance", "Saldo"]] as const).map(([k, l]) => (
+                {([["onPower", t("notif.evPower")], ["onBackup", t("notif.evBackup")], ["onError", t("notif.evError")], ["onBalance", t("notif.evBalance")]] as const).map(([k, l]) => (
                   <label key={k} className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
                     <input type="checkbox" checked={c[k]} onChange={() => patchChannel(c.id, { [k]: !c[k] })} className="h-3.5 w-3.5 accent-indigo-600" />
                     {l}
@@ -243,10 +245,10 @@ export default function NotificationsPage() {
 
       {/* Tambah channel */}
       <div className={`${card} mt-5`}>
-        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Tambah channel</h2>
+        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("notif.addChannel")}</h2>
         <div className="mt-3 flex flex-wrap items-end gap-3">
           <div>
-            <label className="block text-[11px] text-slate-500 dark:text-slate-400">Tipe</label>
+            <label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("notif.type")}</label>
             <select value={type} onChange={(e) => setType(e.target.value as Channel["type"])} className={`${input} mt-1`}>
               <option value="telegram">Telegram</option>
               <option value="discord">Discord</option>
@@ -254,29 +256,29 @@ export default function NotificationsPage() {
             </select>
           </div>
           <div>
-            <label className="block text-[11px] text-slate-500 dark:text-slate-400">Label</label>
-            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="mis. Grup Ops" className={`${input} mt-1 w-40`} />
+            <label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("notif.label")}</label>
+            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t("notif.labelPlaceholder")} className={`${input} mt-1 w-40`} />
           </div>
           {type === "telegram" ? (
             <>
               <div>
-                <label className="block text-[11px] text-slate-500 dark:text-slate-400">Bot Token</label>
+                <label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("notif.botToken")}</label>
                 <input value={token} onChange={(e) => setToken(e.target.value)} className={`${input} mt-1 w-56`} />
               </div>
               <div>
-                <label className="block text-[11px] text-slate-500 dark:text-slate-400">Chat ID</label>
+                <label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("notif.chatId")}</label>
                 <input value={chatId} onChange={(e) => setChatId(e.target.value)} className={`${input} mt-1 w-32`} />
               </div>
             </>
           ) : (
             <div>
-              <label className="block text-[11px] text-slate-500 dark:text-slate-400">Webhook URL</label>
+              <label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("notif.webhookUrl")}</label>
               <input value={url} onChange={(e) => setUrl(e.target.value)} className={`${input} mt-1 w-72`} />
             </div>
           )}
         </div>
-        <p className="mt-3 text-[11px] text-slate-400">{TYPE_HINT[type]} · Semua jenis event aktif secara default — atur per-event setelah channel dibuat.</p>
-        <button onClick={addChannel} disabled={busy === "add"} className={`${btn} mt-3`}>Tambah channel</button>
+        <p className="mt-3 text-[11px] text-slate-400">{t(TYPE_HINT[type])} · {t("notif.defaultHint")}</p>
+        <button onClick={addChannel} disabled={busy === "add"} className={`${btn} mt-3`}>{t("notif.addChannel")}</button>
       </div>
     </div>
   );

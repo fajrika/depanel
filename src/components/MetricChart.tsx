@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 export type Series = {
   label: string;
@@ -33,6 +34,7 @@ export default function MetricChart({
   format?: (v: number) => string;
   subtitle?: string;
 }) {
+  const { t } = useLang();
   const ref = useRef<HTMLDivElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
@@ -87,7 +89,7 @@ export default function MetricChart({
                 {format(hoverIdx !== null ? (s.points[hoverIdx]?.v ?? 0) : s.last)}
               </p>
               <p className="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">
-                rata² {format(s.avg)} · puncak {format(s.peak)}
+                {t("mc.avg")} {format(s.avg)} · {t("mc.peak")} {format(s.peak)}
               </p>
             </div>
           ))}

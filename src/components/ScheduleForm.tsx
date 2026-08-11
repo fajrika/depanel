@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import TimeField from "@/components/TimeField";
+import { useLang } from "@/lib/i18n";
 
 type ActionRow = { days: string; time: string; action: "start" | "stop" };
 
@@ -24,6 +25,7 @@ export default function ScheduleForm({
   managed: boolean;
   onSaved?: () => void;
 }) {
+  const { t } = useLang();
   const [enabled, setEnabled] = useState(false);
   const [timezone, setTimezone] = useState("Asia/Jakarta");
   const [actions, setActions] = useState<ActionRow[]>([]);
@@ -79,10 +81,10 @@ export default function ScheduleForm({
     const d = await res.json();
     setSaving(false);
     if (!res.ok || !d.ok) {
-      setMsg({ text: d.message ?? "Gagal menyimpan", ok: false });
+      setMsg({ text: d.message ?? t("schf.saveErr"), ok: false });
       return;
     }
-    setMsg({ text: "Jadwal tersimpan.", ok: true });
+    setMsg({ text: t("schf.saved"), ok: true });
     onSaved?.();
   }
 
@@ -92,8 +94,7 @@ export default function ScheduleForm({
     <div className="animate-fade-up">
       {!managed && (
         <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
-          Server ini belum ditandai <b>Dikelola</b> — jadwal bisa disimpan tapi tidak akan dieksekusi sampai server
-          dikelola oleh app.
+          {t("schf.warn1")} <b>{t("schf.managed")}</b> {t("schf.warn2")}
         </p>
       )}
 
@@ -105,10 +106,10 @@ export default function ScheduleForm({
             onChange={(e) => setEnabled(e.target.checked)}
             className="h-4 w-4 accent-emerald-600"
           />
-          Aktifkan penjadwalan
+          {t("schf.enable")}
         </label>
         <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-          Zona waktu
+          {t("schf.timezone")}
           <input
             value={timezone}
             onChange={(e) => setTimezone(e.target.value)}
@@ -118,14 +119,13 @@ export default function ScheduleForm({
       </div>
 
       <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
-        Tambahkan aksi: pilih hari, jam, dan apakah server <b>dinyalakan</b> atau <b>dimatikan</b> pada waktu itu.
-        Status server mengikuti aksi terakhir yang sudah lewat.
+        {t("schf.hint1")} <b>{t("schf.started")}</b> {t("schf.hint2")} <b>{t("schf.stopped")}</b> {t("schf.hint3")}
       </p>
 
       <div className="mt-3 space-y-3">
         {actions.length === 0 && (
           <p className="rounded-xl border-2 border-dashed border-slate-200 p-5 text-center text-xs text-slate-400 dark:border-slate-700">
-            Belum ada aksi — tambahkan di bawah.
+            {t("schf.noActions")}
           </p>
         )}
         {actions.map((a, i) => (
@@ -147,16 +147,16 @@ export default function ScheduleForm({
                     : "border-slate-400 bg-slate-700 text-white dark:border-slate-500"
                 }`}
               >
-                <option value="start">▶ Nyalakan</option>
-                <option value="stop">■ Matikan</option>
+                <option value="start">{t("schf.actionStart")}</option>
+                <option value="stop">{t("schf.actionStop")}</option>
               </select>
-              <span className="text-xs text-slate-400">pada jam</span>
+              <span className="text-xs text-slate-400">{t("schf.atTime")}</span>
               <TimeField value={a.time} onChange={(v) => update(i, { time: v })} />
               <button
                 onClick={() => remove(i)}
                 className="ml-auto rounded-lg px-2 py-1 text-xs font-medium text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950/40"
               >
-                Hapus
+                {t("schf.remove")}
               </button>
             </div>
             <div className="mt-3 flex flex-wrap gap-1.5">
@@ -172,7 +172,7 @@ export default function ScheduleForm({
                         : "bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700 dark:hover:bg-slate-700"
                     }`}
                   >
-                    {d.l}
+                    {t(`schf.day.${d.v}`)}
                   </button>
                 );
               })}
@@ -185,13 +185,13 @@ export default function ScheduleForm({
             onClick={() => addAction("start")}
             className="flex-1 rounded-xl border-2 border-dashed border-emerald-300 px-3 py-2.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
           >
-            + Aksi nyalakan
+            + {t("schf.addStart")}
           </button>
           <button
             onClick={() => addAction("stop")}
             className="flex-1 rounded-xl border-2 border-dashed border-slate-300 px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
           >
-            + Aksi matikan
+            + {t("schf.addStop")}
           </button>
         </div>
       </div>
@@ -214,7 +214,7 @@ export default function ScheduleForm({
           disabled={saving}
           className="rounded-lg bg-slate-900 px-5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
         >
-          {saving ? "Menyimpan…" : "Simpan jadwal"}
+          {saving ? t("schf.saving") : t("schf.save")}
         </button>
       </div>
     </div>

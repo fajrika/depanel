@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 type Log = {
   id: string;
@@ -14,6 +15,7 @@ type Log = {
 };
 
 export default function LogsPage() {
+  const { t } = useLang();
   const [logs, setLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -26,25 +28,25 @@ export default function LogsPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold">Log aktivitas</h1>
-      <p className="text-sm text-slate-500 dark:text-slate-400">Riwayat aksi manual (web) & otomatis (scheduler).</p>
+      <h1 className="text-xl font-semibold">{t("logs.title")}</h1>
+      <p className="text-sm text-slate-500 dark:text-slate-400">{t("logs.subtitle")}</p>
 
       <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
         {loading ? (
-          <p className="p-4 text-sm text-slate-500 dark:text-slate-400">Memuat…</p>
+          <p className="p-4 text-sm text-slate-500 dark:text-slate-400">{t("logs.loading")}</p>
         ) : logs.length === 0 ? (
-          <p className="p-4 text-sm text-slate-500 dark:text-slate-400">Belum ada aktivitas.</p>
+          <p className="p-4 text-sm text-slate-500 dark:text-slate-400">{t("logs.empty")}</p>
         ) : (
           <table className="w-full min-w-[760px] text-sm">
             <thead className="bg-slate-50 dark:bg-slate-800/60 text-left text-slate-500 dark:text-slate-400">
               <tr>
-                <th className="px-4 py-2 font-medium">Waktu</th>
-                <th className="px-4 py-2 font-medium">Aksi</th>
-                <th className="px-4 py-2 font-medium">Sumber</th>
-                <th className="px-4 py-2 font-medium">Oleh</th>
-                <th className="px-4 py-2 font-medium">Server</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 font-medium">Pesan</th>
+                <th className="px-4 py-2 font-medium">{t("logs.time")}</th>
+                <th className="px-4 py-2 font-medium">{t("logs.action")}</th>
+                <th className="px-4 py-2 font-medium">{t("logs.source")}</th>
+                <th className="px-4 py-2 font-medium">{t("logs.by")}</th>
+                <th className="px-4 py-2 font-medium">{t("logs.server")}</th>
+                <th className="px-4 py-2 font-medium">{t("logs.status")}</th>
+                <th className="px-4 py-2 font-medium">{t("logs.message")}</th>
               </tr>
             </thead>
             <tbody>

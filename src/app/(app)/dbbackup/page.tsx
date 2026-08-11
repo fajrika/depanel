@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import TimeField from "@/components/TimeField";
+import { useLang } from "@/lib/i18n";
 
 type Conn = { id: string; name: string; host: string; port: number; username: string; sshId?: string | null; ssh?: { id: string; name: string } | null; jobCount: number };
 type Ssh = { id: string; name: string; host: string; port: number; username: string; connCount: number };
@@ -30,7 +31,7 @@ type Job = {
   lastStatus: string | null;
 };
 
-const DAY_NAMES = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+const DAY_NAMES = ["dbp.day.0", "dbp.day.1", "dbp.day.2", "dbp.day.3", "dbp.day.4", "dbp.day.5", "dbp.day.6"];
 
 const input =
   "rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300";
@@ -47,36 +48,40 @@ function fmtSize(n: number | null): string {
 }
 
 function fmtDuration(startedAt: string, endedAt: string | null): string | null {
+  const { t } = useLang();
   if (!endedAt) return null;
   const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
   if (isNaN(ms) || ms < 0) return null;
   const totalSecs = Math.round(ms / 1000);
-  if (totalSecs < 60) return `${totalSecs} dtk`;
+  if (totalSecs < 60) return `${totalSecs} ${t("dbp.unitSec")}`;
   const mins = Math.floor(totalSecs / 60);
   const secs = totalSecs % 60;
-  if (mins < 60) return secs ? `${mins} mnt ${secs} dtk` : `${mins} mnt`;
+  if (mins < 60) return secs ? `${mins} ${t("dbp.unitMin")} ${secs} ${t("dbp.unitSec")}` : `${mins} ${t("dbp.unitMin")}`;
   const hours = Math.floor(mins / 60);
   const remMins = mins % 60;
-  return remMins ? `${hours} jam ${remMins} mnt` : `${hours} jam`;
+  return remMins ? `${hours} ${t("dbp.unitHr")} ${remMins} ${t("dbp.unitMin")}` : `${hours} ${t("dbp.unitHr")}`;
 }
 
 function scheduleLabel(j: Job): string {
-  if (j.scheduleType === "hourly") return "Perjam";
-  if (j.scheduleType === "daily") return `Harian ${j.timeAt}`;
-  if (j.scheduleType === "weekly") return `Mingguan, ${DAY_NAMES[j.dayOn ?? 0]} ${j.timeAt}`;
-  if (j.scheduleType === "monthly") return `Bulanan, tgl ${j.dayOn} ${j.timeAt}`;
-  return `Cron: ${j.cronExpr}`;
+  const { t } = useLang();
+  if (j.scheduleType === "hourly") return t("dbp.optHourly");
+  if (j.scheduleType === "daily") return `${t("dbp.optDaily")} ${j.timeAt}`;
+  if (j.scheduleType === "weekly") return `${t("dbp.optWeekly")}, ${t(DAY_NAMES[j.dayOn ?? 0])} ${j.timeAt}`;
+  if (j.scheduleType === "monthly") return `${t("dbp.schedMonthly")} ${j.dayOn} ${j.timeAt}`;
+  return `${t("dbp.schedCron")} ${j.cronExpr}`;
 }
 
 function destLabel(j: Job): string {
+  const { t } = useLang();
   if (j.destType === "local") return `📁 ${j.destPath}`;
-  if (j.destType === "gdrive") return `📂 ${j.dest?.name ?? "Google Drive"}`;
+  if (j.destType === "gdrive") return `📂 ${j.dest?.name ?? t("dbp.gdriveName")}`;
   if (j.destType === "ftp") return `🌐 ${j.dest?.name ?? "FTP"}`;
   return `☁️ ${j.dest?.name ?? "S3"}`;
 }
 
 export default function DbBackupPage() {
   const router = useRouter();
+  const { t } = useLang();
   const [tab, setTab] = useState<"sumber" | "tujuan" | "job">("sumber");
   const [conns, setConns] = useState<Conn[]>([]);
   const [sshs, setSshs] = useState<Ssh[]>([]);
@@ -200,7 +205,7 @@ export default function DbBackupPage() {
     const t = params.get("tab");
     if (t === "tujuan") setTab("tujuan");
     if (ok) {
-      setMsg({ text: `✅ Google Drive terkoneksi sebagai ${ok}`, ok: true });
+      setMsg({ text: `✅ ${t("dbp.msgGdriveConnected")} ${ok}`, ok: true });
       window.history.replaceState({}, "", window.location.pathname);
       load();
     } else if (err) {
@@ -220,7 +225,7 @@ export default function DbBackupPage() {
     const d = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok || d.ok === false) {
-      setMsg({ text: d.message ?? "Terjadi kesalahan", ok: false });
+      setMsg({ text: d.message ?? t("dbp.errGeneral"), ok: false });
       return false;
     }
     load();
@@ -237,7 +242,7 @@ export default function DbBackupPage() {
     if (d.ok) setDbList(d.data);
     else {
       setDbList([]);
-      setMsg({ text: d.message ?? "Gagal mengambil daftar database", ok: false });
+      setMsg({ text: d.message ?? t("dbp.errLoadDatabases"), ok: false });
     }
   }
 
@@ -278,18 +283,18 @@ export default function DbBackupPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ targetConnectionId: restoreConnId !== restoreOrigJob?.connId ? restoreConnId : undefined }),
     });
-    const d = await res.json().catch(() => ({ message: `HTTP ${res.status} — tidak ada response dari server` }));
+    const d = await res.json().catch(() => ({ message: `HTTP ${res.status} — ${t("dbp.errNoResponse")}` }));
     setRestoreRunId(null);
 
     if (!res.ok || d.ok === false) {
       setBusy(false);
-      setMsg({ text: d.message ?? "Gagal memulai restore", ok: false });
+      setMsg({ text: d.message ?? t("dbp.errStartRestore"), ok: false });
       return;
     }
 
     // Async restore started — poll for status
     const restoreId = d.data?.restoreId;
-    setRestoreProgress({ pct: 0, text: "Memulai restore…" });
+    setRestoreProgress({ pct: 0, text: t("dbp.restoreStarting") });
 
     const poll = async () => {
       for (let i = 0; i < 120; i++) {
@@ -300,8 +305,8 @@ export default function DbBackupPage() {
         if (p.data.status === "success") {
           setBusy(false);
           setRestoreProgress(null);
-          const warnText = p.data.warnings?.length ? ` (${p.data.warnings.length} peringatan)` : "";
-          setMsg({ text: `✓ Restore selesai${warnText}`, ok: true });
+          const warnText = p.data.warnings?.length ? ` (${p.data.warnings.length} ${t("dbp.warnings")})` : "";
+          setMsg({ text: `✓ ${t("dbp.restoreDone")}${warnText}`, ok: true });
           load();
           refreshRuns();
           return;
@@ -309,7 +314,7 @@ export default function DbBackupPage() {
         if (p.data.status === "failed") {
           setBusy(false);
           setRestoreProgress(null);
-          setMsg({ text: `Gagal restore: ${p.data.message}`, ok: false });
+          setMsg({ text: `${t("dbp.restoreFailed")} ${p.data.message}`, ok: false });
           return;
         }
         // Update progress
@@ -319,7 +324,7 @@ export default function DbBackupPage() {
       }
       setBusy(false);
       setRestoreProgress(null);
-      setMsg({ text: "Restore masih berjalan. Cek log server untuk detail.", ok: true });
+      setMsg({ text: t("dbp.restoreStillRunning"), ok: true });
     };
     void poll();
   }
@@ -352,7 +357,7 @@ export default function DbBackupPage() {
       setJDestId("");
       setJRetention(0);
       setJCompression("brotli");
-      setMsg({ text: editJobId ? "Job backup diperbarui." : "Job backup dibuat.", ok: true });
+      setMsg({ text: editJobId ? t("dbp.jobUpdated") : t("dbp.jobCreated"), ok: true });
     }
   }
 
@@ -387,7 +392,7 @@ export default function DbBackupPage() {
   const selected = jobs.find((j) => j.id === selectedJobId) ?? null;
 
   if (forbidden) {
-    return <p className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">Halaman ini hanya untuk admin.</p>;
+    return <p className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">{t("dbp.forbidden")}</p>;
   }
 
   const ND = (k: string) => ndCfg[k] ?? "";
@@ -396,9 +401,9 @@ export default function DbBackupPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Backup Database</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{t("dbp.title")}</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Backup MySQL terjadwal ke lokal, FTP, S3, atau Google Drive.
+          {t("dbp.subtitle")}
         </p>
       </div>
 
@@ -408,19 +413,19 @@ export default function DbBackupPage() {
           onClick={() => setTab("sumber")}
           className={`rounded-lg px-4 py-2 text-sm font-medium transition ${tab === "sumber" ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100" : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"}`}
         >
-          Sumber
+          {t("dbp.tabSource")}
         </button>
         <button
           onClick={() => setTab("tujuan")}
           className={`rounded-lg px-4 py-2 text-sm font-medium transition ${tab === "tujuan" ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100" : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"}`}
         >
-          Tujuan
+          {t("dbp.tabDest")}
         </button>
         <button
           onClick={() => setTab("job")}
           className={`rounded-lg px-4 py-2 text-sm font-medium transition ${tab === "job" ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100" : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"}`}
         >
-          Job Backup
+          {t("dbp.tabJob")}
         </button>
       </div>
 
@@ -444,9 +449,9 @@ export default function DbBackupPage() {
       {tab === "sumber" && (
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Koneksi Sumber</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("dbp.sourceConnsTitle")}</h2>
             <button onClick={() => { setShowConnForm(!showConnForm); setEditConnId(null); setNc({ name: "", host: "", port: "3306", username: "", password: "", useSsh: false, sshId: "" }); }} className={btnPrimary}>
-              {showConnForm ? "Tutup form" : "+ Tambah koneksi"}
+              {showConnForm ? t("dbp.closeForm") : t("dbp.addConn")}
             </button>
           </div>
 
@@ -462,70 +467,70 @@ export default function DbBackupPage() {
                     setShowConnForm(false);
                     setEditConnId(null);
                     setNc({ name: "", host: "", port: "3306", username: "", password: "", useSsh: false, sshId: "" });
-                    setMsg({ text: "Koneksi diperbarui.", ok: true });
+                    setMsg({ text: t("dbp.connUpdated"), ok: true });
                   }
                 } else {
                   const ok = await api("/api/db/connections", "POST", payload);
                   if (ok) {
                     setShowConnForm(false);
                     setNc({ name: "", host: "", port: "3306", username: "", password: "", useSsh: false, sshId: "" });
-                    setMsg({ text: "Koneksi tersimpan (tes koneksi berhasil).", ok: true });
+                    setMsg({ text: t("dbp.connSaved"), ok: true });
                   }
                 }
               }}
             >
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{editConnId ? "Edit Koneksi" : "Buat Koneksi"}</h3>
-                <button type="button" onClick={() => { setShowConnForm(false); setEditConnId(null); }} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">✕ Tutup</button>
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{editConnId ? t("dbp.editConn") : t("dbp.createConn")}</h3>
+                <button type="button" onClick={() => { setShowConnForm(false); setEditConnId(null); }} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">{t("dbp.close")}</button>
               </div>
 
               {/* RDBMS selector */}
               <div>
-                <label className={label}>Tipe Database</label>
+                <label className={label}>{t("dbp.dbType")}</label>
                 <div className="mt-2 flex gap-2">
                   {[{ v: "mysql", l: "🐬 MySQL", active: true }, { v: "postgresql", l: "🐘 PostgreSQL", active: false }, { v: "sqlite", l: "🪶 SQLite", active: false }].map((o) => (
                     <button type="button" key={o.v} disabled={!o.active}
                       className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${o.active ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "cursor-not-allowed bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600"}`}
-                    >{o.l}{!o.active && " (coming soon)"}</button>
+                    >{o.l}{!o.active && t("dbp.comingSoon")}</button>
                   ))}
                 </div>
               </div>
 
               <div className="flex flex-wrap gap-4">
-                <div><label className={label}>Nama</label><input required value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="mis. DB Produksi" className={`${input} mt-1 w-56`} /></div>
-                <div><label className={label}>Host</label><input required value={nc.host} onChange={(e) => setNc({ ...nc, host: e.target.value })} placeholder="103.x.x.x" className={`${input} mt-1 w-56`} /></div>
-                <div><label className={label}>Port</label><input value={nc.port} onChange={(e) => setNc({ ...nc, port: e.target.value })} className={`${input} mt-1 w-24`} /></div>
-                <div><label className={label}>Username</label><input required value={nc.username} onChange={(e) => setNc({ ...nc, username: e.target.value })} className={`${input} mt-1 w-44`} /></div>
-                <div><label className={label}>Password</label><input type="password" value={nc.password} onChange={(e) => setNc({ ...nc, password: e.target.value })} placeholder={editConnId ? "Kosongkan jika tidak diubah" : ""} className={`${input} mt-1 w-44`} /></div>
+                <div><label className={label}>{t("dbp.labelName")}</label><input required value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder={t("dbp.phConnName")} className={`${input} mt-1 w-56`} /></div>
+                <div><label className={label}>{t("dbp.labelHost")}</label><input required value={nc.host} onChange={(e) => setNc({ ...nc, host: e.target.value })} placeholder="103.x.x.x" className={`${input} mt-1 w-56`} /></div>
+                <div><label className={label}>{t("dbp.labelPort")}</label><input value={nc.port} onChange={(e) => setNc({ ...nc, port: e.target.value })} className={`${input} mt-1 w-24`} /></div>
+                <div><label className={label}>{t("dbp.labelUsername")}</label><input required value={nc.username} onChange={(e) => setNc({ ...nc, username: e.target.value })} className={`${input} mt-1 w-44`} /></div>
+                <div><label className={label}>{t("dbp.labelPassword")}</label><input type="password" value={nc.password} onChange={(e) => setNc({ ...nc, password: e.target.value })} placeholder={editConnId ? t("dbp.phPassUnchanged") : ""} className={`${input} mt-1 w-44`} /></div>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
-                <label className={label}>SSH Koneksi</label>
+                <label className={label}>{t("dbp.sshConnLabel")}</label>
                 <div className="mt-2 flex flex-wrap items-center gap-3">
                   <button
                     type="button"
                     onClick={() => setNc({ ...nc, useSsh: !nc.useSsh })}
                     className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${nc.useSsh ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "bg-white text-slate-600 ring-1 ring-slate-300 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600"}`}
                   >
-                    {nc.useSsh ? "✓ Pakai SSH" : "Tanpa SSH"}
+                    {nc.useSsh ? t("dbp.useSsh") : t("dbp.noSsh")}
                   </button>
                   {nc.useSsh && (
                     <select value={nc.sshId} onChange={(e) => setNc({ ...nc, sshId: e.target.value })} required className={`${input} w-72`}>
-                      <option value="">— pilih koneksi SSH —</option>
+                      <option value="">{t("dbp.phPickSsh")}</option>
                       {sshs.map((s) => (<option key={s.id} value={s.id}>{s.name} ({s.username}@{s.host}:{s.port})</option>))}
                     </select>
                   )}
                 </div>
                 {nc.useSsh && sshs.length === 0 && (
-                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">Belum ada koneksi SSH. Tambahkan dulu lewat menu &ldquo;SSH Koneksi&rdquo;.</p>
+                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{t("dbp.noSshHint")}</p>
                 )}
                 {nc.useSsh && (
-                  <p className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">Koneksi MySQL akan diakses lewat tunnel SSH ini (host MySQL di bawah dianggap host dalam server SSH).</p>
+                  <p className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">{t("dbp.sshTunnelHint")}</p>
                 )}
               </div>
 
               <div className="flex justify-end">
-                <button disabled={busy} className={btnPrimary}>{busy ? "…" : editConnId ? "Simpan edit" : "Tes & simpan"}</button>
+                <button disabled={busy} className={btnPrimary}>{busy ? "…" : editConnId ? t("dbp.saveEdit") : t("dbp.testSave")}</button>
               </div>
             </form>
           )}
@@ -534,7 +539,7 @@ export default function DbBackupPage() {
             <div className="h-16 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
           ) : conns.length === 0 ? (
             <p className="rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 p-8 text-center text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-900/40">
-              Belum ada koneksi. Tambahkan koneksi database untuk memulai.
+              {t("dbp.noConns")}
             </p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -545,12 +550,12 @@ export default function DbBackupPage() {
                       <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{c.name}</p>
                       <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">MySQL</span>
                     </div>
-                    <p className="truncate text-xs text-slate-400">{c.username}@{c.host}:{c.port}{c.ssh ? ` · via SSH ${c.ssh.name}` : ""} · {c.jobCount} job</p>
+                    <p className="truncate text-xs text-slate-400">{c.username}@{c.host}:{c.port}{c.ssh ? ` · ${t("dbp.viaSsh")} ${c.ssh.name}` : ""} · {c.jobCount} {t("dbp.unitJob")}</p>
                   </div>
                   <div className="flex shrink-0 gap-2 text-xs">
-                    <button onClick={() => { setEditConnId(c.id); setNc({ name: c.name, host: c.host, port: String(c.port), username: c.username, password: "", useSsh: !!c.sshId, sshId: c.sshId ?? "" }); setShowConnForm(true); }} className="font-medium text-slate-500 hover:underline dark:text-slate-400">Edit</button>
-                    <button onClick={() => { setCloneConnId(c.id); setCloneTeamId(""); }} className="font-medium text-sky-600 hover:underline dark:text-sky-400">Clone</button>
-                    <button onClick={() => confirm(`Hapus koneksi "${c.name}" beserta job backup-nya?`) && api(`/api/db/connections/${c.id}`, "DELETE")} className="font-medium text-red-500 hover:underline">Hapus</button>
+                    <button onClick={() => { setEditConnId(c.id); setNc({ name: c.name, host: c.host, port: String(c.port), username: c.username, password: "", useSsh: !!c.sshId, sshId: c.sshId ?? "" }); setShowConnForm(true); }} className="font-medium text-slate-500 hover:underline dark:text-slate-400">{t("dbp.edit")}</button>
+                    <button onClick={() => { setCloneConnId(c.id); setCloneTeamId(""); }} className="font-medium text-sky-600 hover:underline dark:text-sky-400">{t("dbp.clone")}</button>
+                    <button onClick={() => confirm(`${t("dbp.confirmDelConn1")} "${c.name}" ${t("dbp.confirmDelConn2")}`) && api(`/api/db/connections/${c.id}`, "DELETE")} className="font-medium text-red-500 hover:underline">{t("dbp.delete")}</button>
                   </div>
                 </div>
               ))}
@@ -563,9 +568,9 @@ export default function DbBackupPage() {
       {tab === "tujuan" && (
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Koneksi Tujuan</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("dbp.destConnsTitle")}</h2>
             <button onClick={() => { setShowDestForm(!showDestForm); setEditDestId(null); setNdName(""); setNdCfg({}); setNdType("gdrive"); }} className={btnPrimary}>
-              {showDestForm ? "Tutup form" : "+ Tambah tujuan"}
+              {showDestForm ? t("dbp.closeForm") : t("dbp.addDest")}
             </button>
           </div>
 
@@ -586,17 +591,17 @@ export default function DbBackupPage() {
                   setEditDestId(null);
                   setNdName("");
                   setNdCfg({});
-                  setMsg({ text: editDestId ? "Koneksi tujuan diperbarui." : "Koneksi tujuan tersimpan.", ok: true });
+                  setMsg({ text: editDestId ? t("dbp.destUpdated") : t("dbp.destSaved"), ok: true });
                 }
               }}
             >
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{editDestId ? "Edit Koneksi Tujuan" : "Buat Koneksi Tujuan"}</h3>
-                <button type="button" onClick={() => { setShowDestForm(false); setEditDestId(null); }} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">✕ Tutup</button>
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{editDestId ? t("dbp.editDest") : t("dbp.createDest")}</h3>
+                <button type="button" onClick={() => { setShowDestForm(false); setEditDestId(null); }} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">{t("dbp.close")}</button>
               </div>
 
               <div>
-                <label className={label}>Tipe tujuan</label>
+                <label className={label}>{t("dbp.destType")}</label>
                 <div className="mt-2 flex gap-2">
                   {[{ v: "ftp", l: "🌐 FTP" }, { v: "s3", l: "☁️ S3" }, { v: "gdrive", l: "📂 Google Drive" }].map((o) => (
                     <button type="button" key={o.v} disabled={!!editDestId && o.v !== ndType}
@@ -608,45 +613,45 @@ export default function DbBackupPage() {
               </div>
 
               <div className="flex flex-wrap gap-4">
-                <div><label className={label}>Nama</label><input required value={ndName} onChange={(e) => setNdName(e.target.value)} placeholder="mis. FTP Server A" className={`${input} mt-1 w-56`} /></div>
+                <div><label className={label}>{t("dbp.labelName")}</label><input required value={ndName} onChange={(e) => setNdName(e.target.value)} placeholder={t("dbp.phDestName")} className={`${input} mt-1 w-56`} /></div>
                 {ndType === "ftp" && (
                   <>
-                    <div><label className={label}>Host</label><input required value={ND("host")} onChange={(e) => setND("host", e.target.value)} placeholder="ftp.example.com" className={`${input} mt-1 w-52`} /></div>
-                    <div><label className={label}>Port</label><input value={ND("port") || "21"} onChange={(e) => setND("port", e.target.value)} className={`${input} mt-1 w-20`} /></div>
-                    <div><label className={label}>Username</label><input required value={ND("username")} onChange={(e) => setND("username", e.target.value)} className={`${input} mt-1 w-40`} /></div>
-                    <div><label className={label}>Password</label><input type="password" required={!editDestId} value={ND("password")} onChange={(e) => setND("password", e.target.value)} placeholder={editDestId ? "Kosongkan jika tidak diubah" : ""} className={`${input} mt-1 w-40`} /></div>
+                    <div><label className={label}>{t("dbp.labelHost")}</label><input required value={ND("host")} onChange={(e) => setND("host", e.target.value)} placeholder="ftp.example.com" className={`${input} mt-1 w-52`} /></div>
+                    <div><label className={label}>{t("dbp.labelPort")}</label><input value={ND("port") || "21"} onChange={(e) => setND("port", e.target.value)} className={`${input} mt-1 w-20`} /></div>
+                    <div><label className={label}>{t("dbp.labelUsername")}</label><input required value={ND("username")} onChange={(e) => setND("username", e.target.value)} className={`${input} mt-1 w-40`} /></div>
+                    <div><label className={label}>{t("dbp.labelPassword")}</label><input type="password" required={!editDestId} value={ND("password")} onChange={(e) => setND("password", e.target.value)} placeholder={editDestId ? t("dbp.phPassUnchanged") : ""} className={`${input} mt-1 w-40`} /></div>
                     <div className="flex items-center gap-2 pt-6">
                       <input id="ftp-secure" type="checkbox" checked={ND("secure") === "true"} onChange={(e) => setND("secure", e.target.checked ? "true" : "false")} className="h-4 w-4 accent-slate-900" />
-                      <label htmlFor="ftp-secure" className="text-xs text-slate-500 dark:text-slate-400">FTPS (Secure)</label>
+                      <label htmlFor="ftp-secure" className="text-xs text-slate-500 dark:text-slate-400">{t("dbp.ftpsSecure")}</label>
                     </div>
                   </>
                 )}
                 {ndType === "s3" && (
                   <>
-                    <div><label className={label}>Bucket</label><input required value={ND("bucket")} onChange={(e) => setND("bucket", e.target.value)} className={`${input} mt-1 w-40`} /></div>
-                    <div><label className={label}>Region</label><input value={ND("region")} onChange={(e) => setND("region", e.target.value)} placeholder="ap-southeast-1" className={`${input} mt-1 w-36`} /></div>
-                    <div><label className={label}>Endpoint (opsional)</label><input value={ND("endpoint")} onChange={(e) => setND("endpoint", e.target.value)} placeholder="https://…" className={`${input} mt-1 w-56`} /></div>
-                    <div><label className={label}>Access key</label><input required value={ND("accessKeyId")} onChange={(e) => setND("accessKeyId", e.target.value)} className={`${input} mt-1 w-44`} /></div>
-                    <div><label className={label}>Secret key</label><input required={!editDestId} type="password" value={ND("secretKey")} onChange={(e) => setND("secretKey", e.target.value)} placeholder={editDestId ? "Kosongkan jika tidak diubah" : ""} className={`${input} mt-1 w-44`} /></div>
+                    <div><label className={label}>{t("dbp.labelBucket")}</label><input required value={ND("bucket")} onChange={(e) => setND("bucket", e.target.value)} className={`${input} mt-1 w-40`} /></div>
+                    <div><label className={label}>{t("dbp.labelRegion")}</label><input value={ND("region")} onChange={(e) => setND("region", e.target.value)} placeholder="ap-southeast-1" className={`${input} mt-1 w-36`} /></div>
+                    <div><label className={label}>{t("dbp.endpointOpt")}</label><input value={ND("endpoint")} onChange={(e) => setND("endpoint", e.target.value)} placeholder="https://…" className={`${input} mt-1 w-56`} /></div>
+                    <div><label className={label}>{t("dbp.accessKey")}</label><input required value={ND("accessKeyId")} onChange={(e) => setND("accessKeyId", e.target.value)} className={`${input} mt-1 w-44`} /></div>
+                    <div><label className={label}>{t("dbp.secretKey")}</label><input required={!editDestId} type="password" value={ND("secretKey")} onChange={(e) => setND("secretKey", e.target.value)} placeholder={editDestId ? t("dbp.phPassUnchanged") : ""} className={`${input} mt-1 w-44`} /></div>
                   </>
                 )}
                 {ndType === "gdrive" && (
                   <>
                     <div className="w-full">
-                      <label className={label}>Google OAuth Client ID</label>
+                      <label className={label}>{t("dbp.oauthClientId")}</label>
                       <input required value={ND("clientId")} onChange={(e) => setND("clientId", e.target.value)} placeholder="xxxx.apps.googleusercontent.com" className={`${input} mt-1 w-80`} />
-                      <p className="mt-1 text-[11px] text-slate-400">Redirect URI: <code className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded">{typeof window !== "undefined" ? window.location.origin : ""}/api/db/gdrive/callback</code></p>
+                      <p className="mt-1 text-[11px] text-slate-400">{t("dbp.redirectUri")} <code className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded">{typeof window !== "undefined" ? window.location.origin : ""}/api/db/gdrive/callback</code></p>
                     </div>
                     <div className="w-full">
-                      <label className={label}>Google OAuth Client Secret</label>
-                      <input type="password" required={!editDestId} value={ND("clientSecret")} onChange={(e) => setND("clientSecret", e.target.value)} placeholder={editDestId ? "Kosongkan jika tidak diubah" : "GOCSPX-..."} className={`${input} mt-1 w-80`} />
+                      <label className={label}>{t("dbp.oauthClientSecret")}</label>
+                      <input type="password" required={!editDestId} value={ND("clientSecret")} onChange={(e) => setND("clientSecret", e.target.value)} placeholder={editDestId ? t("dbp.phPassUnchanged") : "GOCSPX-..."} className={`${input} mt-1 w-80`} />
                     </div>
                   </>
                 )}
               </div>
 
               <div className="flex justify-end">
-                <button disabled={busy} className={btnPrimary}>{busy ? "…" : editDestId ? "Simpan edit" : "Simpan tujuan"}</button>
+                <button disabled={busy} className={btnPrimary}>{busy ? "…" : editDestId ? t("dbp.saveEdit") : t("dbp.saveDest")}</button>
               </div>
             </form>
           )}
@@ -655,7 +660,7 @@ export default function DbBackupPage() {
             <div className="h-16 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
           ) : dests.length === 0 ? (
             <p className="rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 p-8 text-center text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-900/40">
-              Belum ada koneksi tujuan. Tambahkan koneksi FTP, S3, atau Google Drive di sini.
+              {t("dbp.noDests")}
             </p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -673,15 +678,15 @@ export default function DbBackupPage() {
                       <p className="mt-1 truncate text-xs text-slate-400">
                         {d.type === "ftp" && `${d.config.username ?? ""}@${d.config.host ?? ""}:${d.config.port ?? 21}${d.config.secure ? " (FTPS)" : ""}`}
                         {d.type === "s3" && `s3://${d.config.bucket ?? ""}${d.config.region && d.config.region !== "auto" ? ` · ${d.config.region}` : ""}`}
-                        {d.type === "gdrive" && (connected ? `✅ Terkoneksi sebagai ${d.config.gdriveUserEmail}` : "Belum login Google")}
+                        {d.type === "gdrive" && (connected ? `${t("dbp.gdriveConnectedAs")} ${d.config.gdriveUserEmail}` : t("dbp.gdriveNotLogged"))}
                       </p>
-                      <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">{d.jobCount} job menggunakan</p>
+                      <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">{d.jobCount} {t("dbp.jobUsing")}</p>
                     </div>
                     <div className="flex items-center gap-2 text-xs">
                       {d.type === "gdrive" && (
                         <a href={`/api/db/gdrive/auth?destId=${d.id}`} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 font-medium text-white transition hover:bg-blue-500">
                           <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#fff"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#fff" opacity=".8"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#fff" opacity=".6"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#fff" opacity=".9"/></svg>
-                          {connected ? "Login ulang" : "Login Google"}
+                          {connected ? t("dbp.loginAgain") : t("dbp.loginGoogle")}
                         </a>
                       )}
                       <button onClick={() => {
@@ -703,8 +708,8 @@ export default function DbBackupPage() {
                         }
                         setNdCfg(prefill);
                         setShowDestForm(true);
-                      }} className="font-medium text-slate-500 hover:underline dark:text-slate-400">Edit</button>
-                      <button onClick={() => confirm(`Hapus koneksi tujuan "${d.name}"? Job yang memakainya akan kehilangan tujuan.`) && api(`/api/db/destinations/${d.id}`, "DELETE")} className="font-medium text-red-500 hover:underline">Hapus</button>
+                      }} className="font-medium text-slate-500 hover:underline dark:text-slate-400">{t("dbp.edit")}</button>
+                      <button onClick={() => confirm(`${t("dbp.confirmDelDest")} "${d.name}"? ${t("dbp.confirmDelDest2")}`) && api(`/api/db/destinations/${d.id}`, "DELETE")} className="font-medium text-red-500 hover:underline">{t("dbp.delete")}</button>
                     </div>
                   </div>
                 );
@@ -718,14 +723,14 @@ export default function DbBackupPage() {
       {cloneConnId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900">
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Clone Koneksi ke Tim Lain</h3>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Koneksi dan semua job-nya akan disalin ke tim tujuan.</p>
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("dbp.cloneTitle")}</h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("dbp.cloneDesc")}</p>
             <select value={cloneTeamId} onChange={(e) => setCloneTeamId(e.target.value)} className={`${input} mt-4 w-full`}>
-              <option value="">— pilih tim tujuan —</option>
+              <option value="">{t("dbp.phPickTeam")}</option>
               {teams.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}
             </select>
             <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => { setCloneConnId(null); setCloneTeamId(""); }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">Batal</button>
+              <button onClick={() => { setCloneConnId(null); setCloneTeamId(""); }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">{t("dbp.cancel")}</button>
               <button
                 disabled={!cloneTeamId || busy}
                 onClick={async () => {
@@ -733,11 +738,11 @@ export default function DbBackupPage() {
                   const res = await fetch(`/api/db/connections/${cloneConnId}/clone`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ teamId: cloneTeamId }) });
                   const d = await res.json().catch(() => ({}));
                   setBusy(false);
-                  if (!res.ok || d.ok === false) setMsg({ text: d.message ?? "Gagal clone", ok: false });
-                  else { setMsg({ text: `Berhasil clone + ${d.data?.jobCount ?? 0} job.`, ok: true }); setCloneConnId(null); setCloneTeamId(""); load(); }
+                  if (!res.ok || d.ok === false) setMsg({ text: d.message ?? t("dbp.cloneFailed"), ok: false });
+                  else { setMsg({ text: `${t("dbp.cloneOk")} + ${d.data?.jobCount ?? 0} ${t("dbp.unitJob")}.`, ok: true }); setCloneConnId(null); setCloneTeamId(""); load(); }
                 }}
                 className={btnPrimary}
-              >{busy ? "…" : "Clone"}</button>
+              >{busy ? "…" : t("dbp.clone")}</button>
             </div>
           </div>
         </div>
@@ -747,27 +752,27 @@ export default function DbBackupPage() {
       {restoreRunId && restoreOrigJob && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900">
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Restore Backup</h3>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Pilih koneksi tujuan untuk restore. Default ke koneksi asal backup.</p>
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("dbp.restoreTitle")}</h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("dbp.restoreDesc")}</p>
 
             <div className="mt-4 space-y-3">
               <div>
-                <label className={label}>Koneksi Tujuan</label>
+                <label className={label}>{t("dbp.destConnsTitle")}</label>
                 <select value={restoreConnId} onChange={(e) => loadRestoreDatabases(e.target.value)} className={`${input} mt-1 w-full`}>
                   {conns.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.name} ({c.host}){c.id === restoreOrigJob.connId ? " — asal" : ""}
+                      {c.name} ({c.host}){c.id === restoreOrigJob.connId ? ` — ${t("dbp.orig")}` : ""}
                     </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className={label}>Database dari file backup</label>
+                <label className={label}>{t("dbp.restoreDbLabel")}</label>
                 {restoreDbList === null ? (
-                  <p className="mt-2 text-xs text-slate-400">Mengambil daftar database…</p>
+                  <p className="mt-2 text-xs text-slate-400">{t("dbp.loadingDbs")}</p>
                 ) : restoreDbList.length === 0 ? (
-                  <p className="mt-2 text-xs text-slate-400">Tidak ada database tersedia.</p>
+                  <p className="mt-2 text-xs text-slate-400">{t("dbp.noDbsAvailable")}</p>
                 ) : (
                   <div className="mt-2 flex flex-wrap gap-2">
                     {restoreDbList.map((db) => {
@@ -776,7 +781,7 @@ export default function DbBackupPage() {
                       return (
                         <button type="button" key={db} onClick={() => setRestoreDbs((s) => { const n = new Set(s); if (on) n.delete(db); else n.add(db); return n; })}
                           className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${on ? "bg-emerald-600 text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"}`}
-                        >{on ? "✓ " : ""}{db}{fromBackup && !on ? " (asal)" : ""}</button>
+                        >{on ? "✓ " : ""}{db}{fromBackup && !on ? ` (${t("dbp.orig")})` : ""}</button>
                       );
                     })}
                   </div>
@@ -784,14 +789,14 @@ export default function DbBackupPage() {
               </div>
 
               <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                Database dari file backup akan dibuat otomatis jika belum ada di server tujuan.
+                {t("dbp.restoreAutoCreate")}
               </p>
             </div>
 
             <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => { setRestoreRunId(null); setRestoreOrigJob(null); }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">Batal</button>
+              <button onClick={() => { setRestoreRunId(null); setRestoreOrigJob(null); }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">{t("dbp.cancel")}</button>
               <button disabled={busy || restoreDbs.size === 0} onClick={doRestore} className={btnPrimary}>
-                {busy ? "Restore…" : "Restore sekarang"}
+                {busy ? t("dbp.restoreBusy") : t("dbp.restoreNow")}
               </button>
             </div>
           </div>
@@ -802,25 +807,25 @@ export default function DbBackupPage() {
       {tab === "job" && (
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Job Backup</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("dbp.tabJob")}</h2>
             <button onClick={() => { setShowJobForm(!showJobForm); setEditJobId(null); setJName(""); setJDbs(new Set()); setJDestPath(""); setJDestId(""); setJRetention(0); setJCompression("brotli"); }} disabled={conns.length === 0} className={btnPrimary}>
-              {showJobForm ? "Tutup form" : "+ Buat job"}
+              {showJobForm ? t("dbp.closeForm") : t("dbp.addJob")}
             </button>
           </div>
 
           {showJobForm && (
             <form onSubmit={createJob} className={`${card} animate-fade-up mb-4 space-y-5`}>
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{editJobId ? "Edit Job Backup" : "Buat Job Backup"}</h3>
-                <button type="button" onClick={() => { setShowJobForm(false); setEditJobId(null); }} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">✕ Tutup</button>
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{editJobId ? t("dbp.editJob") : t("dbp.createJob")}</h3>
+                <button type="button" onClick={() => { setShowJobForm(false); setEditJobId(null); }} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">{t("dbp.close")}</button>
               </div>
 
               <div className="flex flex-wrap gap-4">
-                <div><label className={label}>Nama job</label><input required value={jName} onChange={(e) => setJName(e.target.value)} placeholder="mis. backup-harian-app" className={`${input} mt-1 w-56`} /></div>
+                <div><label className={label}>{t("dbp.jobName")}</label><input required value={jName} onChange={(e) => setJName(e.target.value)} placeholder={t("dbp.phJobName")} className={`${input} mt-1 w-56`} /></div>
                 <div>
-                  <label className={label}>Koneksi</label>
+                  <label className={label}>{t("dbp.connLabel")}</label>
                   <select required value={jConn} onChange={(e) => loadDatabases(e.target.value)} className={`${input} mt-1 w-56`}>
-                    <option value="">— pilih koneksi —</option>
+                    <option value="">{t("dbp.phPickConn")}</option>
                     {conns.map((c) => (<option key={c.id} value={c.id}>{c.name} ({c.host})</option>))}
                   </select>
                 </div>
@@ -828,11 +833,11 @@ export default function DbBackupPage() {
 
               {jConn && (
                 <div>
-                  <label className={label}>Database yang di-backup</label>
+                  <label className={label}>{t("dbp.dbsToBackup")}</label>
                   {dbList === null ? (
-                    <p className="mt-2 text-xs text-slate-400">Mengambil daftar database…</p>
+                    <p className="mt-2 text-xs text-slate-400">{t("dbp.loadingDbs")}</p>
                   ) : dbList.length === 0 ? (
-                    <p className="mt-2 text-xs text-red-500">Tidak ada database / gagal terhubung.</p>
+                    <p className="mt-2 text-xs text-red-500">{t("dbp.noDbsFail")}</p>
                   ) : (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {dbList.map((db) => {
@@ -850,32 +855,32 @@ export default function DbBackupPage() {
 
               <div className="flex flex-wrap items-end gap-4">
                 <div>
-                  <label className={label}>Jadwal</label>
+                  <label className={label}>{t("dbp.scheduleLabel")}</label>
                   <select value={jType} onChange={(e) => setJType(e.target.value)} className={`${input} mt-1`}>
-                    <option value="hourly">Perjam</option>
-                    <option value="daily">Harian</option>
-                    <option value="weekly">Mingguan</option>
-                    <option value="monthly">Bulanan</option>
-                    <option value="cron">Cron expression</option>
+                    <option value="hourly">{t("dbp.optHourly")}</option>
+                    <option value="daily">{t("dbp.optDaily")}</option>
+                    <option value="weekly">{t("dbp.optWeekly")}</option>
+                    <option value="monthly">{t("dbp.optMonthly")}</option>
+                    <option value="cron">{t("dbp.optCron")}</option>
                   </select>
                 </div>
                 {jType === "weekly" && (
-                  <div><label className={label}>Hari</label><select value={jDay} onChange={(e) => setJDay(Number(e.target.value))} className={`${input} mt-1`}>{DAY_NAMES.map((d, i) => (<option key={i} value={i}>{d}</option>))}</select></div>
+                  <div><label className={label}>{t("dbp.dayLabel")}</label><select value={jDay} onChange={(e) => setJDay(Number(e.target.value))} className={`${input} mt-1`}>{DAY_NAMES.map((d, i) => (<option key={i} value={i}>{t(d)}</option>))}</select></div>
                 )}
                 {jType === "monthly" && (
-                  <div><label className={label}>Tanggal</label><select value={jDate} onChange={(e) => setJDate(Number(e.target.value))} className={`${input} mt-1`}>{Array.from({ length: 28 }, (_, i) => (<option key={i + 1} value={i + 1}>{i + 1}</option>))}</select></div>
+                  <div><label className={label}>{t("dbp.dateLabel")}</label><select value={jDate} onChange={(e) => setJDate(Number(e.target.value))} className={`${input} mt-1`}>{Array.from({ length: 28 }, (_, i) => (<option key={i + 1} value={i + 1}>{i + 1}</option>))}</select></div>
                 )}
                 {jType !== "cron" && jType !== "hourly" ? (
-                  <div><label className={label}>Jam</label><div className="mt-1"><TimeField value={jTime} onChange={setJTime} /></div></div>
+                  <div><label className={label}>{t("dbp.timeLabel")}</label><div className="mt-1"><TimeField value={jTime} onChange={setJTime} /></div></div>
                 ) : jType === "cron" ? (
-                  <div><label className={label}>Cron (menit jam tgl bulan hari)</label><input value={jCron} onChange={(e) => setJCron(e.target.value)} placeholder="0 2 * * *" className={`${input} mt-1 w-40 font-mono`} /></div>
+                  <div><label className={label}>{t("dbp.cronHelp")}</label><input value={jCron} onChange={(e) => setJCron(e.target.value)} placeholder="0 2 * * *" className={`${input} mt-1 w-40 font-mono`} /></div>
                 ) : null}
               </div>
 
               <div>
-                <label className={label}>Tujuan backup</label>
+                <label className={label}>{t("dbp.backupDestLabel")}</label>
                 <div className="mt-2 flex gap-2">
-                  {[{ v: "local", l: "💾 Lokal / SMB-mount" }, { v: "ftp", l: "🌐 FTP" }, { v: "s3", l: "☁️ S3" }, { v: "gdrive", l: "📂 Google Drive" }].map((o) => (
+                  {[{ v: "local", l: t("dbp.destLocal") }, { v: "ftp", l: "🌐 FTP" }, { v: "s3", l: "☁️ S3" }, { v: "gdrive", l: "📂 Google Drive" }].map((o) => (
                     <button type="button" key={o.v} onClick={() => { setJDest(o.v); setJDestId(""); setJDestPath(""); }}
                       className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${jDest === o.v ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"}`}
                     >{o.l}</button>
@@ -883,26 +888,26 @@ export default function DbBackupPage() {
                 </div>
                 <div className="mt-3 flex flex-wrap gap-3">
                   {jDest === "local" && (
-                    <div className="w-full"><label className={label}>Path folder tujuan</label><input required value={jDestPath} onChange={(e) => setJDestPath(e.target.value)} placeholder="/home/user/backups atau /Volumes/NAS/backup" className={`${input} mt-1 w-full max-w-lg`} /></div>
+                    <div className="w-full"><label className={label}>{t("dbp.destPathLabel")}</label><input required value={jDestPath} onChange={(e) => setJDestPath(e.target.value)} placeholder={t("dbp.phDestPath")} className={`${input} mt-1 w-full max-w-lg`} /></div>
                   )}
                   {jDest !== "local" && (
                     <>
                       <div className="w-full">
-                        <label className={label}>Koneksi tujuan</label>
+                        <label className={label}>{t("dbp.destConnSelLabel")}</label>
                         <select required value={jDestId} onChange={(e) => setJDestId(e.target.value)} className={`${input} mt-1 w-72`}>
-                          <option value="">— pilih koneksi tujuan —</option>
+                          <option value="">{t("dbp.phPickDest")}</option>
                           {dests.filter((d) => d.type === jDest).map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
                         </select>
                         {dests.filter((d) => d.type === jDest).length === 0 && (
-                          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">Belum ada koneksi tujuan {jDest === "gdrive" ? "Google Drive" : jDest.toUpperCase()}. Tambahkan dulu di tab &ldquo;Tujuan&rdquo;.</p>
+                          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">{t("dbp.noDestHint1")} {jDest === "gdrive" ? t("dbp.gdriveName") : jDest.toUpperCase()}. {t("dbp.noDestHint2")}</p>
                         )}
                       </div>
                       {jDest === "gdrive" ? (
-                        <div><label className={label}>Folder ID (opsional)</label><input value={jDestPath} onChange={(e) => setJDestPath(e.target.value)} placeholder="Kosongkan = simpan di root My Drive" className={`${input} mt-1 w-64`} /></div>
+                        <div><label className={label}>{t("dbp.folderIdOpt")}</label><input value={jDestPath} onChange={(e) => setJDestPath(e.target.value)} placeholder={t("dbp.phFolderId")} className={`${input} mt-1 w-64`} /></div>
                       ) : jDest === "ftp" ? (
-                        <div><label className={label}>Folder tujuan</label><input value={jDestPath} onChange={(e) => setJDestPath(e.target.value)} placeholder="/backups" className={`${input} mt-1 w-40`} /></div>
+                        <div><label className={label}>{t("dbp.destFolderLabel")}</label><input value={jDestPath} onChange={(e) => setJDestPath(e.target.value)} placeholder="/backups" className={`${input} mt-1 w-40`} /></div>
                       ) : (
-                        <div><label className={label}>Prefix folder</label><input value={jDestPath} onChange={(e) => setJDestPath(e.target.value)} placeholder="mysql/" className={`${input} mt-1 w-32`} /></div>
+                        <div><label className={label}>{t("dbp.folderPrefix")}</label><input value={jDestPath} onChange={(e) => setJDestPath(e.target.value)} placeholder="mysql/" className={`${input} mt-1 w-32`} /></div>
                       )}
                     </>
                   )}
@@ -910,15 +915,15 @@ export default function DbBackupPage() {
               </div>
 
               <div>
-                <label className={label}>Retensi backup</label>
+                <label className={label}>{t("dbp.retentionLabel")}</label>
                 <div className="mt-2 flex items-center gap-3">
                   <input type="number" min={0} max={1000} value={jRetention} onChange={(e) => setJRetention(Number(e.target.value) || 0)} className={`${input} w-24`} />
-                  <span className="text-xs text-slate-500 dark:text-slate-400">{jRetention === 0 ? "Simpan semua" : `Simpan ${jRetention} backup terakhir`}</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">{jRetention === 0 ? t("dbp.keepAll") : `${t("dbp.keepPrefix")} ${jRetention} ${t("dbp.keepLast")}`}</span>
                 </div>
               </div>
 
               <div>
-                <label className={label}>Kompresi backup</label>
+                <label className={label}>{t("dbp.compressionLabel")}</label>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {(["none", "gzip", "brotli", "xz", "xz_extreme"] as const).map((c) => (
                     <button
@@ -927,22 +932,22 @@ export default function DbBackupPage() {
                       onClick={() => setJCompression(c)}
                       className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${jCompression === c ? "border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900" : "border-slate-300 text-slate-600 hover:border-slate-400 dark:border-slate-700 dark:text-slate-300"}`}
                     >
-                      {c === "none" ? "Tanpa" : c === "gzip" ? "Gzip" : c === "brotli" ? "Brotli" : c === "xz" ? "7z" : "7z Ekstrim"}
+                      {c === "none" ? t("dbp.compNone") : c === "gzip" ? "Gzip" : c === "brotli" ? "Brotli" : c === "xz" ? "7z" : t("dbp.comp7zExt")}
                     </button>
                   ))}
                 </div>
                 <p className="mt-2 text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">
-                  {jCompression === "none" && "Tanpa kompresi — ukuran file = ukuran data asli. Paling cepat, mudah dibuka."}
-                  {jCompression === "gzip" && "Gzip — bisa langsung dibuka TablePlus/phpMyAdmin. Ukuran ±1.3× dari brotli."}
-                  {jCompression === "brotli" && "Brotli — seimbang. Contoh DB 121MB → ±10.6MB. Butuh aplikasi pendukung untuk membuka."}
-                  {jCompression === "xz" && "7z (standar) — lebih kecil dari brotli. Contoh DB 121MB → ±8.0MB. Butuh 7-Zip untuk membuka."}
-                  {jCompression === "xz_extreme" && "7z (ekstrim) — paling kecil. Contoh DB 121MB → ±7.3MB. Kompresi sedikit lebih lama. Butuh 7-Zip untuk membuka."}
+                  {jCompression === "none" && t("dbp.compNoneDesc")}
+                  {jCompression === "gzip" && t("dbp.compGzipDesc")}
+                  {jCompression === "brotli" && t("dbp.compBrotliDesc")}
+                  {jCompression === "xz" && t("dbp.compXzDesc")}
+                  {jCompression === "xz_extreme" && t("dbp.compXzExtDesc")}
                 </p>
               </div>
 
               <div className="flex justify-end">
                 <button disabled={busy || jDbs.size === 0} className={btnPrimary}>
-                  {busy ? "Menyimpan…" : editJobId ? `Perbarui job (${jDbs.size} database)` : `Simpan job (${jDbs.size} database)`}
+                  {busy ? t("dbp.saving") : editJobId ? `${t("dbp.updateJob")} (${jDbs.size} ${t("dbp.dbUnit")})` : `${t("dbp.saveJob")} (${jDbs.size} ${t("dbp.dbUnit")})`}
                 </button>
               </div>
             </form>
@@ -951,7 +956,7 @@ export default function DbBackupPage() {
           {/* Fixed two-column: 1/3 list + 2/3 detail — no layout shift */}
           {loading ? null : jobs.length === 0 ? (
             <p className="rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 p-8 text-center text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-900/40">
-              Belum ada job backup. Tambahkan koneksi lalu buat job.
+              {t("dbp.noJobs")}
             </p>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -976,7 +981,7 @@ export default function DbBackupPage() {
                       {j.connection.name} · {j.databases.length} db · {scheduleLabel(j)}
                     </p>
                     <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">
-                      → {destLabel(j)}{j.retention > 0 ? ` · Retensi: ${j.retention}` : ""}{j.compression ? ` · ${j.compression === "none" ? "tanpa kompresi" : j.compression === "gzip" ? "gzip" : j.compression === "brotli" ? "brotli" : j.compression === "xz" ? "7z" : "7z ekstrim"}` : ""}
+                      → {destLabel(j)}{j.retention > 0 ? ` · ${t("dbp.retentionShort")} ${j.retention}` : ""}{j.compression ? ` · ${j.compression === "none" ? t("dbp.compNoneSmall") : j.compression === "gzip" ? "gzip" : j.compression === "brotli" ? "brotli" : j.compression === "xz" ? "7z" : t("dbp.comp7zExtSmall")}` : ""}
                     </p>
                   </button>
                 ))}
@@ -999,34 +1004,34 @@ export default function DbBackupPage() {
                     <div className="mt-4 flex flex-wrap gap-2 text-xs">
                       <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{scheduleLabel(selected)}</span>
                       <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">→ {destLabel(selected)}</span>
-                      {selected.retention > 0 && <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">Retensi: {selected.retention}</span>}
-                      <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{selected.compression === "none" ? "tanpa kompresi" : selected.compression === "gzip" ? "gzip" : selected.compression === "brotli" ? "brotli" : selected.compression === "xz" ? "7z" : "7z ekstrim"}</span>
+                      {selected.retention > 0 && <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{t("dbp.retentionShort")} {selected.retention}</span>}
+                      <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{selected.compression === "none" ? t("dbp.compNoneSmall") : selected.compression === "gzip" ? "gzip" : selected.compression === "brotli" ? "brotli" : selected.compression === "xz" ? "7z" : t("dbp.comp7zExtSmall")}</span>
                       {selected.lastStatus && (
                         <span className={`rounded-lg px-2.5 py-1 font-semibold ${selected.lastStatus === "success" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400" : selected.lastStatus === "running" ? "bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-400" : "bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-400"}`}>
-                          {selected.lastStatus === "running" ? "berjalan…" : selected.lastStatus}
+                          {selected.lastStatus === "running" ? t("dbp.running") : selected.lastStatus}
                         </span>
                       )}
                     </div>
 
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <button onClick={() => api(`/api/db/jobs/${selected.id}/run`, "POST")} disabled={busy || selected.lastStatus === "running"} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50">▶ Jalankan</button>
+                      <button onClick={() => api(`/api/db/jobs/${selected.id}/run`, "POST")} disabled={busy || selected.lastStatus === "running"} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50">{t("dbp.runNow")}</button>
                       {selected.lastStatus === "running" && (
-                        <button onClick={() => confirm('Job masih berstatus "berjalan" padahal prosesnya mungkin sudah mati. Reset status ini?') && api(`/api/db/jobs/${selected.id}/reset`, "POST").then(() => load())} disabled={busy} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-400 disabled:opacity-50">⟲ Reset</button>
+                        <button onClick={() => confirm(t("dbp.confirmReset")) && api(`/api/db/jobs/${selected.id}/reset`, "POST").then(() => load())} disabled={busy} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-400 disabled:opacity-50">{t("dbp.reset")}</button>
                       )}
                       <button onClick={() => api(`/api/db/jobs/${selected.id}`, "PATCH", { enabled: !selected.enabled })} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">
-                        {selected.enabled ? "Nonaktifkan" : "Aktifkan"}
+                        {selected.enabled ? t("dbp.disable") : t("dbp.enable")}
                       </button>
-                      <button onClick={() => { openEdit(selected); }} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">Edit</button>
-                      <button onClick={() => confirm(`Hapus job "${selected.name}"?`) && api(`/api/db/jobs/${selected.id}`, "DELETE")} disabled={busy} className="rounded-lg px-4 py-2 text-sm font-medium text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950/40">Hapus</button>
+                      <button onClick={() => { openEdit(selected); }} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">{t("dbp.edit")}</button>
+                      <button onClick={() => confirm(`${t("dbp.confirmDelJob")} "${selected.name}"?`) && api(`/api/db/jobs/${selected.id}`, "DELETE")} disabled={busy} className="rounded-lg px-4 py-2 text-sm font-medium text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950/40">{t("dbp.delete")}</button>
                     </div>
 
                     {/* Riwayat backup */}
                     <div className="mt-5 border-t border-slate-100 pt-4 dark:border-slate-800">
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Riwayat Backup</h4>
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("dbp.historyTitle")}</h4>
                       {runLoading && runs.length === 0 ? (
-                        <p className="mt-3 text-xs text-slate-400">Memuat riwayat…</p>
+                        <p className="mt-3 text-xs text-slate-400">{t("dbp.loadingHistory")}</p>
                       ) : runs.length === 0 ? (
-                        <p className="mt-3 text-xs text-slate-400">Belum ada riwayat backup.</p>
+                        <p className="mt-3 text-xs text-slate-400">{t("dbp.noHistory")}</p>
                       ) : (
                         <>
                           <div className="mt-3 space-y-2">
@@ -1043,10 +1048,10 @@ export default function DbBackupPage() {
                                   {r.location && <span className="max-w-[200px] truncate font-mono text-slate-400">{r.location}</span>}
                                   {r.message && r.status === "failed" && <span className="text-red-500">{r.message}</span>}
                                   <span className="ml-auto flex items-center gap-2">
-                                    {runOk && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline dark:text-sky-400">Unduh</a>}
-                                    {runOk && <a href={`/api/db/runs/${r.id}/download?format=sql`} className="text-sky-600 hover:underline dark:text-sky-400">Unduh SQL</a>}
-                                    {runOk && <button onClick={() => openRestoreModal(r.id, { connection: { id: selected.connection.id, name: selected.connection.name }, databases: selected.databases })} disabled={busy} className="text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">Restore</button>}
-                                    <button onClick={() => { if (confirm("Hapus catatan backup ini beserta filenya?")) { api(`/api/db/runs/${r.id}`, "DELETE").then(() => refreshRuns()); } }} disabled={busy} className="text-red-500 hover:underline disabled:opacity-50">Hapus</button>
+                                    {runOk && <a href={`/api/db/runs/${r.id}/download`} className="text-sky-600 hover:underline dark:text-sky-400">{t("dbp.download")}</a>}
+                                    {runOk && <a href={`/api/db/runs/${r.id}/download?format=sql`} className="text-sky-600 hover:underline dark:text-sky-400">{t("dbp.downloadSql")}</a>}
+                                    {runOk && <button onClick={() => openRestoreModal(r.id, { connection: { id: selected.connection.id, name: selected.connection.name }, databases: selected.databases })} disabled={busy} className="text-amber-600 hover:underline disabled:opacity-50 dark:text-amber-400">{t("dbp.restoreBtn")}</button>}
+                                    <button onClick={() => { if (confirm(t("dbp.confirmDelRun"))) { api(`/api/db/runs/${r.id}`, "DELETE").then(() => refreshRuns()); } }} disabled={busy} className="text-red-500 hover:underline disabled:opacity-50">{t("dbp.delete")}</button>
                                   </span>
                                 </div>
                               );
@@ -1054,9 +1059,9 @@ export default function DbBackupPage() {
                           </div>
                           {runTotalPages > 1 && (
                             <div className="mt-3 flex items-center justify-center gap-2">
-                              <button onClick={() => { if (runPage > 1) { setRunLoading(true); loadRuns(selected.id, runPage - 1); } }} disabled={runPage <= 1 || runLoading} className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">← Prev</button>
+                              <button onClick={() => { if (runPage > 1) { setRunLoading(true); loadRuns(selected.id, runPage - 1); } }} disabled={runPage <= 1 || runLoading} className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">{t("dbp.prev")}</button>
                               <span className="text-xs text-slate-500 dark:text-slate-400">{runPage} / {runTotalPages}</span>
-                              <button onClick={() => { if (runPage < runTotalPages) { setRunLoading(true); loadRuns(selected.id, runPage + 1); } }} disabled={runPage >= runTotalPages || runLoading} className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Next →</button>
+                              <button onClick={() => { if (runPage < runTotalPages) { setRunLoading(true); loadRuns(selected.id, runPage + 1); } }} disabled={runPage >= runTotalPages || runLoading} className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">{t("dbp.next")}</button>
                             </div>
                           )}
                         </>
@@ -1065,7 +1070,7 @@ export default function DbBackupPage() {
                   </div>
                 ) : (
                   <div className="hidden flex-1 items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white/30 p-12 text-center text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-900/20 lg:flex">
-                    Pilih job backup untuk melihat detail
+                    {t("dbp.selectJobHint")}
                   </div>
                 )}
               </div>

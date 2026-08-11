@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 type LogEntry = {
   id: string;
@@ -22,6 +23,7 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 export default function ScheduleLogs({ serverId }: { serverId: string }) {
+  const { t } = useLang();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -38,9 +40,9 @@ export default function ScheduleLogs({ serverId }: { serverId: string }) {
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Log Aktivitas</h3>
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("schl.title")}</h3>
       {logs.length === 0 ? (
-        <p className="mt-3 text-xs text-slate-400">Belum ada log aktivitas.</p>
+        <p className="mt-3 text-xs text-slate-400">{t("schl.empty")}</p>
       ) : (
         <div className="mt-3 space-y-1.5 max-h-[480px] overflow-y-auto">
           {logs.map((l) => (
@@ -48,8 +50,8 @@ export default function ScheduleLogs({ serverId }: { serverId: string }) {
               <span className={`mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full ${l.status === "success" ? "bg-emerald-500" : "bg-red-500"}`} />
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-slate-700 dark:text-slate-200">
-                  {ACTION_LABELS[l.action] ?? l.action}
-                  {l.source === "scheduler" && <span className="ml-1 text-[10px] text-slate-400">(otomatis)</span>}
+                  {ACTION_LABELS[l.action] ? t(`schl.action.${l.action}`) : l.action}
+                  {l.source === "scheduler" && <span className="ml-1 text-[10px] text-slate-400">{t("schl.auto")}</span>}
                 </p>
                 {l.message && <p className="mt-0.5 text-slate-400 dark:text-slate-500 truncate">{l.message}</p>}
               </div>

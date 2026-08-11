@@ -8,6 +8,7 @@ import BackupPanel from "@/components/BackupPanel";
 import FirewallPanel from "@/components/FirewallPanel";
 import ManagePanel from "@/components/ManagePanel";
 import ConsolePanel from "@/components/ConsolePanel";
+import { useLang } from "@/lib/i18n";
 
 type Rrd = {
   cpu?: { time: string; cpu: number }[];
@@ -97,6 +98,7 @@ export default function ServerMonitor({
   isStaff?: boolean;
   onScheduleSaved?: () => void;
 }) {
+  const { t } = useLang();
   const [tab, setTab] = useState<PanelTab>(initialTab);
   const [uptime, setUptime] = useState<number | null>(null);
   const [periode, setPeriode] = useState("hour");
@@ -130,10 +132,10 @@ export default function ServerMonitor({
           setSpec(d.data.spec ?? null);
           setServerName(d.data.server.hostname);
         } else {
-          setError(d.message ?? "Gagal memuat detail");
+          setError(d.message ?? t("sm.errDetail"));
         }
       })
-      .catch(() => setError("Gagal terhubung ke server"));
+      .catch(() => setError(t("sm.errConn")));
   }, [serverId]);
 
   // Metrics: per periode, auto-refresh tiap 2 menit (tanpa menyentuh detail).
@@ -146,11 +148,11 @@ export default function ServerMonitor({
           setRrd(m.data as Rrd);
           setError(null);
         } else {
-          setError(m.message ?? "Gagal memuat metrics");
+          setError(m.message ?? t("sm.errMetrics"));
         }
         setMetricsAt(new Date());
       } catch {
-        setError("Gagal terhubung ke server");
+        setError(t("sm.errConn"));
       }
     },
     [serverId],
@@ -164,12 +166,12 @@ export default function ServerMonitor({
   }, [periode, loadMetrics]);
 
   const tabs: { v: PanelTab; l: string }[] = [
-    { v: "monitoring", l: "📊 Monitoring" },
-    ...(canSchedule ? [{ v: "jadwal" as PanelTab, l: "🕒 Jadwal" }] : []),
-    ...(canBackup ? [{ v: "backup" as PanelTab, l: "💾 Backup" }] : []),
-    ...(canFirewall ? [{ v: "firewall" as PanelTab, l: "🛡️ Firewall" }] : []),
-    ...(canConsole ? [{ v: "console" as PanelTab, l: "🖥️ Console" }] : []),
-    ...(canManage ? [{ v: "kelola" as PanelTab, l: "⚙️ Kelola" }] : []),
+    { v: "monitoring", l: t("sm.tabMonitoring") },
+    ...(canSchedule ? [{ v: "jadwal" as PanelTab, l: t("sm.tabJadwal") }] : []),
+    ...(canBackup ? [{ v: "backup" as PanelTab, l: t("sm.tabBackup") }] : []),
+    ...(canFirewall ? [{ v: "firewall" as PanelTab, l: t("sm.tabFirewall") }] : []),
+    ...(canConsole ? [{ v: "console" as PanelTab, l: t("sm.tabConsole") }] : []),
+    ...(canManage ? [{ v: "kelola" as PanelTab, l: t("sm.tabKelola") }] : []),
   ];
 
   return (
@@ -211,7 +213,7 @@ export default function ServerMonitor({
           {onClose && (
             <button
               onClick={onClose}
-              title="Tutup panel"
+              title={t("sm.closePanel")}
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 shadow-sm transition hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
             >
               ✕
@@ -232,20 +234,20 @@ export default function ServerMonitor({
           {/* Info server — dari cache, tidak ikut periode */}
           {detail ? (
             <div className="mb-5 grid grid-cols-2 gap-x-6 gap-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-3">
-              <Info label="OS" value={detail.os_name} />
-              <Info label="CPU" value={detail.cpu ? `${detail.cpu}${detail.is_cpu_dedicated ? " (dedicated)" : ""}` : undefined} />
-              <Info label="Memori" value={detail.memory} />
-              <Info label="Storage" value={detail.storage} />
-              <Info label="Lokasi" value={detail.location} />
-              <Info label="IP Publik" value={detail.public_ip?.ip_address} />
-              <Info label="Tier" value={detail.tier} />
-              <Info label="Biaya / jam" value={rupiah(detail.price_per_hour)} />
-              <Info label="Estimasi / bulan" value={rupiah(detail.estimated_monthly_price)} />
-              <Info label="Biaya berjalan" value={<span className="text-amber-600 dark:text-amber-400">{rupiah(detail.cost)}</span>} />
-              <Info label="Terakhir dinyalakan" value={detail.last_started_at} />
-              <Info label="Backup terakhir" value={detail.last_backup_at} />
+              <Info label={t("sm.os")} value={detail.os_name} />
+              <Info label={t("sm.cpu")} value={detail.cpu ? `${detail.cpu}${detail.is_cpu_dedicated ? ` (${t("sm.dedicated")})` : ""}` : undefined} />
+              <Info label={t("sm.infoMemory")} value={detail.memory} />
+              <Info label={t("sm.infoStorage")} value={detail.storage} />
+              <Info label={t("sm.infoLocation")} value={detail.location} />
+              <Info label={t("sm.infoPublicIp")} value={detail.public_ip?.ip_address} />
+              <Info label={t("sm.infoTier")} value={detail.tier} />
+              <Info label={t("sm.infoCostHour")} value={rupiah(detail.price_per_hour)} />
+              <Info label={t("sm.infoEstMonth")} value={rupiah(detail.estimated_monthly_price)} />
+              <Info label={t("sm.infoCostRunning")} value={<span className="text-amber-600 dark:text-amber-400">{rupiah(detail.cost)}</span>} />
+              <Info label={t("sm.infoLastStarted")} value={detail.last_started_at} />
+              <Info label={t("sm.infoLastBackup")} value={detail.last_backup_at} />
               <Info
-                label="Uptime 7 hari"
+                label={t("sm.infoUptime")}
                 value={
                   uptime === null ? (
                     "—"
@@ -256,7 +258,7 @@ export default function ServerMonitor({
                   )
                 }
               />
-              <Info label="Sumber uptime" value={<span className="text-xs text-slate-400">sampel Depanel /15 mnt</span>} />
+              <Info label={t("sm.infoUptimeSrc")} value={<span className="text-xs text-slate-400">{t("sm.uptimeSource")}</span>} />
             </div>
           ) : (
             <div className="mb-5 h-32 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
@@ -275,12 +277,12 @@ export default function ServerMonitor({
                       : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
                   }`}
                 >
-                  {p.l}
+                  {t(`sm.period.${p.v}`)}
                 </button>
               ))}
             </div>
             <span className="text-[11px] text-slate-400 dark:text-slate-500">
-              {metricsAt ? `metrics ${metricsAt.toLocaleTimeString("id-ID")}` : "memuat…"} · refresh tiap 2 mnt
+              {metricsAt ? `${t("sm.metrics")} ${metricsAt.toLocaleTimeString("id-ID")}` : t("sm.loading")} {t("sm.refresh2m")}
             </span>
           </div>
 
@@ -294,45 +296,45 @@ export default function ServerMonitor({
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="animate-fade-up" style={{ animationDelay: "0ms" }}>
                 <MetricChart
-                  title="CPU"
-                  subtitle="pemakaian prosesor (%)"
+                  title={t("sm.chartCpu")}
+                  subtitle={t("sm.chartCpuSub")}
                   yMax={100}
                   format={(v) => `${v.toFixed(1)}%`}
                   series={[
-                    { label: "CPU", color: "#6366f1", fill: "rgba(99,102,241,0.12)", points: trim(rrd.cpu).map((p) => ({ t: p.time, v: p.cpu })) },
+                    { label: t("sm.chartCpu"), color: "#6366f1", fill: "rgba(99,102,241,0.12)", points: trim(rrd.cpu).map((p) => ({ t: p.time, v: p.cpu })) },
                   ]}
                 />
               </div>
               <div className="animate-fade-up" style={{ animationDelay: "80ms" }}>
                 <MetricChart
-                  title="Memori"
-                  subtitle="pemakaian RAM (GB)"
+                  title={t("sm.chartMem")}
+                  subtitle={t("sm.chartMemSub")}
                   yMax={rrd.memory?.length ? Math.max(...rrd.memory.map((p) => p.raw_max_memory)) : undefined}
                   format={(v) => `${v.toFixed(2)} GB`}
                   series={[
-                    { label: "Terpakai", color: "#10b981", fill: "rgba(16,185,129,0.12)", points: trim(rrd.memory).map((p) => ({ t: p.time, v: p.raw_usage_memory })) },
+                    { label: t("sm.used"), color: "#10b981", fill: "rgba(16,185,129,0.12)", points: trim(rrd.memory).map((p) => ({ t: p.time, v: p.raw_usage_memory })) },
                   ]}
                 />
               </div>
               <div className="animate-fade-up" style={{ animationDelay: "160ms" }}>
                 <MetricChart
-                  title="Network"
-                  subtitle="lalu lintas jaringan"
+                  title={t("sm.chartNet")}
+                  subtitle={t("sm.chartNetSub")}
                   format={fmtMb}
                   series={[
-                    { label: "Masuk", color: "#0ea5e9", fill: "rgba(14,165,233,0.10)", points: trim(rrd.network).map((p) => ({ t: p.time, v: p.raw_netin })) },
-                    { label: "Keluar", color: "#f59e0b", points: trim(rrd.network).map((p) => ({ t: p.time, v: p.raw_netout })) },
+                    { label: t("sm.in"), color: "#0ea5e9", fill: "rgba(14,165,233,0.10)", points: trim(rrd.network).map((p) => ({ t: p.time, v: p.raw_netin })) },
+                    { label: t("sm.out"), color: "#f59e0b", points: trim(rrd.network).map((p) => ({ t: p.time, v: p.raw_netout })) },
                   ]}
                 />
               </div>
               <div className="animate-fade-up" style={{ animationDelay: "240ms" }}>
                 <MetricChart
-                  title="Disk I/O"
-                  subtitle="baca / tulis disk"
+                  title={t("sm.chartDisk")}
+                  subtitle={t("sm.chartDiskSub")}
                   format={fmtMb}
                   series={[
-                    { label: "Tulis", color: "#8b5cf6", fill: "rgba(139,92,246,0.10)", points: trim(rrd.disk).map((p) => ({ t: p.time, v: p.raw_diskwrite })) },
-                    { label: "Baca", color: "#ec4899", points: trim(rrd.disk).map((p) => ({ t: p.time, v: p.raw_diskread })) },
+                    { label: t("sm.write"), color: "#8b5cf6", fill: "rgba(139,92,246,0.10)", points: trim(rrd.disk).map((p) => ({ t: p.time, v: p.raw_diskwrite })) },
+                    { label: t("sm.read"), color: "#ec4899", points: trim(rrd.disk).map((p) => ({ t: p.time, v: p.raw_diskread })) },
                   ]}
                 />
               </div>

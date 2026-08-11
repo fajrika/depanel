@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TimeField from "@/components/TimeField";
+import { useLang } from "@/lib/i18n";
 
 type SshOpt = { id: string; name: string; host: string; port: number; username: string };
 type GdriveDest = { id: string; name: string; config: { gdriveConnected?: boolean; gdriveUserEmail?: string } };
@@ -37,18 +38,20 @@ type Job = {
   runs: Run[];
 };
 
-const DAY_NAMES = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+const DAY_NAMES = ["dcp.day.0", "dcp.day.1", "dcp.day.2", "dcp.day.3", "dcp.day.4", "dcp.day.5", "dcp.day.6"];
 
 function schedLabel(j: Job): string {
-  if (j.scheduleType === "manual") return "Manual";
-  if (j.scheduleType === "daily") return `Harian ${j.timeAt}`;
-  if (j.scheduleType === "weekly") return `Mingguan, ${DAY_NAMES[j.dayOn ?? 0]} ${j.timeAt}`;
-  if (j.scheduleType === "monthly") return `Bulanan, tgl ${j.dayOn} ${j.timeAt}`;
-  return `Cron: ${j.cronExpr}`;
+  const { t } = useLang();
+  if (j.scheduleType === "manual") return t("dcp.schedManual");
+  if (j.scheduleType === "daily") return `${t("dcp.optDaily")} ${j.timeAt}`;
+  if (j.scheduleType === "weekly") return `${t("dcp.optWeekly")}, ${t(DAY_NAMES[j.dayOn ?? 0])} ${j.timeAt}`;
+  if (j.scheduleType === "monthly") return `${t("dcp.schedMonthly")} ${j.dayOn} ${j.timeAt}`;
+  return `${t("dcp.schedCron")} ${j.cronExpr}`;
 }
 
 function destLabel(j: Job): string {
-  if (j.destType === "local") return `💾 lokal ${j.destPath ?? ""}`;
+  const { t } = useLang();
+  if (j.destType === "local") return `💾 ${t("dcp.localWord")} ${j.destPath ?? ""}`;
   if (j.destType === "gdrive") return "📂 Google Drive";
   return `🔐 SSH ${j.destSsh?.name ?? ""} ${j.destPath ?? ""}`;
 }
@@ -72,6 +75,7 @@ const card = "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border
 const btnPrimary = "rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300";
 
 export default function DirClonePage() {
+  const { t } = useLang();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [sshs, setSshs] = useState<SshOpt[]>([]);
   const [dests, setDests] = useState<GdriveDest[]>([]);
@@ -175,10 +179,10 @@ export default function DirClonePage() {
     const d = await res.json();
     setBusy(false);
     if (!res.ok || !d.ok) {
-      setMsg({ text: d.message ?? "Gagal menyimpan", ok: false });
+      setMsg({ text: d.message ?? t("dcp.saveFailed"), ok: false });
       return;
     }
-    setMsg({ text: editId ? "Job diperbarui." : "Job clone dibuat.", ok: true });
+    setMsg({ text: editId ? t("dcp.jobUpdated") : t("dcp.jobCreated"), ok: true });
     setEditId(null);
     setShowForm(false);
     resetForm();
@@ -190,7 +194,7 @@ export default function DirClonePage() {
     const res = await fetch(`/api/dirclone/${j.id}/run`, { method: "POST" });
     const d = await res.json();
     setBusy(false);
-    setMsg(d.ok ? { text: `Clone "${j.name}" dimulai.`, ok: true } : { text: d.message ?? "Gagal", ok: false });
+    setMsg(d.ok ? { text: `${t("dcp.cloneStarted1")} "${j.name}" ${t("dcp.cloneStarted2")}`, ok: true } : { text: d.message ?? t("dcp.failed"), ok: false });
     setTimeout(load, 1500);
   }
 
@@ -204,7 +208,7 @@ export default function DirClonePage() {
   }
 
   async function remove(j: Job) {
-    if (!confirm(`Hapus job clone "${j.name}" beserta riwayat run-nya?`)) return;
+    if (!confirm(`${t("dcp.confirmDelJob")} "${j.name}" ${t("dcp.confirmDelJob2")}?`)) return;
     await fetch(`/api/dirclone/${j.id}`, { method: "DELETE" });
     load();
   }
@@ -213,13 +217,13 @@ export default function DirClonePage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Backup File — Clone Direktori</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{t("dcp.title")}</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Clone folder dari server SSH ke lokasi lain (path lokal panel, Google Drive, atau server SSH lain), manual atau terjadwal.
+            {t("dcp.subtitle")}
           </p>
         </div>
         <button onClick={() => { setShowForm(!showForm); setEditId(null); if (!showForm) resetForm(); }} className={btnPrimary}>
-          {showForm ? "Tutup form" : "+ Buat job clone"}
+          {showForm ? t("dcp.closeForm") : t("dcp.createJobClone")}
         </button>
       </div>
 
@@ -233,59 +237,59 @@ export default function DirClonePage() {
       {showForm && (
         <form onSubmit={submit} className={`${card} animate-fade-up space-y-5 p-5`}>
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{editId ? "Edit Job" : "Buat Job"}</h2>
-            <button type="button" onClick={() => { setShowForm(false); setEditId(null); }} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">✕ Tutup</button>
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{editId ? t("dcp.editJob") : t("dcp.createJob")}</h2>
+            <button type="button" onClick={() => { setShowForm(false); setEditId(null); }} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">{t("dcp.close")}</button>
           </div>
 
           <div className="flex flex-wrap gap-4">
-            <div><label className={label}>Nama job</label><input required value={fName} onChange={(e) => setFName(e.target.value)} placeholder="mis. Backup Web" className={`${input} mt-1 w-52`} /></div>
+            <div><label className={label}>{t("dcp.jobName")}</label><input required value={fName} onChange={(e) => setFName(e.target.value)} placeholder={t("dcp.phJobName")} className={`${input} mt-1 w-52`} /></div>
             <div>
-              <label className={label}>Sumber: koneksi SSH</label>
+              <label className={label}>{t("dcp.sourceSshLabel")}</label>
               <select required value={fSrcSsh} onChange={(e) => setFSrcSsh(e.target.value)} className={`${input} mt-1 w-72`}>
-                <option value="">— pilih koneksi SSH —</option>
+                <option value="">{t("dcp.phPickSsh")}</option>
                 {sshs.map((s) => (<option key={s.id} value={s.id}>{s.name} ({s.username}@{s.host}:{s.port})</option>))}
               </select>
-              {sshs.length === 0 && <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">Belum ada koneksi SSH. Tambahkan dulu di menu &ldquo;SSH Koneksi&rdquo;.</p>}
+              {sshs.length === 0 && <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">{t("dcp.noSshHint")}</p>}
             </div>
-            <div><label className={label}>Direktori sumber (absolut)</label><input required value={fSrcPath} onChange={(e) => setFSrcPath(e.target.value)} placeholder="/var/www/html" className={`${input} mt-1 w-64 font-mono`} /></div>
+            <div><label className={label}>{t("dcp.sourceDirLabel")}</label><input required value={fSrcPath} onChange={(e) => setFSrcPath(e.target.value)} placeholder="/var/www/html" className={`${input} mt-1 w-64 font-mono`} /></div>
           </div>
 
           <div>
-            <label className={label}>Tujuan clone</label>
+            <label className={label}>{t("dcp.cloneDestLabel")}</label>
             <div className="mt-2 flex gap-2">
-              {[{ v: "local", l: "💾 Lokal (host panel)" }, { v: "gdrive", l: "📂 Google Drive" }, { v: "ssh", l: "🔐 Server SSH lain" }].map((o) => (
+              {[{ v: "local", l: t("dcp.destLocal") }, { v: "gdrive", l: "📂 Google Drive" }, { v: "ssh", l: t("dcp.destSsh") }].map((o) => (
                 <button type="button" key={o.v} onClick={() => setFDestType(o.v as typeof fDestType)} className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${fDestType === o.v ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"}`}>{o.l}</button>
               ))}
             </div>
             <div className="mt-3 flex flex-wrap gap-3">
               {fDestType === "local" && (
-                <div className="w-full"><label className={label}>Path folder tujuan (di host panel)</label><input required value={fDestPath} onChange={(e) => setFDestPath(e.target.value)} placeholder="/app/data/clones" className={`${input} mt-1 w-full max-w-lg font-mono`} /></div>
+                <div className="w-full"><label className={label}>{t("dcp.destPathLocalLabel")}</label><input required value={fDestPath} onChange={(e) => setFDestPath(e.target.value)} placeholder="/app/data/clones" className={`${input} mt-1 w-full max-w-lg font-mono`} /></div>
               )}
               {fDestType === "gdrive" && (
                 <>
                   <div>
-                    <label className={label}>Koneksi Google Drive</label>
+                    <label className={label}>{t("dcp.gdriveConnLabel")}</label>
                     <select required value={fDestGdrive} onChange={(e) => setFDestGdrive(e.target.value)} className={`${input} mt-1 w-72`}>
-                      <option value="">— pilih koneksi tujuan —</option>
+                      <option value="">{t("dcp.phPickDest")}</option>
                       {dests.filter((d) => d.config.gdriveConnected).map((d) => (<option key={d.id} value={d.id}>{d.name}{d.config.gdriveUserEmail ? ` (${d.config.gdriveUserEmail})` : ""}</option>))}
                     </select>
                     {dests.filter((d) => d.config.gdriveConnected).length === 0 && (
-                      <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">Belum ada koneksi Google Drive terkoneksi. Tambahkan di menu &ldquo;Backup DB&rdquo; → tab Tujuan.</p>
+                      <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">{t("dcp.noGdriveHint")}</p>
                     )}
                   </div>
-                  <div className="flex-1"><label className={label}>Folder ID Google Drive</label><input required value={fDestPath} onChange={(e) => setFDestPath(e.target.value)} placeholder="1AbCdEf..." className={`${input} mt-1 w-full max-w-md font-mono`} /></div>
+                  <div className="flex-1"><label className={label}>{t("dcp.gdriveFolderId")}</label><input required value={fDestPath} onChange={(e) => setFDestPath(e.target.value)} placeholder="1AbCdEf..." className={`${input} mt-1 w-full max-w-md font-mono`} /></div>
                 </>
               )}
               {fDestType === "ssh" && (
                 <>
                   <div>
-                    <label className={label}>Server SSH tujuan</label>
+                    <label className={label}>{t("dcp.destSshLabel")}</label>
                     <select required value={fDestSsh} onChange={(e) => setFDestSsh(e.target.value)} className={`${input} mt-1 w-72`}>
-                      <option value="">— pilih koneksi SSH —</option>
+                      <option value="">{t("dcp.phPickSsh")}</option>
                       {sshs.filter((s) => s.id !== fSrcSsh).map((s) => (<option key={s.id} value={s.id}>{s.name} ({s.username}@{s.host}:{s.port})</option>))}
                     </select>
                   </div>
-                  <div className="flex-1"><label className={label}>Path file tujuan (absolut)</label><input required value={fDestPath} onChange={(e) => setFDestPath(e.target.value)} placeholder="/backups/web.tar.gz" className={`${input} mt-1 w-full max-w-md font-mono`} /></div>
+                  <div className="flex-1"><label className={label}>{t("dcp.destFilePathLabel")}</label><input required value={fDestPath} onChange={(e) => setFDestPath(e.target.value)} placeholder="/backups/web.tar.gz" className={`${input} mt-1 w-full max-w-md font-mono`} /></div>
                 </>
               )}
             </div>
@@ -293,31 +297,31 @@ export default function DirClonePage() {
 
           <div className="flex flex-wrap items-end gap-4">
             <div>
-              <label className={label}>Jadwal</label>
+              <label className={label}>{t("dcp.scheduleLabel")}</label>
               <select value={fType} onChange={(e) => setFType(e.target.value)} className={`${input} mt-1`}>
-                <option value="manual">Manual (tanpa jadwal)</option>
-                <option value="daily">Harian</option>
-                <option value="weekly">Mingguan</option>
-                <option value="monthly">Bulanan</option>
-                <option value="cron">Cron expression</option>
+                <option value="manual">{t("dcp.optManual")}</option>
+                <option value="daily">{t("dcp.optDaily")}</option>
+                <option value="weekly">{t("dcp.optWeekly")}</option>
+                <option value="monthly">{t("dcp.optMonthly")}</option>
+                <option value="cron">{t("dcp.optCron")}</option>
               </select>
             </div>
             {fType === "weekly" && (
-              <div><label className={label}>Hari</label><select value={fDay} onChange={(e) => setFDay(Number(e.target.value))} className={`${input} mt-1`}>{DAY_NAMES.map((d, i) => (<option key={i} value={i}>{d}</option>))}</select></div>
+              <div><label className={label}>{t("dcp.dayLabel")}</label><select value={fDay} onChange={(e) => setFDay(Number(e.target.value))} className={`${input} mt-1`}>{DAY_NAMES.map((d, i) => (<option key={i} value={i}>{t(d)}</option>))}</select></div>
             )}
             {fType === "monthly" && (
-              <div><label className={label}>Tanggal</label><select value={fDate} onChange={(e) => setFDate(Number(e.target.value))} className={`${input} mt-1`}>{Array.from({ length: 28 }, (_, i) => (<option key={i + 1} value={i + 1}>{i + 1}</option>))}</select></div>
+              <div><label className={label}>{t("dcp.dateLabel")}</label><select value={fDate} onChange={(e) => setFDate(Number(e.target.value))} className={`${input} mt-1`}>{Array.from({ length: 28 }, (_, i) => (<option key={i + 1} value={i + 1}>{i + 1}</option>))}</select></div>
             )}
             {fType !== "cron" && fType !== "manual" ? (
-              <div><label className={label}>Jam</label><div className="mt-1"><TimeField value={fTime} onChange={setFTime} /></div></div>
+              <div><label className={label}>{t("dcp.timeLabel")}</label><div className="mt-1"><TimeField value={fTime} onChange={setFTime} /></div></div>
             ) : fType === "cron" ? (
-              <div><label className={label}>Cron (menit jam tgl bulan hari)</label><input value={fCron} onChange={(e) => setFCron(e.target.value)} placeholder="0 2 * * *" className={`${input} mt-1 w-40 font-mono`} /></div>
+              <div><label className={label}>{t("dcp.cronHelp")}</label><input value={fCron} onChange={(e) => setFCron(e.target.value)} placeholder="0 2 * * *" className={`${input} mt-1 w-40 font-mono`} /></div>
             ) : null}
-            <div><label className={label}>Retensi (0 = simpan semua)</label><input type="number" min="0" value={fRetention} onChange={(e) => setFRetention(e.target.value)} className={`${input} mt-1 w-20`} /></div>
+            <div><label className={label}>{t("dcp.retentionLabel")}</label><input type="number" min="0" value={fRetention} onChange={(e) => setFRetention(e.target.value)} className={`${input} mt-1 w-20`} /></div>
           </div>
 
           <div className="flex justify-end">
-            <button disabled={busy} className={btnPrimary}>{busy ? "…" : editId ? "Simpan edit" : "Buat job"}</button>
+            <button disabled={busy} className={btnPrimary}>{busy ? "…" : editId ? t("dcp.saveEdit") : t("dcp.createJobBtn")}</button>
           </div>
         </form>
       )}
@@ -326,7 +330,7 @@ export default function DirClonePage() {
         <div className="h-20 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
       ) : jobs.length === 0 ? (
         <p className="rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 p-8 text-center text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-900/40">
-          Belum ada job clone. Buat job untuk mulai menyalin direktori dari server SSH.
+          {t("dcp.noJobs")}
         </p>
       ) : (
         <div className="space-y-3">
@@ -334,7 +338,7 @@ export default function DirClonePage() {
             <div key={j.id} className={`${card} overflow-hidden`}>
               <div className="flex flex-wrap items-center gap-3 p-4">
                 <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${j.lastStatus === "success" ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:ring-emerald-900" : j.lastStatus === "failed" ? "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/60 dark:text-red-400 dark:ring-red-900" : j.lastStatus === "running" ? "bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/60 dark:text-sky-400 dark:ring-sky-900" : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700"}`}>
-                  {j.lastStatus ?? "belum jalan"}
+                  {j.lastStatus ?? t("dcp.notRunYet")}
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{j.name}</p>
@@ -342,19 +346,19 @@ export default function DirClonePage() {
                     {j.sourceSsh?.name ?? "?"}:{j.sourcePath} → {destLabel(j)} · {schedLabel(j)}
                   </p>
                   <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                    terakhir: {fmtTime(j.lastRunAt)} {j.retention > 0 ? `· retensi ${j.retention}` : ""}
+                    {t("dcp.lastRun")} {fmtTime(j.lastRunAt)} {j.retention > 0 ? `· ${t("dcp.retentionShort")} ${j.retention}` : ""}
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs">
-                  <button onClick={() => toggleEnabled(j)} disabled={busy} title={j.enabled ? "Nonaktifkan (tidak dijalankan jadwal)" : "Aktifkan"}
+                  <button onClick={() => toggleEnabled(j)} disabled={busy} title={j.enabled ? t("dcp.disableTitle") : t("dcp.enableTitle")}
                     className={`rounded-full px-2.5 py-1 font-medium ring-1 transition ${j.enabled ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:ring-emerald-900" : "bg-slate-100 text-slate-500 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700"}`}>
-                    {j.enabled ? "✓ Aktif" : "Nonaktif"}
+                    {j.enabled ? t("dcp.active") : t("dcp.inactive")}
                   </button>
-                  <button onClick={() => runJob(j)} disabled={busy} className="rounded-lg bg-slate-900 px-3 py-1.5 font-medium text-white transition hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300">▶ Jalankan</button>
-                  <button onClick={() => startEdit(j)} disabled={busy} className="rounded-lg px-2.5 py-1.5 font-medium text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">Edit</button>
-                  <button onClick={() => remove(j)} disabled={busy} className="rounded-lg px-2.5 py-1.5 font-medium text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950">Hapus</button>
+                  <button onClick={() => runJob(j)} disabled={busy} className="rounded-lg bg-slate-900 px-3 py-1.5 font-medium text-white transition hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300">{t("dcp.runNow")}</button>
+                  <button onClick={() => startEdit(j)} disabled={busy} className="rounded-lg px-2.5 py-1.5 font-medium text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">{t("dcp.edit")}</button>
+                  <button onClick={() => remove(j)} disabled={busy} className="rounded-lg px-2.5 py-1.5 font-medium text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950">{t("dcp.delete")}</button>
                   <button onClick={() => setExpanded(expanded === j.id ? null : j.id)} className="rounded-lg px-2.5 py-1.5 font-medium text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
-                    {expanded === j.id ? "▾ Riwayat" : "▸ Riwayat"}
+                    {expanded === j.id ? t("dcp.historyOpen") : t("dcp.historyClosed")}
                   </button>
                 </div>
               </div>
@@ -362,7 +366,7 @@ export default function DirClonePage() {
               {expanded === j.id && (
                 <div className="border-t border-slate-100 dark:border-slate-800">
                   {j.runs.length === 0 ? (
-                    <p className="px-4 py-3 text-xs text-slate-400">Belum ada run. Klik &ldquo;Jalankan&rdquo; untuk clone pertama.</p>
+                    <p className="px-4 py-3 text-xs text-slate-400">{t("dcp.noRuns")}</p>
                   ) : (
                     <div className="divide-y divide-slate-100 dark:divide-slate-800">
                       {j.runs.map((r) => (

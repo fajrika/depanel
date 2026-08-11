@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 type Member = {
   id: string;
@@ -49,6 +50,7 @@ function RoleBadge({ role }: { role: string }) {
 }
 
 export default function TeamsPage() {
+  const { t } = useLang();
   const [teams, setTeams] = useState<Team[]>([]);
   const [myId, setMyId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -84,7 +86,7 @@ export default function TeamsPage() {
     const d = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok || d.ok === false) {
-      setMsg({ text: d.message ?? "Terjadi kesalahan", ok: false });
+      setMsg({ text: d.message ?? t("teams.errGeneric"), ok: false });
       return false;
     }
     load();
@@ -95,10 +97,10 @@ export default function TeamsPage() {
   return (
     <div className="space-y-10">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Tim</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{t("teams.title")}</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Setiap tim punya akun API, server, dan anggotanya sendiri. <b>Owner</b> memegang kendali penuh,{" "}
-          <b>admin</b> (ditunjuk owner) ikut mengelola, <b>member</b> memantau server yang di-tampilkan.
+          {t("teams.subtitle1")} <b>Owner</b> {t("teams.subtitle2")}{" "}
+          <b>admin</b> {t("teams.subtitle3")} <b>member</b> {t("teams.subtitle4")}.
         </p>
       </div>
 
@@ -122,15 +124,15 @@ export default function TeamsPage() {
           e.preventDefault();
           if (await api("/api/teams", "POST", { name: teamName })) {
             setTeamName("");
-            setMsg({ text: "Tim dibuat — Anda owner-nya. Pindah lewat switcher di kiri atas.", ok: true });
+            setMsg({ text: t("teams.created"), ok: true });
           }
         }}
       >
         <div className="min-w-0 flex-1">
-          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">Nama tim baru</label>
-          <input required value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder="mis. Tim Produksi MAP" className={`${input} mt-1 w-full max-w-sm`} />
+          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">{t("teams.newName")}</label>
+          <input required value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder={t("teams.namePlaceholder")} className={`${input} mt-1 w-full max-w-sm`} />
         </div>
-        <button disabled={busy} className={btnPrimary}>+ Buat tim</button>
+        <button disabled={busy} className={btnPrimary}>+ {t("teams.createBtn")}</button>
       </form>
 
       {/* daftar tim */}
@@ -138,36 +140,36 @@ export default function TeamsPage() {
         <div className={`${card} h-40 animate-pulse`} />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          {teams.map((t) => {
-            const iAmOwner = t.myRole === "owner";
-            const iAmStaff = iAmOwner || t.myRole === "admin";
+          {teams.map((team) => {
+            const iAmOwner = team.myRole === "owner";
+            const iAmStaff = iAmOwner || team.myRole === "admin";
             return (
-              <div key={t.id} className={card}>
+              <div key={team.id} className={card}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-slate-100">
-                      <span>{t.isPersonal ? "👤" : "👥"}</span>
-                      <span className="truncate">{t.name}</span>
+                      <span>{team.isPersonal ? "👤" : "👥"}</span>
+                      <span className="truncate">{team.name}</span>
                     </h2>
                     <p className="mt-0.5 text-xs text-slate-400">
-                      {t.members.length} anggota · {t.accounts.length} akun API · Anda: <b>{t.myRole}</b>
+                      {team.members.length} {t("teams.membersUnit")} · {team.accounts.length} {t("teams.accountsUnit")} · {t("teams.you")} <b>{team.myRole}</b>
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-2 text-xs">
-                    {!t.isPersonal && iAmOwner && (
+                    {!team.isPersonal && iAmOwner && (
                       <button
-                        onClick={() => confirm(`Hapus tim "${t.name}" beserta seluruh akun API & servernya dari panel?`) && api(`/api/teams/${t.id}`, "DELETE")}
+                        onClick={() => confirm(`${t("teams.confirmDelete1")} "${team.name}" ${t("teams.confirmDelete2")}`) && api(`/api/teams/${team.id}`, "DELETE")}
                         className="font-medium text-red-500 hover:underline"
                       >
-                        Hapus tim
+                        {t("teams.deleteBtn")}
                       </button>
                     )}
-                    {!t.isPersonal && !iAmOwner && (
+                    {!team.isPersonal && !iAmOwner && (
                       <button
-                        onClick={() => confirm(`Keluar dari tim "${t.name}"?`) && api(`/api/teams/${t.id}/members`, "DELETE", { userId: myId })}
+                        onClick={() => confirm(`${t("teams.confirmLeave1")} "${team.name}"${t("teams.confirmLeave2")}`) && api(`/api/teams/${team.id}/members`, "DELETE", { userId: myId })}
                         className="font-medium text-slate-500 hover:underline dark:text-slate-400"
                       >
-                        Keluar
+                        {t("teams.leave")}
                       </button>
                     )}
                   </div>
@@ -175,10 +177,10 @@ export default function TeamsPage() {
 
                 {/* anggota */}
                 <div className="mt-4 space-y-2">
-                  {t.members.map((m) => {
+                  {team.members.map((m) => {
                     const targetIsOwner = m.role === "owner";
                     const canKick =
-                      m.id !== myId && !targetIsOwner && (iAmOwner || (t.myRole === "admin" && m.role === "member"));
+                      m.id !== myId && !targetIsOwner && (iAmOwner || (team.myRole === "admin" && m.role === "member"));
                     return (
                       <div
                         key={m.id}
@@ -191,192 +193,192 @@ export default function TeamsPage() {
                           </span>
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
-                              {m.name} {m.id === myId && <span className="text-xs text-slate-400">(Anda)</span>}
+                              {m.name} {m.id === myId && <span className="text-xs text-slate-400">({t("teams.youLabel")})</span>}
                             </p>
                             <p className="truncate text-[11px] text-slate-400">{m.email}</p>
                           </div>
                           <RoleBadge role={m.role} />
                           {canKick && (
                             <button
-                              onClick={() => confirm(`Keluarkan ${m.name} dari tim?`) && api(`/api/teams/${t.id}/members`, "DELETE", { userId: m.id })}
+                              onClick={() => confirm(`${t("teams.confirmKick1")} ${m.name} ${t("teams.confirmKick2")}`) && api(`/api/teams/${team.id}/members`, "DELETE", { userId: m.id })}
                               disabled={busy}
                               className="shrink-0 text-[11px] font-medium text-red-500 hover:underline"
                             >
-                              keluarkan
+                              {t("teams.kick")}
                             </button>
                           )}
                         </div>
 
                         {/* Lantai 2 — izin & aksi role */}
-                        {((iAmStaff && m.role === "member") || (iAmOwner && m.id !== myId && !t.isPersonal)) && (
+                        {((iAmStaff && m.role === "member") || (iAmOwner && m.id !== myId && !team.isPersonal)) && (
                           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-slate-200/70 pt-2 dark:border-slate-700/60">
                             {iAmStaff && m.role === "member" && (
                               <>
-                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh melihat Saldo tim">
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title={t("teams.tipBilling")}>
                                   <input
                                     type="checkbox"
                                     checked={m.canViewBilling}
                                     disabled={busy}
-                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canViewBilling: !m.canViewBilling })}
+                                    onChange={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, canViewBilling: !m.canViewBilling })}
                                     className="h-3 w-3 accent-emerald-600"
                                   />
-                                  saldo
+                                  {t("teams.permBilling")}
                                 </label>
-                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh mengatur jadwal nyala-mati">
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title={t("teams.tipSchedule")}>
                                   <input
                                     type="checkbox"
                                     checked={m.canSchedule}
                                     disabled={busy}
-                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canSchedule: !m.canSchedule })}
+                                    onChange={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, canSchedule: !m.canSchedule })}
                                     className="h-3 w-3 accent-emerald-600"
                                   />
-                                  jadwal
+                                  {t("teams.permSchedule")}
                                 </label>
-                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh mengakses tab Backup (snapshot/restore)">
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title={t("teams.tipBackup")}>
                                   <input
                                     type="checkbox"
                                     checked={m.canBackup}
                                     disabled={busy}
-                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canBackup: !m.canBackup })}
+                                    onChange={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, canBackup: !m.canBackup })}
                                     className="h-3 w-3 accent-emerald-600"
                                   />
-                                  backup
+                                  {t("teams.permBackup")}
                                 </label>
-                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh melihat halaman Biaya">
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title={t("teams.tipCost")}>
                                   <input
                                     type="checkbox"
                                     checked={m.canViewCost}
                                     disabled={busy}
-                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canViewCost: !m.canViewCost })}
+                                    onChange={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, canViewCost: !m.canViewCost })}
                                     className="h-3 w-3 accent-emerald-600"
                                   />
-                                  biaya
+                                  {t("teams.permCost")}
                                 </label>
-                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh melihat halaman Laporan">
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title={t("teams.tipReports")}>
                                   <input
                                     type="checkbox"
                                     checked={m.canViewReports}
                                     disabled={busy}
-                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canViewReports: !m.canViewReports })}
+                                    onChange={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, canViewReports: !m.canViewReports })}
                                     className="h-3 w-3 accent-emerald-600"
                                   />
-                                  laporan
+                                  {t("teams.permReports")}
                                 </label>
-                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh membuka/mengelola Backup DB">
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title={t("teams.tipBackupDb")}>
                                   <input
                                     type="checkbox"
                                     checked={m.canBackupDb}
                                     disabled={busy}
-                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canBackupDb: !m.canBackupDb })}
+                                    onChange={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, canBackupDb: !m.canBackupDb })}
                                     className="h-3 w-3 accent-emerald-600"
                                   />
-                                  backup-db
+                                  {t("teams.permBackupDb")}
                                 </label>
-                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh membuka/mengelola SSH Koneksi + monitoring">
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title={t("teams.tipSsh")}>
                                   <input
                                     type="checkbox"
                                     checked={m.canSsh}
                                     disabled={busy}
-                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canSsh: !m.canSsh })}
+                                    onChange={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, canSsh: !m.canSsh })}
                                     className="h-3 w-3 accent-emerald-600"
                                   />
-                                  ssh
+                                  {t("teams.permSsh")}
                                 </label>
-                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh membuka halaman Infra">
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title={t("teams.tipInfra")}>
                                   <input
                                     type="checkbox"
                                     checked={m.canInfra}
                                     disabled={busy}
-                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canInfra: !m.canInfra })}
+                                    onChange={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, canInfra: !m.canInfra })}
                                     className="h-3 w-3 accent-emerald-600"
                                   />
-                                  infra
+                                  {t("teams.permInfra")}
                                 </label>
-                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh membuka/mengelola Akun API">
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title={t("teams.tipAccounts")}>
                                   <input
                                     type="checkbox"
                                     checked={m.canAccounts}
                                     disabled={busy}
-                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canAccounts: !m.canAccounts })}
+                                    onChange={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, canAccounts: !m.canAccounts })}
                                     className="h-3 w-3 accent-emerald-600"
                                   />
-                                  akun-api
+                                  {t("teams.permAccounts")}
                                 </label>
-                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh membuka halaman Notifikasi">
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title={t("teams.tipNotify")}>
                                   <input
                                     type="checkbox"
                                     checked={m.canNotify}
                                     disabled={busy}
-                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canNotify: !m.canNotify })}
+                                    onChange={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, canNotify: !m.canNotify })}
                                     className="h-3 w-3 accent-emerald-600"
                                   />
-                                  notifikasi
+                                  {t("teams.permNotify")}
                                 </label>
-                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh mengakses tab Firewall di server">
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title={t("teams.tipFirewall")}>
                                   <input
                                     type="checkbox"
                                     checked={m.canFirewall}
                                     disabled={busy}
-                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canFirewall: !m.canFirewall })}
+                                    onChange={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, canFirewall: !m.canFirewall })}
                                     className="h-3 w-3 accent-emerald-600"
                                   />
-                                  firewall
+                                  {t("teams.permFirewall")}
                                 </label>
-                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh mengakses tab Console di server">
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title={t("teams.tipConsole")}>
                                   <input
                                     type="checkbox"
                                     checked={m.canConsole}
                                     disabled={busy}
-                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canConsole: !m.canConsole })}
+                                    onChange={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, canConsole: !m.canConsole })}
                                     className="h-3 w-3 accent-emerald-600"
                                   />
-                                  console
+                                  {t("teams.permConsole")}
                                 </label>
-                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title="Boleh mengakses tab Kelola di server">
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title={t("teams.tipManage")}>
                                   <input
                                     type="checkbox"
                                     checked={m.canManage}
                                     disabled={busy}
-                                    onChange={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, canManage: !m.canManage })}
+                                    onChange={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, canManage: !m.canManage })}
                                     className="h-3 w-3 accent-emerald-600"
                                   />
-                                  kelola
+                                  {t("teams.permManage")}
                                 </label>
                                 <button
-                                  onClick={() => setServerEditor(serverEditor === `${t.id}:${m.id}` ? null : `${t.id}:${m.id}`)}
-                                  title="Atur server mana saja yang boleh dia lihat"
+                                  onClick={() => setServerEditor(serverEditor === `${team.id}:${m.id}` ? null : `${team.id}:${m.id}`)}
+                                  title={t("teams.tipServerVis")}
                                   className={`rounded px-1.5 py-0.5 text-[11px] font-medium transition ${
                                     m.hiddenServerIds.length > 0
                                       ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/50 dark:text-amber-400 dark:ring-amber-900"
                                       : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
                                   }`}
                                 >
-                                  🖥 server{m.hiddenServerIds.length > 0 ? ` (${t.servers.length - m.hiddenServerIds.length}/${t.servers.length})` : ""}
+                                  🖥 {t("teams.serverVisLabel")}{m.hiddenServerIds.length > 0 ? ` (${team.servers.length - m.hiddenServerIds.length}/${team.servers.length})` : ""}
                                 </button>
                               </>
                             )}
 
-                            {iAmOwner && m.id !== myId && !t.isPersonal && (
+                            {iAmOwner && m.id !== myId && !team.isPersonal && (
                               <div className="ml-auto flex gap-1 text-[11px]">
                                 {m.role === "member" && (
-                                  <button onClick={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, role: "admin" })} disabled={busy} className="rounded px-1.5 py-0.5 font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/40">
-                                    → admin
+                                  <button onClick={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, role: "admin" })} disabled={busy} className="rounded px-1.5 py-0.5 font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/40">
+                                    → {t("teams.toAdmin")}
                                   </button>
                                 )}
                                 {m.role === "admin" && (
-                                  <button onClick={() => api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, role: "member" })} disabled={busy} className="rounded px-1.5 py-0.5 font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
-                                    → member
+                                  <button onClick={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, role: "member" })} disabled={busy} className="rounded px-1.5 py-0.5 font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
+                                    → {t("teams.toMember")}
                                   </button>
                                 )}
                                 <button
                                   onClick={() =>
-                                    confirm(`Alihkan OWNERSHIP tim "${t.name}" ke ${m.name}?\n\nAnda akan turun menjadi admin dan hanya ${m.name} yang jadi owner.`) &&
-                                    api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, role: "owner" })
+                                    confirm(`${t("teams.confirmOwn1")} "${team.name}" ke ${m.name}${t("teams.confirmOwn2")} ${m.name} ${t("teams.confirmOwn3")}`) &&
+                                    api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, role: "owner" })
                                   }
                                   disabled={busy}
                                   className="rounded px-1.5 py-0.5 font-medium text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/40"
                                 >
-                                  👑 jadikan owner
+                                  👑 {t("teams.makeOwner")}
                                 </button>
                               </div>
                             )}
@@ -384,16 +386,16 @@ export default function TeamsPage() {
                         )}
 
                         {/* editor visibilitas server per member */}
-                        {serverEditor === `${t.id}:${m.id}` && (
+                        {serverEditor === `${team.id}:${m.id}` && (
                           <div className="animate-fade-up mt-1 w-full rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
                             <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                              Server yang boleh dilihat {m.name} (centang = tampil):
+                              {t("teams.serverVisHeader")} {m.name} {t("teams.serverVisHeader2")}
                             </p>
-                            {t.servers.length === 0 ? (
-                              <p className="mt-1.5 text-[11px] text-slate-400">Tim ini belum punya server.</p>
+                            {team.servers.length === 0 ? (
+                              <p className="mt-1.5 text-[11px] text-slate-400">{t("teams.noServers")}</p>
                             ) : (
                               <div className="mt-2 flex flex-wrap gap-1.5">
-                                {t.servers.map((srv) => {
+                                {team.servers.map((srv) => {
                                   const shown = !m.hiddenServerIds.includes(srv.id);
                                   return (
                                     <button
@@ -403,7 +405,7 @@ export default function TeamsPage() {
                                         const nextHidden = shown
                                           ? [...m.hiddenServerIds, srv.id]
                                           : m.hiddenServerIds.filter((x) => x !== srv.id);
-                                        api(`/api/teams/${t.id}/members`, "PATCH", { userId: m.id, hiddenServerIds: nextHidden });
+                                        api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, hiddenServerIds: nextHidden });
                                       }}
                                       className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-40 ${
                                         shown
@@ -424,26 +426,26 @@ export default function TeamsPage() {
                   })}
 
                   {/* undang member */}
-                  {iAmStaff && !t.isPersonal && (
+                  {iAmStaff && !team.isPersonal && (
                     <form
                       className="flex gap-2"
                       onSubmit={async (e) => {
                         e.preventDefault();
-                        if (await api(`/api/teams/${t.id}/members`, "POST", { email: invite[t.id] ?? "" })) {
-                          setInvite((v) => ({ ...v, [t.id]: "" }));
+                        if (await api(`/api/teams/${team.id}/members`, "POST", { email: invite[team.id] ?? "" })) {
+                          setInvite((v) => ({ ...v, [team.id]: "" }));
                         }
                       }}
                     >
                       <input
                         required
                         type="email"
-                        value={invite[t.id] ?? ""}
-                        onChange={(e) => setInvite((v) => ({ ...v, [t.id]: e.target.value }))}
-                        placeholder="email user terdaftar…"
+                        value={invite[team.id] ?? ""}
+                        onChange={(e) => setInvite((v) => ({ ...v, [team.id]: e.target.value }))}
+                        placeholder={t("teams.invitePlaceholder")}
                         className={`${input} min-w-0 flex-1 !py-1.5 text-xs`}
                       />
                       <button disabled={busy} className="shrink-0 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">
-                        + Undang
+                        + {t("teams.invite")}
                       </button>
                     </form>
                   )}

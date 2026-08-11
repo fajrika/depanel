@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 type Rule = Record<string, unknown> & { id?: string | number };
 
@@ -21,6 +22,7 @@ function rows(v: unknown): Rule[] {
 }
 
 export default function FirewallPanel({ serverId, isStaff }: { serverId: string; isStaff: boolean }) {
+  const { t } = useLang();
   const [rules, setRules] = useState<Rule[] | null>(null);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -44,7 +46,7 @@ export default function FirewallPanel({ serverId, isStaff }: { serverId: string;
     const res = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
     const d = await res.json().catch(() => ({}));
     setBusy(false);
-    setMsg(d.ok ? { text: "Berhasil.", ok: true } : { text: d.message ?? "Gagal", ok: false });
+    setMsg(d.ok ? { text: t("fw.ok"), ok: true } : { text: d.message ?? t("fw.fail"), ok: false });
     load();
   }
 
@@ -64,22 +66,22 @@ export default function FirewallPanel({ serverId, isStaff }: { serverId: string;
             );
           }}
         >
-          <div><label className="block text-[11px] text-slate-500 dark:text-slate-400">Port</label><input required value={form.destination_port} onChange={(e) => setForm({ ...form, destination_port: e.target.value })} placeholder="22" className={`${input} mt-1 w-20`} /></div>
-          <div><label className="block text-[11px] text-slate-500 dark:text-slate-400">Protokol</label><select value={form.protocol} onChange={(e) => setForm({ ...form, protocol: e.target.value })} className={`${input} mt-1`}><option value="tcp">tcp</option><option value="udp">udp</option></select></div>
-          <div><label className="block text-[11px] text-slate-500 dark:text-slate-400">Aksi</label><select value={form.action} onChange={(e) => setForm({ ...form, action: e.target.value })} className={`${input} mt-1`}><option value="A">Terima (ACCEPT)</option><option value="D">Tolak (DROP)</option></select></div>
-          <div><label className="block text-[11px] text-slate-500 dark:text-slate-400">Source IP (opsional)</label><input value={form.source_ip} onChange={(e) => setForm({ ...form, source_ip: e.target.value })} placeholder="0.0.0.0/0" className={`${input} mt-1 w-36`} /></div>
-          <div className="min-w-0 flex-1"><label className="block text-[11px] text-slate-500 dark:text-slate-400">Deskripsi</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={`${input} mt-1 w-full`} /></div>
-          <button disabled={busy} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300">+ Rule</button>
+          <div><label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("fw.port")}</label><input required value={form.destination_port} onChange={(e) => setForm({ ...form, destination_port: e.target.value })} placeholder="22" className={`${input} mt-1 w-20`} /></div>
+          <div><label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("fw.protocol")}</label><select value={form.protocol} onChange={(e) => setForm({ ...form, protocol: e.target.value })} className={`${input} mt-1`}><option value="tcp">tcp</option><option value="udp">udp</option></select></div>
+          <div><label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("fw.action")}</label><select value={form.action} onChange={(e) => setForm({ ...form, action: e.target.value })} className={`${input} mt-1`}><option value="A">{t("fw.actionAccept")}</option><option value="D">{t("fw.actionDrop")}</option></select></div>
+          <div><label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("fw.sourceIp")}</label><input value={form.source_ip} onChange={(e) => setForm({ ...form, source_ip: e.target.value })} placeholder="0.0.0.0/0" className={`${input} mt-1 w-36`} /></div>
+          <div className="min-w-0 flex-1"><label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("fw.description")}</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={`${input} mt-1 w-full`} /></div>
+          <button disabled={busy} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300">{t("fw.addRule")}</button>
         </form>
       )}
 
       <div className={card}>
-        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Aturan firewall</h3>
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("fw.title")}</h3>
         <div className="mt-3 space-y-2">
           {rules === null ? (
             <div className="h-10 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
           ) : rules.length === 0 ? (
-            <p className="text-xs text-slate-400">Belum ada aturan firewall.</p>
+            <p className="text-xs text-slate-400">{t("fw.empty")}</p>
           ) : (
             rules.map((r, i) => {
               const rid = String(r.id ?? i);
@@ -93,7 +95,7 @@ export default function FirewallPanel({ serverId, isStaff }: { serverId: string;
                   <span className="text-xs text-slate-400">{String(r.source_ip ?? r.source ?? "any")}</span>
                   <span className="min-w-0 flex-1 truncate text-xs text-slate-400">{String(r.description ?? "")}</span>
                   {isStaff && r.id != null && (
-                    <button onClick={() => confirm("Hapus rule ini?") && api(`/api/servers/${serverId}/firewall/${rid}`, "DELETE")} disabled={busy} className="text-xs font-medium text-red-500 hover:underline">Hapus</button>
+                    <button onClick={() => confirm(t("fw.confirmDelete")) && api(`/api/servers/${serverId}/firewall/${rid}`, "DELETE")} disabled={busy} className="text-xs font-medium text-red-500 hover:underline">{t("fw.delete")}</button>
                   )}
                 </div>
               );

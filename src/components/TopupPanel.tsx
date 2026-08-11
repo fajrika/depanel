@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 const card = "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900";
 const input =
@@ -30,6 +31,7 @@ function findLink(obj: unknown): string | null {
 }
 
 export default function TopupPanel({ accountId }: { accountId: string }) {
+  const { t } = useLang();
   const [amount, setAmount] = useState(100000);
   const [methods, setMethods] = useState<Method[]>([]);
   const [method, setMethod] = useState("");
@@ -48,7 +50,7 @@ export default function TopupPanel({ accountId }: { accountId: string }) {
       const list = pull<Method>(d.data);
       setMethods(list);
       if (list.length && !method) setMethod(list[0].code ?? list[0].id ?? "");
-    } else setMsg({ text: d.message ?? "Gagal memuat metode", ok: false });
+    } else setMsg({ text: d.message ?? t("topup.errLoadMethods"), ok: false });
   }
 
   async function createInvoice() {
@@ -64,15 +66,15 @@ export default function TopupPanel({ accountId }: { accountId: string }) {
     setBusy(null);
     if (d.ok) {
       setInvoice({ link: findLink(d.data), raw: d.data });
-      setMsg({ text: "Invoice dibuat. Selesaikan pembayaran di aplikasi pembayaranmu.", ok: true });
-    } else setMsg({ text: d.message ?? "Gagal membuat invoice", ok: false });
+      setMsg({ text: t("topup.invoiceCreated"), ok: true });
+    } else setMsg({ text: d.message ?? t("topup.errCreateInvoice"), ok: false });
   }
 
   return (
     <div className={card}>
-      <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Top up saldo</h2>
+      <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("topup.title")}</h2>
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-        Depanel hanya membuat invoice — pembayaran diselesaikan sendiri di aplikasi pembayaranmu. Depanel tidak memindahkan dana.
+        {t("topup.subtitle")}
       </p>
 
       {msg && <p className={`mt-3 rounded-lg px-3 py-2 text-sm ${msg.ok ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" : "bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300"}`}>{msg.text}</p>}
@@ -87,18 +89,18 @@ export default function TopupPanel({ accountId }: { accountId: string }) {
 
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <div>
-          <label className="block text-[11px] text-slate-500 dark:text-slate-400">Nominal (IDR)</label>
+          <label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("topup.amountLabel")}</label>
           <input value={amount} onChange={(e) => setAmount(Number(e.target.value.replace(/\D/g, "")) || 0)} className={`${input} mt-1 w-36`} />
         </div>
         <button onClick={loadMethods} disabled={busy === "methods" || amount < 10000} className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800">
-          {busy === "methods" ? "Memuat…" : "Muat metode bayar"}
+          {busy === "methods" ? t("topup.loading") : t("topup.loadMethods")}
         </button>
       </div>
 
       {methods.length > 0 && (
         <div className="mt-3 flex flex-wrap items-end gap-3">
           <div>
-            <label className="block text-[11px] text-slate-500 dark:text-slate-400">Metode</label>
+            <label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("topup.method")}</label>
             <select value={method} onChange={(e) => setMethod(e.target.value)} className={`${input} mt-1`}>
               {methods.map((m, i) => (
                 <option key={i} value={m.code ?? m.id}>{m.name ?? m.label ?? m.code ?? m.id}{m.fee ? ` (+${rupiah(m.fee)})` : ""}</option>
@@ -106,11 +108,11 @@ export default function TopupPanel({ accountId }: { accountId: string }) {
             </select>
           </div>
           <div>
-            <label className="block text-[11px] text-slate-500 dark:text-slate-400">No. HP (opsional)</label>
+            <label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("topup.phone")}</label>
             <input value={phone} onChange={(e) => setPhone(e.target.value)} className={`${input} mt-1 w-40`} />
           </div>
           <button onClick={createInvoice} disabled={busy === "create" || !method} className={btn}>
-            {busy === "create" ? "Membuat…" : "Buat invoice"}
+            {busy === "create" ? t("topup.creating") : t("topup.createInvoice")}
           </button>
         </div>
       )}
@@ -119,7 +121,7 @@ export default function TopupPanel({ accountId }: { accountId: string }) {
         <div className="mt-4">
           {invoice.link ? (
             <a href={invoice.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300">
-              ↗ Bayar sekarang
+              {t("topup.payNow")}
             </a>
           ) : (
             <pre className="max-h-60 overflow-auto rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">{JSON.stringify(invoice.raw, null, 2)}</pre>

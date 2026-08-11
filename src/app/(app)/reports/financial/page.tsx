@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 type CreditRow = { id: number; type: string; description: string; amount: string; balance_after: string; created_at: string };
 type DepositRow = {
@@ -71,6 +72,7 @@ const btnPrimary =
   "rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300";
 
 export default function FinancialReportPage() {
+  const { t } = useLang();
   const [start, setStart] = useState(() => {
     const d = new Date();
     d.setDate(1);
@@ -92,7 +94,7 @@ export default function FinancialReportPage() {
       const res = await fetch(`/api/reports/financial?${params}`);
       const d = await res.json();
       if (d.ok) setData(d.data ?? []);
-      else setError(d.message ?? "Gagal memuat laporan");
+      else setError(d.message ?? t("rep.errLoad"));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -116,22 +118,22 @@ export default function FinancialReportPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Laporan Keuangan</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Ringkasan pemakaian, top-up, dan rincian biaya per server dari depa cloud.</p>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{t("rep.title")}</h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("rep.subtitle")}</p>
       </div>
 
       {/* Filter */}
       <div className={`${card} flex flex-wrap items-end gap-4`}>
         <div>
-          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">Dari tanggal</label>
+          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">{t("rep.fromDate")}</label>
           <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className={`${input} mt-1`} />
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">Sampai tanggal</label>
+          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">{t("rep.toDate")}</label>
           <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className={`${input} mt-1`} />
         </div>
         <button onClick={load} disabled={loading} className={btnPrimary}>
-          {loading ? "Memuat…" : "Tampilkan"}
+          {loading ? t("rep.loading") : t("rep.show")}
         </button>
       </div>
 
@@ -145,19 +147,19 @@ export default function FinancialReportPage() {
       {data.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className={card}>
-            <p className="text-xs font-medium text-slate-400">Saldo Aktual</p>
+            <p className="text-xs font-medium text-slate-400">{t("rep.balanceActual")}</p>
             <p className="mt-1 text-2xl font-bold text-slate-800 dark:text-slate-100">{rupiah(totalBalance)}</p>
           </div>
           <div className={card}>
-            <p className="text-xs font-medium text-slate-400">Total Top-up</p>
+            <p className="text-xs font-medium text-slate-400">{t("rep.totalTopup")}</p>
             <p className="mt-1 text-2xl font-bold text-emerald-600">{rupiah(totalTopup)}</p>
           </div>
           <div className={card}>
-            <p className="text-xs font-medium text-slate-400">Total Pemakaian</p>
+            <p className="text-xs font-medium text-slate-400">{t("rep.totalUsage")}</p>
             <p className="mt-1 text-2xl font-bold text-red-600">{rupiah(totalUsage)}</p>
           </div>
           <div className={card}>
-            <p className="text-xs font-medium text-slate-400">Jumlah Server</p>
+            <p className="text-xs font-medium text-slate-400">{t("rep.totalServers")}</p>
             <p className="mt-1 text-2xl font-bold text-slate-800 dark:text-slate-100">{totalServers}</p>
           </div>
         </div>
@@ -166,7 +168,7 @@ export default function FinancialReportPage() {
       {/* Tabs */}
       {data.length > 0 && (
         <div className="flex gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
-          {([["summary", "Ringkasan"], ["credit", "Riwayat Pemakaian"], ["deposit", "Riwayat Top-up"], ["servers", "Layanan"], ["perserver", "Per Server"]] as const).map(([k, l]) => (
+          {([["summary", t("rep.tabSummary")], ["credit", t("rep.tabCredit")], ["deposit", t("rep.tabDeposit")], ["servers", t("rep.tabServers")], ["perserver", t("rep.tabPerServer")]] as const).map(([k, l]) => (
             <button
               key={k}
               onClick={() => setTab(k)}
@@ -198,15 +200,15 @@ export default function FinancialReportPage() {
               ) : (
                 <div className="mt-3 grid gap-3 sm:grid-cols-3">
                   <div>
-                    <p className="text-xs text-slate-400">Saldo</p>
+                    <p className="text-xs text-slate-400">{t("rep.balance")}</p>
                     <p className="text-lg font-semibold text-slate-700 dark:text-slate-200">{rupiah(a.summary?.actual_balance)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-slate-400">Biaya Bulanan</p>
+                    <p className="text-xs text-slate-400">{t("rep.monthCost")}</p>
                     <p className="text-lg font-semibold text-slate-700 dark:text-slate-200">{rupiah(a.summary?.current_cost)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-slate-400">Estimasi Akhir Bulan</p>
+                    <p className="text-xs text-slate-400">{t("rep.estEndMonth")}</p>
                     <p className="text-lg font-semibold text-slate-700 dark:text-slate-200">{rupiah(a.summary?.estimated_monthly_total)}</p>
                   </div>
                 </div>
@@ -220,17 +222,17 @@ export default function FinancialReportPage() {
       {!loading && tab === "credit" && (
         <div className={card + " overflow-x-auto"}>
           {allCredit.length === 0 ? (
-            <p className="p-5 text-center text-sm text-slate-400">Tidak ada data pemakaian pada rentang tanggal ini.</p>
+            <p className="p-5 text-center text-sm text-slate-400">{t("rep.emptyCredit")}</p>
           ) : (
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-100 dark:border-slate-800">
-                  <th className={th}>Tanggal</th>
-                  <th className={th}>Akun</th>
-                  <th className={th}>Tipe</th>
-                  <th className={th}>Deskripsi</th>
-                  <th className={th + " text-right"}>Jumlah</th>
-                  <th className={th + " text-right"}>Saldo Sisa</th>
+                  <th className={th}>{t("rep.date")}</th>
+                  <th className={th}>{t("rep.account")}</th>
+                  <th className={th}>{t("rep.type")}</th>
+                  <th className={th}>{t("rep.desc")}</th>
+                  <th className={th + " text-right"}>{t("rep.amount")}</th>
+                  <th className={th + " text-right"}>{t("rep.balanceRemaining")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
@@ -256,19 +258,19 @@ export default function FinancialReportPage() {
       {!loading && tab === "deposit" && (
         <div className={card + " overflow-x-auto"}>
           {allDeposits.length === 0 ? (
-            <p className="p-5 text-center text-sm text-slate-400">Tidak ada data top-up pada rentang tanggal ini.</p>
+            <p className="p-5 text-center text-sm text-slate-400">{t("rep.emptyDeposit")}</p>
           ) : (
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-100 dark:border-slate-800">
-                  <th className={th}>Tanggal</th>
-                  <th className={th}>Akun</th>
-                  <th className={th}>Deskripsi</th>
-                  <th className={th}>Metode</th>
-                  <th className={th}>Status</th>
-                  <th className={th + " text-right"}>Jumlah</th>
-                  <th className={th + " text-right"}>PPN</th>
-                  <th className={th + " text-right"}>Biaya</th>
+                  <th className={th}>{t("rep.date")}</th>
+                  <th className={th}>{t("rep.account")}</th>
+                  <th className={th}>{t("rep.desc")}</th>
+                  <th className={th}>{t("rep.method")}</th>
+                  <th className={th}>{t("rep.status")}</th>
+                  <th className={th + " text-right"}>{t("rep.amount")}</th>
+                  <th className={th + " text-right"}>{t("rep.ppn")}</th>
+                  <th className={th + " text-right"}>{t("rep.fee")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
@@ -299,7 +301,7 @@ export default function FinancialReportPage() {
         <div className="space-y-4">
           {allServerDetails.length === 0 ? (
             <div className={card}>
-              <p className="p-5 text-center text-sm text-slate-400">Tidak ada data rincian server pada rentang tanggal ini.</p>
+              <p className="p-5 text-center text-sm text-slate-400">{t("rep.emptyServers")}</p>
             </div>
           ) : (
             allServerDetails.map((svc, i) => (
@@ -325,7 +327,7 @@ export default function FinancialReportPage() {
                         {r.details.map((d, k) => (
                           <div key={k} className="flex items-center justify-between py-0.5 text-xs text-slate-500 dark:text-slate-400">
                             <span>{d.name}</span>
-                            <span className="font-mono">{d.total_uptime_hour.toFixed(1)} jam · {rupiah(d.total_cost)}</span>
+                            <span className="font-mono">{d.total_uptime_hour.toFixed(1)} {t("rep.hoursUnit")} · {rupiah(d.total_cost)}</span>
                           </div>
                         ))}
                       </div>
@@ -364,15 +366,15 @@ export default function FinancialReportPage() {
             if (servers.length === 0) {
               return (
                 <div className={card}>
-                  <p className="p-5 text-center text-sm text-slate-400">Tidak ada data server pada rentang tanggal ini.</p>
+                  <p className="p-5 text-center text-sm text-slate-400">{t("rep.emptyPerServer")}</p>
                 </div>
               );
             }
             return (
               <>
                 <div className={`${card} flex items-center justify-between`}>
-                  <p className="text-sm text-slate-500">{servers.length} server ditemukan</p>
-                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Total: {rupiah(servers.reduce((s, sv) => s + sv.totalCost, 0))}</p>
+                  <p className="text-sm text-slate-500">{servers.length} {t("rep.serversFound")}</p>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("rep.total")}: {rupiah(servers.reduce((s, sv) => s + sv.totalCost, 0))}</p>
                 </div>
                 {servers.map((sv, i) => (
                   <div key={i} className={card}>
@@ -393,7 +395,7 @@ export default function FinancialReportPage() {
                             {c.description && c.description !== c.name && <span className="ml-1 text-slate-400">({c.description})</span>}
                           </span>
                           <span className="flex gap-3 font-mono">
-                            {c.uptime > 0 && <span>{c.uptime.toFixed(0)} jam</span>}
+                            {c.uptime > 0 && <span>{c.uptime.toFixed(0)} {t("rep.hoursUnit")}</span>}
                             {c.basePrice > 0 && <span className="text-slate-400">@ {rupiah(c.basePrice)}</span>}
                             <span className="font-semibold text-slate-700 dark:text-slate-200">{rupiah(c.cost)}</span>
                           </span>
@@ -419,7 +421,7 @@ export default function FinancialReportPage() {
       {/* Empty state */}
       {!loading && data.length === 0 && (
         <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 p-8 text-center text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-900/40">
-          Tidak ada data. Pastikan akun depa sudah terhubung dan memiliki data billing.
+          {t("rep.emptyAll")}
         </div>
       )}
     </div>

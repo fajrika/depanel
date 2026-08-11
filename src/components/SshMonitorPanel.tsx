@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import MetricChart from "@/components/MetricChart";
+import { useLang } from "@/lib/i18n";
 
 type DiskMount = { mount: string; sizeMb: number; usedMb: number; pct: number };
 type ProcInfo = { pid: string; user: string; cpu: number; mem: number; comm: string };
@@ -61,10 +62,10 @@ export type SshLastSample = {
 };
 
 const PERIODS = [
-  { v: "hour", l: "1 Jam" },
-  { v: "day", l: "24 Jam" },
-  { v: "week", l: "7 Hari" },
-  { v: "month", l: "30 Hari" },
+  { v: "hour", k: "sshm.period.hour" },
+  { v: "day", k: "sshm.period.day" },
+  { v: "week", k: "sshm.period.week" },
+  { v: "month", k: "sshm.period.month" },
 ];
 
 const AUTO_REFRESH_MS = 30 * 1000;
@@ -78,16 +79,16 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function humanizeUptime(sec?: number): string {
+function humanizeUptime(sec: number | undefined, t: (key: string) => string): string {
   if (sec === undefined || sec === null) return "—";
-  if (sec < 60) return `${sec} dtk`;
+  if (sec < 60) return `${sec} ${t("sshm.uptimeSec")}`;
   const d = Math.floor(sec / 86400);
   const h = Math.floor((sec % 86400) / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const parts: string[] = [];
-  if (d) parts.push(`${d} hari`);
-  if (h) parts.push(`${h} jam`);
-  if (d === 0) parts.push(`${m} mnt`);
+  if (d) parts.push(`${d} ${t("sshm.uptimeDay")}`);
+  if (h) parts.push(`${h} ${t("sshm.uptimeHour")}`);
+  if (d === 0) parts.push(`${m} ${t("sshm.uptimeMin")}`);
   return parts.join(" ");
 }
 
@@ -139,6 +140,7 @@ export default function SshMonitorPanel({
   initial?: SshLastSample | null;
   onClose?: () => void;
 }) {
+  const { t } = useLang();
   const [sample, setSample] = useState<LiveSample | null>(initial && initial.ok ? (initial as LiveSample) : null);
   const [lastCheck, setLastCheck] = useState<Date | null>(initial?.at ? new Date(initial.at) : null);
   const [lastOk, setLastOk] = useState<boolean | null>(initial?.ok ?? null);
@@ -175,12 +177,12 @@ export default function SshMonitorPanel({
         setLastError(null);
       } else {
         setLastOk(false);
-        setLastError(d.message ?? "Gagal mengambil metrik");
+        setLastError(d.message ?? t("sshm.errMetrics"));
       }
       setLastCheck(new Date());
     } catch {
       setLastOk(false);
-      setLastError("Gagal terhubung ke server");
+      setLastError(t("sshm.errConn"));
       setLastCheck(new Date());
     } finally {
       setRefreshing(false);
@@ -226,7 +228,7 @@ export default function SshMonitorPanel({
               className={`h-2 w-2 shrink-0 rounded-full ${
                 lastOk === true ? "bg-emerald-500" : lastOk === false ? "bg-red-500" : "bg-slate-300 dark:bg-slate-600"
               }`}
-              title={lastOk === true ? "Terhubung" : lastOk === false ? "Gagal" : "Belum ada data"}
+              title={lastOk === true ? t("sshm.dotConnected") : lastOk === false ? t("sshm.dotFailed") : t("sshm.dotNoData")}
             />
           </h2>
           <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
@@ -236,7 +238,7 @@ export default function SshMonitorPanel({
         <div className="flex items-center gap-2">
           <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
             <input type="checkbox" checked={auto} onChange={() => setAuto((a) => !a)} className="h-3 w-3 accent-indigo-600" />
-            auto 30 dtk
+            {t("sshm.autoRefresh")}
           </label>
           <button
             onClick={doRefresh}
@@ -246,12 +248,12 @@ export default function SshMonitorPanel({
             <svg viewBox="0 0 16 16" className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} fill="currentColor">
               <path d="M8 3a5 5 0 1 0 4.546 2.914.75.75 0 0 1 1.364-.626A6.5 6.5 0 1 1 8 1.5v-1a.25.25 0 0 1 .41-.192l2.36 1.966a.25.25 0 0 1 0 .384L8.41 4.624A.25.25 0 0 1 8 4.432V3Z" />
             </svg>
-            {refreshing ? "Mengambil…" : "Muat Ulang"}
+            {refreshing ? t("sshm.refreshing") : t("sshm.reload")}
           </button>
           {onClose && (
             <button
               onClick={onClose}
-              title="Tutup panel"
+              title={t("sshm.closePanel")}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 shadow-sm transition hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
             >
               ✕
@@ -280,24 +282,24 @@ export default function SshMonitorPanel({
             ))}
           </div>
           <p className="text-center text-sm text-slate-400 dark:text-slate-500">
-            {lastCheck ? "Klik Muat Ulang untuk mencoba lagi." : "Tekan Muat Ulang untuk mengambil metrik pertama."}
+            {lastCheck ? t("sshm.emptyReload") : t("sshm.emptyFirst")}
           </p>
         </div>
       ) : (
         <div className="animate-fade-up">
           {/* Kartu info utama */}
           <div className="mb-5 grid grid-cols-2 gap-x-6 gap-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-3">
-            <Info label="CPU" value={sample.cpu !== undefined ? <span className="tabular-nums">{sample.cpu}%</span> : undefined} />
+            <Info label={t("sshm.cpu")} value={sample.cpu !== undefined ? <span className="tabular-nums">{sample.cpu}%</span> : undefined} />
             <Info
-              label="Core"
+              label={t("sshm.cores")}
               value={
                 sample.cpuCores !== undefined
-                  ? <span className="tabular-nums">{sample.cpuCores} core</span>
+                  ? <span className="tabular-nums">{sample.cpuCores} {t("sshm.coreUnit")}</span>
                   : undefined
               }
             />
             <Info
-              label="Memori"
+              label={t("sshm.memory")}
               value={
                 sample.memUsedMb !== undefined && sample.memTotalMb !== undefined
                   ? `${fmtMb(sample.memUsedMb)} / ${fmtMb(sample.memTotalMb)} (${sample.memPct ?? "—"}%)`
@@ -305,21 +307,21 @@ export default function SshMonitorPanel({
               }
             />
             <Info
-              label="Load 1/5/15"
+              label={t("sshm.load")}
               value={
                 sample.load1 !== undefined
                   ? `${sample.load1} / ${sample.load5 ?? "—"} / ${sample.load15 ?? "—"}`
                   : undefined
               }
             />
-            <Info label="Uptime" value={humanizeUptime(sample.uptimeSec)} />
-            <Info label="OS" value={sample.osName} />
-            <Info label="Kernel" value={sample.kernel} />
-            <Info label="Network masuk" value={<span className="tabular-nums">{fmtRate(sample.netInBps)}</span>} />
-            <Info label="Network keluar" value={<span className="tabular-nums">{fmtRate(sample.netOutBps)}</span>} />
-            <Info label="Hostname" value={sample.hostname} />
+            <Info label={t("sshm.uptime")} value={humanizeUptime(sample.uptimeSec, t)} />
+            <Info label={t("sshm.os")} value={sample.osName} />
+            <Info label={t("sshm.kernel")} value={sample.kernel} />
+            <Info label={t("sshm.netIn")} value={<span className="tabular-nums">{fmtRate(sample.netInBps)}</span>} />
+            <Info label={t("sshm.netOut")} value={<span className="tabular-nums">{fmtRate(sample.netOutBps)}</span>} />
+            <Info label={t("sshm.hostname")} value={sample.hostname} />
             <Info
-              label="Uptime 7 hari"
+              label={t("sshm.uptime7")}
               value={
                 uptimePct === null ? (
                   "—"
@@ -331,7 +333,7 @@ export default function SshMonitorPanel({
               }
             />
             <Info
-              label="Cek terakhir"
+              label={t("sshm.lastCheck")}
               value={
                 lastCheck ? (
                   <span className="tabular-nums">
@@ -347,7 +349,7 @@ export default function SshMonitorPanel({
           {/* Disk */}
           {sample.disk.length > 0 && (
             <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">Disk</h3>
+              <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">{t("sshm.disk")}</h3>
               <div className="grid gap-3 sm:grid-cols-2">
                 {sample.disk.map((d) => (
                   <DiskBar key={d.mount} d={d} />
@@ -359,19 +361,19 @@ export default function SshMonitorPanel({
           {/* Proses + port + service gagal */}
           <div className="mb-5 grid gap-4 lg:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">Proses teratas</h3>
+              <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">{t("sshm.topProcs")}</h3>
               {sample.topProcs.length === 0 ? (
-                <p className="text-xs text-slate-400 dark:text-slate-500">Tidak ada data.</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">{t("sshm.noData")}</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="text-slate-400 dark:text-slate-500">
-                        <th className="pb-2 pr-2 font-medium">PID</th>
-                        <th className="pb-2 pr-2 font-medium">User</th>
-                        <th className="pb-2 pr-2 text-right font-medium">CPU</th>
-                        <th className="pb-2 pr-2 text-right font-medium">MEM</th>
-                        <th className="pb-2 font-medium">Perintah</th>
+                        <th className="pb-2 pr-2 font-medium">{t("sshm.colPid")}</th>
+                        <th className="pb-2 pr-2 font-medium">{t("sshm.colUser")}</th>
+                        <th className="pb-2 pr-2 text-right font-medium">{t("sshm.colCpu")}</th>
+                        <th className="pb-2 pr-2 text-right font-medium">{t("sshm.colMem")}</th>
+                        <th className="pb-2 font-medium">{t("sshm.colCmd")}</th>
                       </tr>
                     </thead>
                     <tbody className="tabular-nums">
@@ -391,9 +393,9 @@ export default function SshMonitorPanel({
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">Port listening</h3>
+              <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">{t("sshm.ports")}</h3>
               {sample.ports.length === 0 ? (
-                <p className="text-xs text-slate-400 dark:text-slate-500">Tidak ada / tidak didukung.</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">{t("sshm.portsEmpty")}</p>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
                   {sample.ports.map((p) => (
@@ -406,9 +408,9 @@ export default function SshMonitorPanel({
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">Layanan gagal</h3>
+              <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">{t("sshm.failedSvcs")}</h3>
               {sample.failedSvcs.length === 0 ? (
-                <p className="text-xs text-emerald-600 dark:text-emerald-400">✓ Tidak ada layanan yang gagal</p>
+                <p className="text-xs text-emerald-600 dark:text-emerald-400">{t("sshm.svcsOk")}</p>
               ) : (
                 <ul className="space-y-1.5">
                   {sample.failedSvcs.map((s) => (
@@ -434,42 +436,42 @@ export default function SshMonitorPanel({
                       : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
                   }`}
                 >
-                  {p.l}
+                  {t(p.k)}
                 </button>
               ))}
             </div>
             <span className="text-[11px] text-slate-400 dark:text-slate-500">
-              {metricsAt ? `metrics ${metricsAt.toLocaleTimeString("id-ID")}` : "memuat…"} · sampel /15 mnt
+              {metricsAt ? `metrics ${metricsAt.toLocaleTimeString("id-ID")}` : t("sshm.loading")} · {t("sshm.sampleFreq")}
             </span>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <MetricChart
-              title="CPU"
-              subtitle="pemakaian prosesor (%)"
+              title={t("sshm.cpu")}
+              subtitle={t("sshm.chartCpuSub")}
               yMax={100}
               format={(v) => `${v.toFixed(1)}%`}
               series={[
-                { label: "CPU", color: "#6366f1", fill: "rgba(99,102,241,0.12)", points: okSamples("cpu") },
+                { label: t("sshm.cpu"), color: "#6366f1", fill: "rgba(99,102,241,0.12)", points: okSamples("cpu") },
               ]}
             />
             <MetricChart
-              title="Memori"
-              subtitle="pemakaian RAM (%)"
+              title={t("sshm.memory")}
+              subtitle={t("sshm.chartMemSub")}
               yMax={100}
               format={(v) => `${v.toFixed(1)}%`}
               series={[
-                { label: "RAM", color: "#10b981", fill: "rgba(16,185,129,0.12)", points: okSamples("memPct") },
+                { label: t("sshm.ram"), color: "#10b981", fill: "rgba(16,185,129,0.12)", points: okSamples("memPct") },
               ]}
             />
             <div className="sm:col-span-2">
               <MetricChart
-                title="Network"
-                subtitle="kecepatan transfer"
+                title={t("sshm.netTitle")}
+                subtitle={t("sshm.chartNetSub")}
                 format={fmtRate}
                 series={[
-                  { label: "Masuk", color: "#0ea5e9", fill: "rgba(14,165,233,0.10)", points: okSamples("netInBps") },
-                  { label: "Keluar", color: "#f59e0b", points: okSamples("netOutBps") },
+                  { label: t("sshm.chartIn"), color: "#0ea5e9", fill: "rgba(14,165,233,0.10)", points: okSamples("netInBps") },
+                  { label: t("sshm.chartOut"), color: "#f59e0b", points: okSamples("netOutBps") },
                 ]}
               />
             </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 type Snapshot = {
   id: string;
@@ -32,7 +33,7 @@ type BackupFile = Record<string, unknown> & {
   created_at?: string;
 };
 
-const DAY_NAMES = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+const DAY_NAMES = ["bk.day.0", "bk.day.1", "bk.day.2", "bk.day.3", "bk.day.4", "bk.day.5", "bk.day.6"];
 
 function rupiah(n?: number): string {
   if (n === undefined || n === null) return "—";
@@ -44,6 +45,7 @@ const btnSm =
   "rounded-lg px-2.5 py-1 text-xs font-medium transition disabled:opacity-40 disabled:cursor-not-allowed";
 
 export default function BackupPanel({ serverId, hostname }: { serverId: string; hostname: string }) {
+  const { t } = useLang();
   const [snapshots, setSnapshots] = useState<Snapshot[] | null>(null);
   const [schedules, setSchedules] = useState<BackupSchedule[] | null>(null);
   const [history, setHistory] = useState<BackupFile[]>([]);
@@ -91,7 +93,7 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
     });
     const d = await res.json().catch(() => ({}));
     setBusy(false);
-    setMsg(d.ok ? { text: typeof d.data?.message === "string" ? d.data.message : "Berhasil.", ok: true } : { text: d.message ?? "Gagal", ok: false });
+    setMsg(d.ok ? { text: typeof d.data?.message === "string" ? d.data.message : t("bk.success"), ok: true } : { text: d.message ?? t("bk.fail"), ok: false });
     load();
   }
 
@@ -113,8 +115,8 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
       <div className={card}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Snapshot</h3>
-            <p className="text-xs text-slate-400">Salinan penuh kondisi server saat ini (berbayar per jam oleh depa).</p>
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("bk.snapTitle")}</h3>
+            <p className="text-xs text-slate-400">{t("bk.snapDesc")}</p>
           </div>
           <form
             className="flex gap-2"
@@ -123,8 +125,8 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
               api(
                 `/api/servers/${serverId}/snapshots`,
                 "POST",
-                { name: snapName, description: `Snapshot ${hostname}` },
-                `Buat snapshot "${snapName}"? Snapshot dikenai biaya per jam oleh depa.`,
+                { name: snapName, description: `${t("bk.snapWord")} ${hostname}` },
+                `${t("bk.confirmCreateSnap")} "${snapName}"? ${t("bk.confirmCreateSnap2")}`,
               ).then(() => setSnapName(""));
             }}
           >
@@ -132,14 +134,14 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
               required
               value={snapName}
               onChange={(e) => setSnapName(e.target.value)}
-              placeholder="nama snapshot…"
+              placeholder={t("bk.phSnapName")}
               className="w-40 rounded-lg border border-slate-300 px-3 py-1.5 text-xs outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
             />
             <button
               disabled={busy}
               className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
             >
-              + Buat
+              {t("bk.createBtn")}
             </button>
           </form>
         </div>
@@ -148,7 +150,7 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
           {snapshots === null ? (
             <div className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
           ) : snapshots.length === 0 ? (
-            <p className="text-xs text-slate-400">Belum ada snapshot.</p>
+            <p className="text-xs text-slate-400">{t("bk.noSnapshots")}</p>
           ) : (
             snapshots.map((s) => (
               <div
@@ -163,7 +165,7 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
                     </span>
                   </p>
                   <p className="text-xs text-slate-400">
-                    {s.created_at} · biaya {rupiah(s.current_hourly_price)}/jam · total {rupiah(s.current_cost)}
+                    {s.created_at} · {t("bk.cost")} {rupiah(s.current_hourly_price)}/{t("bk.perHour")} · {t("bk.total")} {rupiah(s.current_cost)}
                   </p>
                 </div>
                 <button
@@ -172,13 +174,13 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
                       `/api/servers/${serverId}/snapshots/${s.id}`,
                       "PATCH",
                       undefined,
-                      `ROLLBACK ${hostname} ke snapshot "${s.name}"?\n\nSemua perubahan setelah snapshot itu akan HILANG. Lanjutkan?`,
+                      `${t("bk.confirmRollback1")} ${hostname} ${t("bk.confirmRollback2")} "${s.name}"?\n\n${t("bk.confirmRollback3")}`,
                     )
                   }
                   disabled={busy}
                   className={`${btnSm} border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-950/40`}
                 >
-                  ⟲ Rollback
+                  {t("bk.rollback")}
                 </button>
                 <button
                   onClick={() =>
@@ -186,13 +188,13 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
                       `/api/servers/${serverId}/snapshots/${s.id}`,
                       "DELETE",
                       undefined,
-                      `Hapus snapshot "${s.name}"? Tidak bisa dibatalkan.`,
+                      `${t("bk.confirmDelSnap")} "${s.name}"? ${t("bk.confirmDelSnap2")}`,
                     )
                   }
                   disabled={busy}
                   className={`${btnSm} text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40`}
                 >
-                  Hapus
+                  {t("bk.delete")}
                 </button>
               </div>
             ))
@@ -202,8 +204,8 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
 
       {/* ===== Backup otomatis depa ===== */}
       <div className={card}>
-        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Backup otomatis (depa)</h3>
-        <p className="text-xs text-slate-400">Depa membuat arsip backup terjadwal; arsip bisa di-restore kapan saja.</p>
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("bk.autoTitle")}</h3>
+        <p className="text-xs text-slate-400">{t("bk.autoDesc")}</p>
 
         <div className="mt-4 space-y-2">
           {schedules === null ? (
@@ -222,32 +224,32 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
               }}
             >
               <div>
-                <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">Frekuensi</label>
+                <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">{t("bk.frequency")}</label>
                 <select
                   value={bkType}
                   onChange={(e) => setBkType(e.target.value as "daily" | "weekly")}
                   className="mt-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                 >
-                  <option value="daily">Harian</option>
-                  <option value="weekly">Mingguan</option>
+                  <option value="daily">{t("bk.optDaily")}</option>
+                  <option value="weekly">{t("bk.optWeekly")}</option>
                 </select>
               </div>
               {bkType === "weekly" && (
                 <div>
-                  <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">Hari</label>
+                  <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">{t("bk.dayLabel")}</label>
                   <select
                     value={bkDay}
                     onChange={(e) => setBkDay(Number(e.target.value))}
                     className="mt-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                   >
                     {DAY_NAMES.map((d, i) => (
-                      <option key={i} value={i}>{d}</option>
+                      <option key={i} value={i}>{t(d)}</option>
                     ))}
                   </select>
                 </div>
               )}
               <div>
-                <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">Jam</label>
+                <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">{t("bk.timeLabel")}</label>
                 <select
                   value={bkHour}
                   onChange={(e) => setBkHour(Number(e.target.value))}
@@ -259,7 +261,7 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
                 </select>
               </div>
               <div>
-                <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">Simpan (versi)</label>
+                <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">{t("bk.keepVersions")}</label>
                 <select
                   value={bkRetention}
                   onChange={(e) => setBkRetention(Number(e.target.value))}
@@ -274,7 +276,7 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
                 disabled={busy}
                 className="rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
               >
-                Aktifkan backup
+                {t("bk.enableBackup")}
               </button>
             </form>
           ) : (
@@ -287,10 +289,10 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
                 >
                   <div className="flex-1 text-sm text-slate-800 dark:text-slate-100">
                     {sc.schedule_type === "weekly"
-                      ? `Mingguan, ${DAY_NAMES[Number(sc.schedule_on ?? 0) % 7]} `
-                      : "Harian, "}
-                    jam {String(sc.schedule_at ?? 0).padStart(2, "0")}:00
-                    <span className="ml-2 text-xs text-slate-400">retensi {String(sc.retention ?? "?")} versi</span>
+                      ? `${t("bk.optWeekly")}, ${t(DAY_NAMES[Number(sc.schedule_on ?? 0) % 7])} `
+                      : `${t("bk.optDaily")}, `}
+                    {t("bk.atHour")} {String(sc.schedule_at ?? 0).padStart(2, "0")}:00
+                    <span className="ml-2 text-xs text-slate-400">{t("bk.retention")} {String(sc.retention ?? "?")} {t("bk.versions")}</span>
                   </div>
                   {sid && (
                     <button
@@ -299,13 +301,13 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
                           `/api/servers/${serverId}/backups/schedules/${sid}`,
                           "DELETE",
                           undefined,
-                          "Hapus jadwal backup otomatis ini?",
+                          t("bk.confirmDelSchedule"),
                         )
                       }
                       disabled={busy}
                       className={`${btnSm} text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40`}
                     >
-                      Hapus
+                      {t("bk.delete")}
                     </button>
                   )}
                 </div>
@@ -315,10 +317,10 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
         </div>
 
         {/* history */}
-        <h4 className="mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400">Arsip backup</h4>
+        <h4 className="mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400">{t("bk.archiveTitle")}</h4>
         <div className="mt-2 space-y-2">
           {history.length === 0 ? (
-            <p className="text-xs text-slate-400">Belum ada arsip backup.</p>
+            <p className="text-xs text-slate-400">{t("bk.noArchives")}</p>
           ) : (
             history.map((b, i) => {
               const bid = String(b.id ?? b.uuid ?? b.backup_uuid ?? "");
@@ -344,22 +346,22 @@ export default function BackupPanel({ serverId, hostname }: { serverId: string; 
                             `/api/servers/${serverId}/backups/${bid}`,
                             "POST",
                             undefined,
-                            `RESTORE ${hostname} dari arsip ini?\n\nIsi server akan dikembalikan ke kondisi backup. Lanjutkan?`,
+                            `${t("bk.confirmRestore1")} ${hostname} ${t("bk.confirmRestore2")}\n\n${t("bk.confirmRestore3")}`,
                           )
                         }
                         disabled={busy}
                         className={`${btnSm} border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-950/40`}
                       >
-                        ⟲ Restore
+                        {t("bk.restore")}
                       </button>
                       <button
                         onClick={() =>
-                          api(`/api/servers/${serverId}/backups/${bid}`, "DELETE", undefined, "Hapus arsip backup ini?")
+                          api(`/api/servers/${serverId}/backups/${bid}`, "DELETE", undefined, t("bk.confirmDelArchive"))
                         }
                         disabled={busy}
                         className={`${btnSm} text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40`}
                       >
-                        Hapus
+                        {t("bk.delete")}
                       </button>
                     </>
                   )}

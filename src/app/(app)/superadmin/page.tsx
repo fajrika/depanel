@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 type UserRow = {
   id: string;
@@ -25,6 +26,7 @@ const btnPrimary =
   "rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300";
 
 export default function SuperAdminPage() {
+  const { t } = useLang();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [teams, setTeams] = useState<TeamRow[]>([]);
   const [myId, setMyId] = useState("");
@@ -64,7 +66,7 @@ export default function SuperAdminPage() {
     const d = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok || d.ok === false) {
-      setMsg({ text: d.message ?? "Terjadi kesalahan", ok: false });
+      setMsg({ text: d.message ?? t("sadm.errGeneric"), ok: false });
       return false;
     }
     load();
@@ -72,7 +74,7 @@ export default function SuperAdminPage() {
   }
 
   async function impersonate(u: UserRow) {
-    if (!confirm(`Masuk sebagai ${u.name} (${u.email})?\n\nAnda akan melihat aplikasi persis seperti dia. Banner kuning akan muncul untuk kembali.`)) return;
+    if (!confirm(`${t("sadm.impConfirm1")} ${u.name} (${u.email})${t("sadm.impConfirm2")}`)) return;
     const ok = await api("/api/superadmin/impersonate", "POST", { userId: u.id });
     if (ok) window.location.href = "/";
   }
@@ -80,7 +82,7 @@ export default function SuperAdminPage() {
   if (forbidden) {
     return (
       <p className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
-        Halaman ini khusus super admin (akun pertama aplikasi).
+        {t("sadm.forbidden")}
       </p>
     );
   }
@@ -88,9 +90,9 @@ export default function SuperAdminPage() {
   return (
     <div className="space-y-10">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">⚡ Super Admin</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">⚡ {t("sadm.title")}</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Kendali penuh atas seluruh pengguna dan tim di aplikasi. Hanya Anda yang bisa membuka halaman ini.
+          {t("sadm.subtitle")}
         </p>
       </div>
 
@@ -103,7 +105,7 @@ export default function SuperAdminPage() {
 
       {/* ===== semua user ===== */}
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Semua pengguna</h2>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("sadm.usersTitle")}</h2>
 
         <form
           className={`${card} mb-4 flex flex-wrap items-end gap-3 p-5`}
@@ -112,10 +114,10 @@ export default function SuperAdminPage() {
             if (await api("/api/users", "POST", nu)) setNu({ name: "", email: "", password: "", role: "member" });
           }}
         >
-          <div><label className="block text-xs font-medium text-slate-500 dark:text-slate-400">Nama</label><input required value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} className={`${input} mt-1 w-40`} /></div>
-          <div><label className="block text-xs font-medium text-slate-500 dark:text-slate-400">Email</label><input required type="email" value={nu.email} onChange={(e) => setNu({ ...nu, email: e.target.value })} className={`${input} mt-1 w-56`} /></div>
-          <div><label className="block text-xs font-medium text-slate-500 dark:text-slate-400">Password (min. 8)</label><input required type="text" minLength={8} value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} className={`${input} mt-1 w-44`} /></div>
-          <button disabled={busy} className={btnPrimary}>+ Daftarkan user</button>
+          <div><label className="block text-xs font-medium text-slate-500 dark:text-slate-400">{t("sadm.name")}</label><input required value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} className={`${input} mt-1 w-40`} /></div>
+          <div><label className="block text-xs font-medium text-slate-500 dark:text-slate-400">{t("sadm.email")}</label><input required type="email" value={nu.email} onChange={(e) => setNu({ ...nu, email: e.target.value })} className={`${input} mt-1 w-56`} /></div>
+          <div><label className="block text-xs font-medium text-slate-500 dark:text-slate-400">{t("sadm.password")}</label><input required type="text" minLength={8} value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} className={`${input} mt-1 w-44`} /></div>
+          <button disabled={busy} className={btnPrimary}>+ {t("sadm.register")}</button>
         </form>
 
         {loading ? (
@@ -125,9 +127,9 @@ export default function SuperAdminPage() {
             <table className="w-full min-w-[820px] text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400 dark:bg-slate-800/60">
                 <tr>
-                  <th className="px-4 py-3 font-semibold">Pengguna</th>
-                  <th className="px-4 py-3 font-semibold">Tim</th>
-                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold">{t("sadm.userCol")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("sadm.teamCol")}</th>
+                  <th className="px-4 py-3 font-semibold">{t("sadm.statusCol")}</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -136,7 +138,7 @@ export default function SuperAdminPage() {
                   <tr key={u.id} className="border-t border-slate-100 align-top dark:border-slate-800">
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-800 dark:text-slate-100">
-                        {u.name} {u.id === myId && <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/60 dark:text-amber-400">super admin</span>}
+                        {u.name} {u.id === myId && <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/60 dark:text-amber-400">{t("sadm.superAdminBadge")}</span>}
                       </p>
                       <p className="text-xs text-slate-400">{u.email}</p>
                     </td>
@@ -151,29 +153,29 @@ export default function SuperAdminPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs font-medium ${u.active ? "text-emerald-600" : "text-red-500"}`}>{u.active ? "aktif" : "nonaktif"}</span>
+                      <span className={`text-xs font-medium ${u.active ? "text-emerald-600" : "text-red-500"}`}>{u.active ? t("sadm.active") : t("sadm.inactive")}</span>
                     </td>
                     <td className="px-4 py-3 text-right text-xs">
                       {u.id !== myId && (
                         <>
                           <button onClick={() => impersonate(u)} disabled={busy || !u.active} className="mr-3 font-semibold text-indigo-600 hover:underline disabled:opacity-40 dark:text-indigo-400">
-                            🎭 Masuk sebagai
+                            🎭 {t("sadm.impersonate")}
                           </button>
                           <button onClick={() => api(`/api/users/${u.id}`, "PATCH", { active: !u.active })} disabled={busy} className="mr-3 font-medium text-slate-500 hover:text-slate-900 disabled:opacity-40 dark:text-slate-400 dark:hover:text-slate-100">
-                            {u.active ? "Nonaktifkan" : "Aktifkan"}
+                            {u.active ? t("sadm.disable") : t("sadm.enable")}
                           </button>
                           <button
                             onClick={() => {
-                              const pw = prompt(`Password baru untuk ${u.email} (min. 8):`);
+                              const pw = prompt(`${t("sadm.pwPrompt1")} ${u.email} ${t("sadm.pwPrompt2")}`);
                               if (pw) api(`/api/users/${u.id}`, "PATCH", { password: pw });
                             }}
                             disabled={busy}
                             className="mr-3 font-medium text-slate-500 hover:text-slate-900 disabled:opacity-40 dark:text-slate-400 dark:hover:text-slate-100"
                           >
-                            Reset pw
+                            {t("sadm.resetPw")}
                           </button>
-                          <button onClick={() => confirm(`Hapus akun ${u.email}?`) && api(`/api/users/${u.id}`, "DELETE")} disabled={busy} className="font-medium text-red-500 hover:text-red-700 disabled:opacity-40">
-                            Hapus
+                          <button onClick={() => confirm(`${t("sadm.confirmDeleteUser1")} ${u.email}${t("sadm.confirmDeleteUser2")}`) && api(`/api/users/${u.id}`, "DELETE")} disabled={busy} className="font-medium text-red-500 hover:text-red-700 disabled:opacity-40">
+                            {t("sadm.delete")}
                           </button>
                         </>
                       )}
@@ -188,7 +190,7 @@ export default function SuperAdminPage() {
 
       {/* ===== semua tim ===== */}
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Semua tim</h2>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("sadm.allTeams")}</h2>
         {loading ? (
           <div className={`${card} h-32 animate-pulse`} />
         ) : (
@@ -199,7 +201,7 @@ export default function SuperAdminPage() {
                   <p className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
                     <span>{t.isPersonal ? "👤" : "👥"}</span>
                     <span className="truncate">{t.name}</span>
-                    <span className="text-[10px] font-normal text-slate-400">{t.accountCount} akun API</span>
+                    <span className="text-[10px] font-normal text-slate-400">{t.accountCount} {t("sadm.accountsUnit")}</span>
                   </p>
                   <div className="flex shrink-0 gap-2">
                     <button
@@ -210,14 +212,14 @@ export default function SuperAdminPage() {
                       disabled={busy}
                       className="text-xs font-medium text-indigo-600 hover:underline disabled:opacity-40 dark:text-indigo-400"
                     >
-                      Masuk
+                      {t("sadm.enter")}
                     </button>
                     <button
-                      onClick={() => confirm(`(Super admin) Hapus tim "${t.name}" beserta seluruh datanya?`) && api(`/api/superadmin/teams/${t.id}`, "DELETE")}
+                      onClick={() => confirm(`${t("sadm.delConfirm")} "${t.name}"${t("sadm.delConfirm2")}`) && api(`/api/superadmin/teams/${t.id}`, "DELETE")}
                       disabled={busy}
                       className="text-xs font-medium text-red-500 hover:underline disabled:opacity-40"
                     >
-                      Hapus
+                      {t("sadm.delete")}
                     </button>
                   </div>
                 </div>

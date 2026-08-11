@@ -2,9 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { t, lang, setLang } = useLang();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -26,16 +28,16 @@ export default function LoginPage() {
       if (!res.ok || !data.ok) {
         if (data.need2fa) {
           setNeed2fa(true);
-          setError(code ? "Kode 2FA salah — coba lagi." : "Akun ini butuh kode 2FA.");
+          setError(code ? t("login.tfaWrong") : t("login.tfaNeeded"));
           return;
         }
-        setError(data.message ?? "Gagal login");
+        setError(data.message ?? t("login.fail"));
         return;
       }
       router.push("/");
       router.refresh();
     } catch {
-      setError("Terjadi kesalahan jaringan");
+      setError(t("login.networkErr"));
     } finally {
       setLoading(false);
     }
@@ -44,8 +46,18 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <form onSubmit={submit} className="w-full max-w-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
-        <h1 className="text-lg font-semibold">⚡ Depanel</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Masuk untuk mengelola server tim.</p>
+        <div className="flex items-center justify-between">
+          <h1 className="text-lg font-semibold">⚡ Depanel</h1>
+          <button
+            type="button"
+            onClick={() => setLang(lang === "id" ? "en" : "id")}
+            title={`${t("lang.title")}: ${t(`lang.${lang}`)}`}
+            className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-bold text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+          >
+            {lang === "id" ? "ID" : "EN"}
+          </button>
+        </div>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("login.subtitle")}</p>
 
         <label className="mt-5 block text-sm font-medium">Email</label>
         <input
@@ -56,7 +68,7 @@ export default function LoginPage() {
           className="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm outline-none focus:border-slate-900"
         />
 
-        <label className="mt-4 block text-sm font-medium">Password</label>
+        <label className="mt-4 block text-sm font-medium">{t("login.password")}</label>
         <input
           type="password"
           required
@@ -67,7 +79,7 @@ export default function LoginPage() {
 
         {need2fa && (
           <>
-            <label className="mt-4 block text-sm font-medium">Kode 2FA</label>
+            <label className="mt-4 block text-sm font-medium">{t("login.tfaCode")}</label>
             <input
               inputMode="numeric"
               autoFocus
@@ -86,7 +98,7 @@ export default function LoginPage() {
           disabled={loading}
           className="mt-5 w-full rounded-md bg-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
         >
-          {loading ? "Memproses…" : "Masuk"}
+          {loading ? t("login.processing") : t("login.submit")}
         </button>
       </form>
     </div>

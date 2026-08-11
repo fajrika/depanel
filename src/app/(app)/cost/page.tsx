@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 type Row = {
   id: string;
@@ -37,6 +38,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "am
 }
 
 export default function CostPage() {
+  const { t } = useLang();
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -50,32 +52,32 @@ export default function CostPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Biaya &amp; penghematan</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{t("cost.title")}</h1>
       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-        Estimasi biaya bulanan bila server selalu menyala, dan hematnya dari penjadwalan nyala-mati.
+        {t("cost.subtitle")}
       </p>
 
       {loading ? (
         <div className="mt-5 grid gap-4 sm:grid-cols-3">{[0, 1, 2].map((i) => <div key={i} className="h-24 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />)}</div>
       ) : !data ? (
-        <p className="mt-6 text-sm text-red-600">Gagal memuat data biaya.</p>
+        <p className="mt-6 text-sm text-red-600">{t("cost.errLoad")}</p>
       ) : (
         <>
           <div className="mt-5 grid gap-4 sm:grid-cols-3">
-            <Stat label="Estimasi bila selalu on" value={rupiah(data.monthlyList)} tone="slate" />
-            <Stat label="Hemat dari jadwal / bln" value={rupiah(data.monthlySaving)} tone="emerald" />
-            <Stat label="Estimasi biaya bersih" value={rupiah(data.monthlyNet)} tone="amber" />
+            <Stat label={t("cost.statAlwaysOn")} value={rupiah(data.monthlyList)} tone="slate" />
+            <Stat label={t("cost.statSaving")} value={rupiah(data.monthlySaving)} tone="emerald" />
+            <Stat label={t("cost.statNet")} value={rupiah(data.monthlyNet)} tone="amber" />
           </div>
 
           <div className={`${card} mt-6 overflow-x-auto`}>
             <table className="w-full min-w-[560px] text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-[11px] uppercase tracking-wide text-slate-400 dark:border-slate-800">
-                  <th className="py-2 pr-4 font-medium">Server</th>
-                  <th className="py-2 pr-4 font-medium">Biaya/jam</th>
-                  <th className="py-2 pr-4 font-medium">Est/bulan</th>
-                  <th className="py-2 pr-4 font-medium">Mati terjadwal</th>
-                  <th className="py-2 font-medium">Hemat/bln</th>
+                  <th className="py-2 pr-4 font-medium">{t("cost.server")}</th>
+                  <th className="py-2 pr-4 font-medium">{t("cost.perHour")}</th>
+                  <th className="py-2 pr-4 font-medium">{t("cost.estMonth")}</th>
+                  <th className="py-2 pr-4 font-medium">{t("cost.scheduled")}</th>
+                  <th className="py-2 font-medium">{t("cost.savingPerMonth")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -88,7 +90,7 @@ export default function CostPage() {
                       {s.scheduled ? (
                         <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">{s.offPercent}%</span>
                       ) : (
-                        <span className="text-[11px] text-slate-400">tanpa jadwal</span>
+                        <span className="text-[11px] text-slate-400">{t("cost.noSchedule")}</span>
                       )}
                     </td>
                     <td className="py-2 font-medium text-emerald-600 dark:text-emerald-400">{s.monthlySaving > 0 ? rupiah(s.monthlySaving) : "—"}</td>
@@ -98,7 +100,7 @@ export default function CostPage() {
             </table>
           </div>
           <p className="mt-3 text-[11px] text-slate-400">
-            *Penghematan disimulasikan dari jadwal mingguan (sampel 30 menit) × harga per jam. Angka aktual bergantung pemakaian nyata.
+            {t("cost.footnote")}
           </p>
         </>
       )}

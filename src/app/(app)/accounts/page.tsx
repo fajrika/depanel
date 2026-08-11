@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 type Account = {
   id: string;
@@ -23,6 +24,7 @@ type Server = {
 };
 
 export default function AccountsPage() {
+  const { t } = useLang();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [servers, setServers] = useState<Server[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,7 +76,7 @@ export default function AccountsPage() {
     if (d.ok) {
       setServers((prev) => prev.map((s) => s.id === serverId ? { ...s, isActive: !current } : s));
     } else {
-      setMsg(d.message ?? "Gagal mengubah status server");
+      setMsg(d.message ?? t("acc.errToggleServer"));
     }
   }
 
@@ -90,10 +92,10 @@ export default function AccountsPage() {
     });
     const d = await res.json();
     setBusy(false);
-    if (!res.ok || !d.ok) { setMsg(d.message ?? "Gagal menyimpan"); return; }
+    if (!res.ok || !d.ok) { setMsg(d.message ?? t("acc.errSave")); return; }
     setEditId(null);
     setEditName("");
-    setMsg("Nama akun diperbarui.");
+    setMsg(t("acc.updated"));
     load();
   }
 
@@ -108,10 +110,10 @@ export default function AccountsPage() {
     });
     const d = await res.json();
     setBusy(false);
-    if (!res.ok || !d.ok) { setMsg(d.message ?? "Gagal menambah akun"); return; }
+    if (!res.ok || !d.ok) { setMsg(d.message ?? t("acc.errAdd")); return; }
     setName("");
     setApiKey("");
-    setMsg(`Akun ditambahkan, ${d.data.synced} server tersinkron.`);
+    setMsg(`${t("acc.added")} ${d.data.synced} ${t("acc.syncedServer")}.`);
     load();
   }
 
@@ -120,12 +122,12 @@ export default function AccountsPage() {
     const res = await fetch(`/api/accounts/${id}/sync`, { method: "POST" });
     const d = await res.json();
     setBusy(false);
-    setMsg(d.ok ? `Sync: ${d.data.synced} server` : `Gagal: ${d.message}`);
+    setMsg(d.ok ? `${t("acc.sync")}: ${d.data.synced} ${t("acc.serverUnit")}` : `${t("acc.syncFailed")} ${d.message}`);
     load();
   }
 
   async function remove(id: string, name: string) {
-    if (!confirm(`Hapus akun "${name}" beserta data server-nya dari panel?`)) return;
+    if (!confirm(`${t("acc.confirmDelete1")} "${name}" ${t("acc.confirmDelete2")}`)) return;
     setBusy(true);
     await fetch(`/api/accounts/${id}`, { method: "DELETE" });
     setBusy(false);
@@ -135,23 +137,23 @@ export default function AccountsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Akun API depa</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{t("acc.title")}</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          API key disimpan terenkripsi di server. Pilih server yang aktif untuk di-manage oleh anggota tim.
+          {t("acc.subtitle")}
         </p>
       </div>
 
       <form onSubmit={add} className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div>
-          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">Nama akun</label>
-          <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="mis. Depa Utama" className="mt-1 w-52 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300" />
+          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">{t("acc.name")}</label>
+          <input required value={name} onChange={(e) => setName(e.target.value)} placeholder={t("acc.namePlaceholder")} className="mt-1 w-52 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">API key</label>
-          <input required value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="x-apikey depa" className="mt-1 w-72 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300" />
+          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">{t("acc.apiKey")}</label>
+          <input required value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={t("acc.apiKeyPlaceholder")} className="mt-1 w-72 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300" />
         </div>
         <button type="submit" disabled={busy} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300">
-          {busy ? "…" : "Tambah & sync"}
+          {busy ? "…" : t("acc.addAndSync")}
         </button>
       </form>
 
@@ -161,7 +163,7 @@ export default function AccountsPage() {
         <div className="h-20 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />
       ) : accounts.length === 0 ? (
         <p className="rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 p-8 text-center text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-900/40">
-          Belum ada akun. Tambahkan API key depa untuk memulai.
+          {t("acc.empty")}
         </p>
       ) : (
         <div className="space-y-3">
@@ -176,8 +178,8 @@ export default function AccountsPage() {
                   {editId === a.id ? (
                     <form onSubmit={saveEdit} className="flex items-center gap-2">
                       <input autoFocus required value={editName} onChange={(e) => setEditName(e.target.value)} className="w-48 rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
-                      <button type="submit" disabled={busy} className="text-sm font-medium text-slate-700 hover:underline dark:text-slate-200">Simpan</button>
-                      <button type="button" onClick={() => setEditId(null)} className="text-sm text-slate-400 hover:underline">Batal</button>
+                      <button type="submit" disabled={busy} className="text-sm font-medium text-slate-700 hover:underline dark:text-slate-200">{t("acc.save")}</button>
+                      <button type="button" onClick={() => setEditId(null)} className="text-sm text-slate-400 hover:underline">{t("acc.cancel")}</button>
                     </form>
                   ) : (
                     <div className="min-w-0 flex-1">
@@ -187,17 +189,17 @@ export default function AccountsPage() {
                         <span className="font-mono text-xs text-slate-400">{a.maskedKey}</span>
                       </div>
                       <p className="mt-0.5 text-xs text-slate-400">
-                        {activeCount}/{accServers.length} server aktif · sync: {a.lastSyncedAt ? new Date(a.lastSyncedAt).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "—"}
+                        {activeCount}/{accServers.length} {t("acc.serverActive")} · {t("acc.sync")}: {a.lastSyncedAt ? new Date(a.lastSyncedAt).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "—"}
                       </p>
                     </div>
                   )}
                   <div className="flex shrink-0 gap-2 text-xs">
                     <button onClick={() => toggleExpand(a.id)} className="rounded-lg px-2.5 py-1 font-medium text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
-                      {isExpanded ? "▾ Sembunyikan" : `▸ Server (${accServers.length})`}
+                      {isExpanded ? `▾ ${t("acc.hide")}` : `▸ ${t("acc.server")} (${accServers.length})`}
                     </button>
-                    <button onClick={() => sync(a.id)} disabled={busy} className="rounded-lg px-2.5 py-1 font-medium text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">Sync</button>
-                    <button onClick={() => { setEditId(a.id); setEditName(a.name); }} disabled={busy} className="rounded-lg px-2.5 py-1 font-medium text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">Edit</button>
-                    <button onClick={() => remove(a.id, a.name)} disabled={busy} className="rounded-lg px-2.5 py-1 font-medium text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950">Hapus</button>
+                    <button onClick={() => sync(a.id)} disabled={busy} className="rounded-lg px-2.5 py-1 font-medium text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">{t("acc.sync")}</button>
+                    <button onClick={() => { setEditId(a.id); setEditName(a.name); }} disabled={busy} className="rounded-lg px-2.5 py-1 font-medium text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">{t("acc.edit")}</button>
+                    <button onClick={() => remove(a.id, a.name)} disabled={busy} className="rounded-lg px-2.5 py-1 font-medium text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950">{t("acc.delete")}</button>
                   </div>
                 </div>
 
@@ -205,7 +207,7 @@ export default function AccountsPage() {
                 {isExpanded && (
                   <div className="border-t border-slate-100 px-4 py-3 dark:border-slate-800">
                     {accServers.length === 0 ? (
-                      <p className="text-xs text-slate-400">Tidak ada server. Klik Sync untuk mengambil dari depa.</p>
+                      <p className="text-xs text-slate-400">{t("acc.noServers")}</p>
                     ) : (
                       <div className="space-y-1.5">
                         {accServers.map((s) => {
@@ -215,7 +217,7 @@ export default function AccountsPage() {
                             <div key={s.id} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition hover:bg-slate-50 dark:hover:bg-slate-800/50">
                               <button
                                 onClick={() => toggleServerActive(s.id, s.isActive)}
-                                title={s.isActive ? "Nonaktifkan server ini" : "Aktifkan server ini"}
+                                title={s.isActive ? t("acc.disableServer") : t("acc.enableServer")}
                                 className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${s.isActive ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"}`}
                               >
                                 <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${s.isActive ? "translate-x-[18px]" : "translate-x-[2px]"}`} />

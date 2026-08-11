@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 type Props = {
   sshId: string;
@@ -12,6 +13,7 @@ type Props = {
 };
 
 export default function SshTerminal({ sshId, name, host, username, port, onClose }: Props) {
+  const { t } = useLang();
   const termRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"connecting" | "connected" | "disconnected" | "error">("connecting");
   const [errorMsg, setErrorMsg] = useState("");
@@ -96,7 +98,7 @@ export default function SshTerminal({ sshId, name, host, username, port, onClose
       ws.onerror = () => {
         if (!disposed) {
           setStatus("error");
-          setErrorMsg("WebSocket server tidak berjalan. Jalankan: npm run dev:ws atau npm run all");
+          setErrorMsg(t("ssht.wsErr"));
         }
       };
 
@@ -148,7 +150,7 @@ export default function SshTerminal({ sshId, name, host, username, port, onClose
           <span className="text-sm font-medium text-slate-200">{name}</span>
           <span className="text-xs text-slate-500">{username}@{host}:{port}</span>
         </div>
-        <button onClick={onClose} className="rounded-lg px-2.5 py-1 text-xs text-slate-400 transition hover:bg-slate-700 hover:text-slate-200">✕ Tutup</button>
+        <button onClick={onClose} className="rounded-lg px-2.5 py-1 text-xs text-slate-400 transition hover:bg-slate-700 hover:text-slate-200">{t("ssht.close")}</button>
       </div>
 
       {/* Terminal */}
@@ -157,18 +159,18 @@ export default function SshTerminal({ sshId, name, host, username, port, onClose
         {status === "error" && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0f172a]/70">
             <div className="rounded-xl bg-red-600 px-6 py-4 text-center shadow-lg">
-              <p className="mb-2 text-sm font-semibold text-white">Koneksi gagal</p>
+              <p className="mb-2 text-sm font-semibold text-white">{t("ssht.connFail")}</p>
               <p className="mb-3 max-w-md text-xs text-red-100">{errorMsg}</p>
-              <button onClick={onClose} className="rounded-lg bg-white/20 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/30">Tutup</button>
+              <button onClick={onClose} className="rounded-lg bg-white/20 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/30">{t("ssht.closeBtn")}</button>
             </div>
           </div>
         )}
         {status === "disconnected" && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0f172a]/70">
             <div className="rounded-xl bg-red-600 px-6 py-4 text-center shadow-lg">
-              <p className="mb-2 text-sm font-semibold text-white">⚠️ Koneksi terputus</p>
-              <p className="mb-3 text-xs text-red-100">Sesi SSH berakhir atau sudah lama tidak diakses.</p>
-              <button onClick={onClose} className="rounded-lg bg-white/20 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/30">Tutup</button>
+              <p className="mb-2 text-sm font-semibold text-white">{t("ssht.disconnected")}</p>
+              <p className="mb-3 text-xs text-red-100">{t("ssht.discHint")}</p>
+              <button onClick={onClose} className="rounded-lg bg-white/20 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/30">{t("ssht.closeBtn")}</button>
             </div>
           </div>
         )}

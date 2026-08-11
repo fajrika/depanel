@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useLang } from "@/lib/i18n";
 import TopupPanel from "@/components/TopupPanel";
 
 type BillingSummary = {
@@ -58,6 +59,7 @@ function rows<T>(p: Paged<T>): T[] {
 }
 
 export default function BillingPage() {
+  const { t } = useLang();
   const [accounts, setAccounts] = useState<AccountEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
@@ -70,7 +72,7 @@ export default function BillingPage() {
       .then((r) => r.json())
       .then((d) => {
         if (d.ok) setAccounts(d.data ?? []);
-        else setError(d.message ?? "Gagal memuat");
+        else setError(d.message ?? t("bil.errLoad"));
       })
       .finally(() => setLoading(false));
   }, []);
@@ -88,7 +90,7 @@ export default function BillingPage() {
     const d = await res.json();
     setDetailLoading(false);
     if (d.ok) setDetail(d.data);
-    else setError(d.message ?? "Gagal memuat rincian");
+    else setError(d.message ?? t("bil.errDetail"));
   }
 
   // ===== rincian satu akun =====
@@ -103,10 +105,10 @@ export default function BillingPage() {
           }}
           className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
         >
-          ← semua akun depa
+          ← {t("bil.backAll")}
         </button>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-          {detail?.accountName ?? "Rincian saldo"}
+          {detail?.accountName ?? t("bil.detailTitle")}
         </h1>
 
         {error && (
@@ -128,16 +130,16 @@ export default function BillingPage() {
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {[
                   // actual_balance = kredit tercatat − biaya berjalan → sama dengan angka di web depa
-                  { l: "Saldo", v: rupiah(s.actual_balance), sub: `kredit tercatat ${rupiah(s.current_balance)}` },
-                  { l: "Biaya bulan ini", v: rupiah(s.current_cost), sub: "berjalan" },
-                  { l: "Biaya per jam", v: rupiah(s.current_hour_cost), sub: "saat ini" },
+                  { l: t("bil.balance"), v: rupiah(s.actual_balance), sub: `${t("bil.subCredit")} ${rupiah(s.current_balance)}` },
+                  { l: t("bil.monthCost"), v: rupiah(s.current_cost), sub: t("bil.running") },
+                  { l: t("bil.hourCost"), v: rupiah(s.current_hour_cost), sub: t("bil.now") },
                   {
-                    l: "Estimasi sisa hari",
+                    l: t("bil.estDays"),
                     v:
                       s.actual_balance && s.current_hour_cost && s.current_hour_cost > 0
-                        ? `${Math.floor(s.actual_balance / s.current_hour_cost / 24)} hari`
+                        ? `${Math.floor(s.actual_balance / s.current_hour_cost / 24)} ${t("bil.daysUnit")}`
                         : "—",
-                    sub: "dengan pemakaian sekarang",
+                    sub: t("bil.estSub"),
                   },
                 ].map((x) => (
                   <div key={x.l} className={`${card} p-5`}>
@@ -154,19 +156,19 @@ export default function BillingPage() {
 
             {/* laporan tagihan */}
             <div className={card}>
-              <h2 className="px-5 pt-4 text-sm font-semibold text-slate-800 dark:text-slate-100">Laporan tagihan</h2>
+              <h2 className="px-5 pt-4 text-sm font-semibold text-slate-800 dark:text-slate-100">{t("bil.reportsTitle")}</h2>
               <div className="mt-2 overflow-x-auto">
                 <table className="w-full min-w-[560px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 dark:border-slate-800">
-                      <th className={th}>Periode</th>
-                      <th className={th}>Status</th>
-                      <th className={`${th} text-right`}>Total</th>
+                      <th className={th}>{t("bil.period")}</th>
+                      <th className={th}>{t("bil.status")}</th>
+                      <th className={`${th} text-right`}>{t("bil.total")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows<ReportRow>(detail.reports).length === 0 ? (
-                      <tr><td className={`${td} text-slate-400`} colSpan={3}>Belum ada laporan.</td></tr>
+                      <tr><td className={`${td} text-slate-400`} colSpan={3}>{t("bil.noReports")}</td></tr>
                     ) : (
                       rows<ReportRow>(detail.reports).map((r) => (
                         <tr key={r.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50">
@@ -187,22 +189,22 @@ export default function BillingPage() {
 
             {/* riwayat top-up */}
             <div className={card}>
-              <h2 className="px-5 pt-4 text-sm font-semibold text-slate-800 dark:text-slate-100">Riwayat top-up</h2>
+              <h2 className="px-5 pt-4 text-sm font-semibold text-slate-800 dark:text-slate-100">{t("bil.topupHistory")}</h2>
               <div className="mt-2 overflow-x-auto">
                 <table className="w-full min-w-[560px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 dark:border-slate-800">
-                      <th className={th}>Invoice</th>
-                      <th className={th}>Deskripsi</th>
-                      <th className={th}>Metode</th>
-                      <th className={th}>Status</th>
-                      <th className={`${th} text-right`}>Jumlah</th>
-                      <th className={th}>Waktu</th>
+                      <th className={th}>{t("bil.invoice")}</th>
+                      <th className={th}>{t("bil.desc")}</th>
+                      <th className={th}>{t("bil.method")}</th>
+                      <th className={th}>{t("bil.status")}</th>
+                      <th className={`${th} text-right`}>{t("bil.amount")}</th>
+                      <th className={th}>{t("bil.time")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows<DepositRow>(detail.deposits).length === 0 ? (
-                      <tr><td className={`${td} text-slate-400`} colSpan={6}>Belum ada top-up.</td></tr>
+                      <tr><td className={`${td} text-slate-400`} colSpan={6}>{t("bil.noTopup")}</td></tr>
                     ) : (
                       rows<DepositRow>(detail.deposits).map((r) => (
                         <tr key={r.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50">
@@ -216,7 +218,7 @@ export default function BillingPage() {
                           </td>
                           <td className={`${td} text-right tabular-nums`}>
                             {rupiah(r.detail?.amount)}
-                            {r.detail?.vat ? <span className="block text-[10px] text-slate-400">+PPN {rupiah(r.detail.vat)}</span> : null}
+                            {r.detail?.vat ? <span className="block text-[10px] text-slate-400">{t("bil.ppn")} {rupiah(r.detail.vat)}</span> : null}
                           </td>
                           <td className={`${td} whitespace-nowrap text-xs`}>{r.created_at}</td>
                         </tr>
@@ -229,27 +231,27 @@ export default function BillingPage() {
 
             {/* riwayat kredit */}
             <div className={card}>
-              <h2 className="px-5 pt-4 text-sm font-semibold text-slate-800 dark:text-slate-100">Riwayat kredit (mutasi saldo)</h2>
+              <h2 className="px-5 pt-4 text-sm font-semibold text-slate-800 dark:text-slate-100">{t("bil.creditTitle")}</h2>
               <div className="mt-2 overflow-x-auto">
                 <table className="w-full min-w-[560px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 dark:border-slate-800">
-                      <th className={th}>Tipe</th>
-                      <th className={th}>Deskripsi</th>
-                      <th className={`${th} text-right`}>Jumlah</th>
-                      <th className={`${th} text-right`}>Saldo setelah</th>
-                      <th className={th}>Waktu</th>
+                      <th className={th}>{t("bil.type")}</th>
+                      <th className={th}>{t("bil.desc")}</th>
+                      <th className={`${th} text-right`}>{t("bil.amount")}</th>
+                      <th className={`${th} text-right`}>{t("bil.balanceAfter")}</th>
+                      <th className={th}>{t("bil.time")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows<CreditRow>(detail.credit).length === 0 ? (
-                      <tr><td className={`${td} text-slate-400`} colSpan={5}>Belum ada mutasi.</td></tr>
+                      <tr><td className={`${td} text-slate-400`} colSpan={5}>{t("bil.noCredit")}</td></tr>
                     ) : (
                       rows<CreditRow>(detail.credit).map((r) => (
                         <tr key={r.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50">
                           <td className={td}>
                             <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${r.type === "Add" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400" : "bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-400"}`}>
-                              {r.type === "Add" ? "+ masuk" : "− keluar"}
+                              {r.type === "Add" ? `+ ${t("bil.creditIn")}` : `− ${t("bil.creditOut")}`}
                             </span>
                           </td>
                           <td className={`${td} max-w-md`}>{r.description}</td>
@@ -272,9 +274,9 @@ export default function BillingPage() {
   // ===== pilih akun =====
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Saldo & tagihan</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{t("bil.title")}</h1>
       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-        Pilih profil akun depa untuk melihat rincian saldo, top-up, mutasi kredit, dan laporan tagihan.
+        {t("bil.subtitle")}
       </p>
 
       {error && (
@@ -290,7 +292,7 @@ export default function BillingPage() {
           ))}
         </div>
       ) : accounts.length === 0 ? (
-        <p className="mt-5 text-sm text-slate-400">Belum ada akun depa.</p>
+        <p className="mt-5 text-sm text-slate-400">{t("bil.noAccounts")}</p>
       ) : (
         <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {accounts.map((a, i) => (
@@ -318,7 +320,7 @@ export default function BillingPage() {
                     {rupiah(a.summary?.actual_balance)}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
-                    biaya/jam {rupiah(a.summary?.current_hour_cost)} · bulan ini {rupiah(a.summary?.current_cost)}
+                    {t("bil.costPerHour")} {rupiah(a.summary?.current_hour_cost)} · {t("bil.monthThis")} {rupiah(a.summary?.current_cost)}
                   </p>
                 </>
               )}

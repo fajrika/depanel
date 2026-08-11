@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLang } from "@/lib/i18n";
 import TwoFactorSection from "@/components/TwoFactorSection";
 
 const input =
@@ -11,6 +12,7 @@ const btn =
   "rounded-lg bg-slate-900 px-5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300";
 
 export default function ProfilePage() {
+  const { t } = useLang();
   const [me, setMe] = useState<{ name: string; email: string; role: string; uiLayout?: string } | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -46,7 +48,7 @@ export default function ProfilePage() {
     const d = await res.json().catch(() => ({}));
     setBusy(null);
     if (!res.ok || !d.ok) {
-      setMsg({ text: d.message ?? "Gagal menyimpan", ok: false });
+      setMsg({ text: d.message ?? t("prof.errSave"), ok: false });
       return false;
     }
     if (d.data) {
@@ -60,30 +62,30 @@ export default function ProfilePage() {
   async function saveInfo(e: React.FormEvent) {
     e.preventDefault();
     if (await patch({ name, email }, "info")) {
-      setMsg({ text: "Profil tersimpan.", ok: true });
+      setMsg({ text: t("prof.saved"), ok: true });
     }
   }
 
   async function savePassword(e: React.FormEvent) {
     e.preventDefault();
     if (newPassword !== confirm) {
-      setMsg({ text: "Konfirmasi password tidak sama", ok: false });
+      setMsg({ text: t("prof.pwMismatch"), ok: false });
       return;
     }
     if (await patch({ currentPassword, newPassword }, "password")) {
       setCurrentPassword("");
       setNewPassword("");
       setConfirm("");
-      setMsg({ text: "Password berhasil diganti.", ok: true });
+      setMsg({ text: t("prof.pwChanged"), ok: true });
     }
   }
 
   return (
     <div className="mx-auto max-w-xl">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Profil saya</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{t("prof.title")}</h1>
       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-        Ubah nama, email, dan password akun Anda.
-        {me?.role === "admin" && " Anda admin — akun anggota lain dikelola lewat menu Tim."}
+        {t("prof.subtitle1")}
+        {me?.role === "admin" && t("prof.adminNote")}
       </p>
 
       {msg && (
@@ -101,33 +103,33 @@ export default function ProfilePage() {
 
       {/* Info akun */}
       <form onSubmit={saveInfo} className={`${card} mt-5`}>
-        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Informasi akun</h2>
+        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("prof.infoTitle")}</h2>
         <div className="mt-4 space-y-4">
           <div>
-            <label className={label}>Nama</label>
+            <label className={label}>{t("prof.name")}</label>
             <input required value={name} onChange={(e) => setName(e.target.value)} className={input} />
           </div>
           <div>
-            <label className={label}>Email</label>
+            <label className={label}>{t("prof.email")}</label>
             <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={input} />
-            <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">Email dipakai untuk login.</p>
+            <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">{t("prof.emailHint")}</p>
           </div>
         </div>
         <div className="mt-5 flex justify-end">
           <button disabled={busy === "info"} className={btn}>
-            {busy === "info" ? "Menyimpan…" : "Simpan profil"}
+            {busy === "info" ? t("prof.saving") : t("prof.saveBtn")}
           </button>
         </div>
       </form>
 
       {/* Tampilan menu */}
       <div className={`${card} mt-5`}>
-        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Tampilan menu</h2>
-        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Pilih posisi menu navigasi aplikasi.</p>
+        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("prof.layoutTitle")}</h2>
+        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{t("prof.layoutSubtitle")}</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {[
-            { v: "topbar", l: "Top bar", d: "Menu horizontal di bagian atas", icon: "▬" },
-            { v: "sidebar", l: "Side bar", d: "Menu vertikal di sisi kiri", icon: "▮" },
+            { v: "topbar", l: t("prof.topbar"), d: t("prof.topbarDesc"), icon: "▬" },
+            { v: "sidebar", l: t("prof.sidebar"), d: t("prof.sidebarDesc"), icon: "▮" },
           ].map((o) => (
             <button
               key={o.v}
@@ -135,7 +137,7 @@ export default function ProfilePage() {
               onClick={async () => {
                 setUiLayout(o.v);
                 if (await patch({ uiLayout: o.v }, "layout")) {
-                  setMsg({ text: `Tampilan diubah ke ${o.l}.`, ok: true });
+                  setMsg({ text: `${t("prof.layoutChanged1")} ${o.l}${t("prof.layoutChanged2")}`, ok: true });
                 }
               }}
               disabled={busy === "layout"}
@@ -157,10 +159,10 @@ export default function ProfilePage() {
 
       {/* Ganti password */}
       <form onSubmit={savePassword} className={`${card} mt-5`}>
-        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Ganti password</h2>
+        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("prof.pwTitle")}</h2>
         <div className="mt-4 space-y-4">
           <div>
-            <label className={label}>Password saat ini</label>
+            <label className={label}>{t("prof.pwCurrent")}</label>
             <input
               required
               type="password"
@@ -172,7 +174,7 @@ export default function ProfilePage() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className={label}>Password baru (min. 8)</label>
+              <label className={label}>{t("prof.pwNew")}</label>
               <input
                 required
                 type="password"
@@ -184,7 +186,7 @@ export default function ProfilePage() {
               />
             </div>
             <div>
-              <label className={label}>Ulangi password baru</label>
+              <label className={label}>{t("prof.pwConfirm")}</label>
               <input
                 required
                 type="password"
@@ -199,7 +201,7 @@ export default function ProfilePage() {
         </div>
         <div className="mt-5 flex justify-end">
           <button disabled={busy === "password"} className={btn}>
-            {busy === "password" ? "Menyimpan…" : "Ganti password"}
+            {busy === "password" ? t("prof.saving") : t("prof.pwBtn")}
           </button>
         </div>
       </form>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 const card = "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900";
 
@@ -26,6 +27,7 @@ function findPassword(obj: unknown): string | null {
 }
 
 export default function ConsolePanel({ serverId, hostname }: { serverId: string; hostname: string }) {
+  const { t } = useLang();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -38,7 +40,7 @@ export default function ConsolePanel({ serverId, hostname }: { serverId: string;
     const d = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok || !d.ok) {
-      setErr(d.message ?? "Gagal membuka console");
+      setErr(d.message ?? t("cons.errOpen"));
       return;
     }
 
@@ -46,7 +48,7 @@ export default function ConsolePanel({ serverId, hostname }: { serverId: string;
     const password = findPassword(d.data);
 
     if (!wsUrl) {
-      setErr("URL WebSocket tidak ditemukan dalam respons depa");
+      setErr(t("cons.errNoWs"));
       setInfo(JSON.stringify(d.data, null, 2));
       return;
     }
@@ -57,22 +59,22 @@ export default function ConsolePanel({ serverId, hostname }: { serverId: string;
       password: btoa(password ?? ""),
     });
     window.open(`/console.html?${params.toString()}`, "_blank", "noopener,noreferrer");
-    setInfo("Console dibuka di tab baru. Jika tidak terbuka, pastikan popup blocker dimatikan.");
+    setInfo(t("cons.opened"));
   }
 
   return (
     <div className="animate-fade-up space-y-4">
       <div className={card}>
-        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Web console — {hostname}</h3>
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("cons.title")} — {hostname}</h3>
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          Buka sesi console (VNC/serial) langsung ke server via depa. Berguna saat SSH mati tapi server masih hidup.
+          {t("cons.subtitle")}
         </p>
         <button
           onClick={open}
           disabled={busy}
           className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
         >
-          {busy ? "Membuka…" : "🖥️ Buka console"}
+          {busy ? t("cons.opening") : t("cons.openBtn")}
         </button>
 
         {err && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-300">{err}</p>}

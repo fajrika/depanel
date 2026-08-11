@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import ServerMonitor, { type PanelTab } from "@/components/ServerMonitor";
 import SshMonitorPanel, { type SshLastSample } from "@/components/SshMonitorPanel";
+import { useLang } from "@/lib/i18n";
 
 const SshTerminal = dynamic(() => import("@/components/SshTerminal"), { ssr: false });
 
@@ -59,6 +60,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function SshStatus({ ok }: { ok: boolean | null }) {
+  const { t } = useLang();
   const on = ok === true;
   const off = ok === false;
   const dot = on ? "bg-emerald-500" : off ? "bg-red-500" : "bg-slate-400";
@@ -70,7 +72,7 @@ function SshStatus({ ok }: { ok: boolean | null }) {
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${cls}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
-      {ok === true ? "Hidup" : ok === false ? "Gagal" : "Belum disampling"}
+      {ok === true ? t("dash.sshOk") : ok === false ? t("dash.sshFail") : t("dash.sshUnsamp")}
     </span>
   );
 }
@@ -111,6 +113,7 @@ function Toggle({
 }
 
 export default function Dashboard() {
+  const { t } = useLang();
   const [servers, setServers] = useState<Server[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -143,7 +146,7 @@ export default function Dashboard() {
   async function bulkPower(action: "start" | "stop" | "restart") {
     const ids = [...picked];
     if (!ids.length) return;
-    if (action === "stop" && !confirm(`Matikan ${ids.length} server terpilih?`)) return;
+    if (action === "stop" && !confirm(`${t("dash.confirmStopBulk")} ${ids.length} ${t("dash.selectedServers")}?`)) return;
     setBusy("bulk");
     setMsg(null);
     const res = await fetch("/api/servers/bulk-power", {
@@ -155,10 +158,10 @@ export default function Dashboard() {
     setBusy(null);
     if (d.ok) {
       const okN = (d.data ?? []).filter((r: { ok: boolean }) => r.ok).length;
-      setMsg({ text: `Aksi masal ${action}: ${okN}/${ids.length} berhasil.`, ok: okN === ids.length });
+      setMsg({ text: `${t("dash.bulkAction")} ${action}: ${okN}/${ids.length} ${t("dash.bulkOk")}.`, ok: okN === ids.length });
       setPicked(new Set());
     } else {
-      setMsg({ text: `Aksi masal gagal: ${d.message}`, ok: false });
+      setMsg({ text: `${t("dash.bulkFail")} ${d.message}`, ok: false });
     }
     load();
   }
@@ -246,7 +249,7 @@ export default function Dashboard() {
   }
 
   async function power(s: Server, action: "start" | "stop" | "restart") {
-    if (action === "stop" && s.isProduction && !confirm(`${s.hostname} ditandai PRODUCTION. Yakin matikan manual?`)) return;
+    if (action === "stop" && s.isProduction && !confirm(`${s.hostname} ${t("dash.confirmProd")}`)) return;
     setBusy(s.id + action);
     setMsg(null);
     const res = await fetch(`/api/servers/${s.id}/power`, {
@@ -256,7 +259,7 @@ export default function Dashboard() {
     });
     const d = await res.json();
     setBusy(null);
-    setMsg(d.ok ? { text: `${s.hostname}: ${action} berhasil`, ok: true } : { text: `${s.hostname}: ${d.message}`, ok: false });
+    setMsg(d.ok ? { text: `${s.hostname}: ${action} ${t("dash.powerOk")}`, ok: true } : { text: `${s.hostname}: ${d.message}`, ok: false });
     load();
   }
 
@@ -306,12 +309,12 @@ export default function Dashboard() {
       const failed = d.data.filter((r: { ok: boolean }) => !r.ok);
       setMsg({
         text:
-          `Sync selesai — ${total} server dari ${d.data.length} akun.` +
-          (failed.length ? ` Gagal: ${failed.map((r: { accountName: string }) => r.accountName).join(", ")}` : ""),
+          `${t("dash.syncDone")} ${total} ${t("dash.serverUnit")} ${t("dash.from")} ${d.data.length} ${t("dash.accountUnit")}.` +
+          (failed.length ? ` ${t("dash.syncFailed")} ${failed.map((r: { accountName: string }) => r.accountName).join(", ")}` : ""),
         ok: failed.length === 0,
       });
     } else {
-      setMsg({ text: `Sync gagal: ${d.message}`, ok: false });
+      setMsg({ text: `${t("dash.syncErr")} ${d.message}`, ok: false });
     }
     load();
   }
@@ -329,9 +332,9 @@ export default function Dashboard() {
       {/* Page header */}
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Server</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{t("dash.title")}</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            {loading ? "Memuat…" : `${teamName ? teamName + " · " : ""}${servers.length} server · ${running} menyala`}
+            {loading ? t("dash.loading") : `${teamName ? teamName + " · " : ""}${servers.length} ${t("dash.serverUnit")} · ${running} ${t("dash.onUnit")}`}
           </p>
         </div>
         <button
@@ -342,7 +345,7 @@ export default function Dashboard() {
           <svg viewBox="0 0 16 16" className={`h-3.5 w-3.5 ${busy === "sync-all" ? "animate-spin" : ""}`} fill="currentColor">
             <path d="M8 3a5 5 0 1 0 4.546 2.914.75.75 0 0 1 1.364-.626A6.5 6.5 0 1 1 8 1.5v-1a.25.25 0 0 1 .41-.192l2.36 1.966a.25.25 0 0 1 0 .384L8.41 4.624A.25.25 0 0 1 8 4.432V3Z" />
           </svg>
-          {busy === "sync-all" ? "Menyinkronkan…" : "Sync depa"}
+          {busy === "sync-all" ? t("dash.syncing") : t("dash.syncDepa")}
         </button>
       </div>
 
@@ -364,12 +367,12 @@ export default function Dashboard() {
       {/* F5: bar aksi masal */}
       {isStaff && picked.size > 0 && (
         <div className="mb-5 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 dark:border-indigo-900 dark:bg-indigo-950/40">
-          <span className="text-sm font-medium text-indigo-800 dark:text-indigo-300">{picked.size} server terpilih</span>
+          <span className="text-sm font-medium text-indigo-800 dark:text-indigo-300">{picked.size} {t("dash.selectedServers")}</span>
           <div className="ml-auto flex flex-wrap gap-1.5">
-            <button onClick={() => bulkPower("start")} disabled={!!busy} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50">▶ Start semua</button>
-            <button onClick={() => bulkPower("stop")} disabled={!!busy} className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-600 disabled:opacity-50 dark:bg-slate-700">■ Stop semua</button>
-            <button onClick={() => bulkPower("restart")} disabled={!!busy} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">↻ Restart semua</button>
-            <button onClick={() => setPicked(new Set())} className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200">Batal</button>
+            <button onClick={() => bulkPower("start")} disabled={!!busy} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50">{t("dash.startAll")}</button>
+            <button onClick={() => bulkPower("stop")} disabled={!!busy} className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-600 disabled:opacity-50 dark:bg-slate-700">{t("dash.stopAll")}</button>
+            <button onClick={() => bulkPower("restart")} disabled={!!busy} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">{t("dash.restartAll")}</button>
+            <button onClick={() => setPicked(new Set())} className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200">{t("dash.cancel")}</button>
           </div>
         </div>
       )}
@@ -386,9 +389,9 @@ export default function Dashboard() {
       ) : servers.length === 0 && sshList.length === 0 ? (
         <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 p-10 text-center dark:border-slate-700 dark:bg-slate-900/50">
           <p className="text-3xl">🖥️</p>
-          <p className="mt-2 font-medium text-slate-700 dark:text-slate-200">Belum ada server</p>
+          <p className="mt-2 font-medium text-slate-700 dark:text-slate-200">{t("dash.noServers")}</p>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Tambahkan API key depa di menu <b>Akun API</b>, lalu klik <b>Sync depa</b>.
+            {t("dash.emptyHint1")} <b>{t("dash.accountsMenu")}</b> {t("dash.emptyHint2")} <b>{t("dash.syncDepa")}</b>.
           </p>
         </div>
       ) : (
@@ -398,7 +401,7 @@ export default function Dashboard() {
           <div className={`w-full shrink-0 lg:w-[400px] ${selected ? "hidden lg:block" : ""}`}>
             {servers.length > 0 && (
               <p className="mb-3 px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Depa API
+                {t("dash.depaApi")}
               </p>
             )}
             {Object.entries(groups).map(([account, list]) => {
@@ -416,7 +419,7 @@ export default function Dashboard() {
                   </span>
                   <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{account}</span>
                   <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500">
-                    {list.length} server · {groupRunning} menyala
+                    {list.length} {t("dash.serverUnit")} · {groupRunning} {t("dash.onUnit")}
                   </span>
                 </button>
                 <div className={`space-y-4 overflow-hidden transition-all duration-300 ${isCollapsed ? "max-h-0 opacity-0" : "max-h-[4000px] opacity-100"}`}>
@@ -447,7 +450,7 @@ export default function Dashboard() {
                                 checked={picked.has(s.id)}
                                 onChange={() => togglePick(s.id)}
                                 onClick={(e) => e.stopPropagation()}
-                                title="Pilih untuk aksi masal"
+                                title={t("dash.pickBulk")}
                                 className="mt-1 h-3.5 w-3.5 accent-indigo-600"
                               />
                             )}
@@ -457,7 +460,7 @@ export default function Dashboard() {
                               <StatusBadge status={s.status} />
                               {s.isProduction && (
                                 <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 ring-1 ring-red-200 dark:bg-red-950/60 dark:text-red-400 dark:ring-red-900">
-                                  prod
+                                  {t("dash.prodBadge")}
                                 </span>
                               )}
                             </div>
@@ -475,7 +478,7 @@ export default function Dashboard() {
                                 <button
                                   onClick={() => reorder(s, -1)}
                                   disabled={!!busy || i === 0}
-                                  title="Naikkan urutan"
+                                  title={t("dash.moveUp")}
                                   className="flex h-4 w-5 items-center justify-center rounded text-[9px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                                 >
                                   ▲
@@ -483,16 +486,16 @@ export default function Dashboard() {
                                 <button
                                   onClick={() => reorder(s, 1)}
                                   disabled={!!busy || i === list.length - 1}
-                                  title="Turunkan urutan"
+                                  title={t("dash.moveDown")}
                                   className="flex h-4 w-5 items-center justify-center rounded text-[9px] text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                                 >
                                   ▼
                                 </button>
                               </div>
                               <span className={`text-[11px] ${s.managed ? "font-medium text-emerald-600" : "text-slate-400 dark:text-slate-500"}`}>
-                                {s.managed ? "Dikelola" : "Manual"}
+                                {s.managed ? t("dash.managed") : t("dash.manual")}
                               </span>
-                              <Toggle checked={s.managed} disabled={!!busy} onChange={() => toggle(s, "managed")} label={`Kelola ${s.hostname}`} />
+                              <Toggle checked={s.managed} disabled={!!busy} onChange={() => toggle(s, "managed")} label={`${t("dash.managePrefix")} ${s.hostname}`} />
                             </div>
                           )}
                         </div>
@@ -501,31 +504,31 @@ export default function Dashboard() {
                           <button
                             onClick={() => power(s, "start")}
                             disabled={!controllable || isRunning || !!busy}
-                            title={!controllable ? "Aktifkan 'Dikelola' dulu" : isRunning ? "Server sudah menyala" : "Nyalakan server"}
+                            title={!controllable ? t("dash.tipEnableManaged") : isRunning ? t("dash.tipAlreadyOn") : t("dash.tipStart")}
                             className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:bg-slate-800 dark:disabled:text-slate-600"
                           >
-                            {busy === s.id + "start" ? "…" : "▶ Start"}
+                            {busy === s.id + "start" ? "…" : t("dash.start")}
                           </button>
                           <button
                             onClick={() => power(s, "stop")}
                             disabled={!controllable || isStopped || !!busy}
-                            title={!controllable ? "Aktifkan 'Dikelola' dulu" : isStopped ? "Server sudah mati" : "Matikan server"}
+                            title={!controllable ? t("dash.tipEnableManaged") : isStopped ? t("dash.tipAlreadyOff") : t("dash.tipStop")}
                             className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none dark:bg-slate-700 dark:hover:bg-slate-600 dark:disabled:bg-slate-800 dark:disabled:text-slate-600"
                           >
-                            {busy === s.id + "stop" ? "…" : "■ Stop"}
+                            {busy === s.id + "stop" ? "…" : t("dash.stop")}
                           </button>
                           <button
                             onClick={() => power(s, "restart")}
                             disabled={!controllable || isStopped || !!busy}
-                            title={!controllable ? "Aktifkan 'Dikelola' dulu" : isStopped ? "Server sedang mati" : "Restart server"}
+                            title={!controllable ? t("dash.tipEnableManaged") : isStopped ? t("dash.tipOff") : t("dash.tipRestart")}
                             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 dark:disabled:border-slate-700 dark:disabled:text-slate-600"
                           >
-                            {busy === s.id + "restart" ? "…" : "↻ Restart"}
+                            {busy === s.id + "restart" ? "…" : t("dash.restart")}
                           </button>
                           <button
                             onClick={() => selectServer(s.id, "jadwal")}
                             disabled={!canSchedule}
-                            title={canSchedule ? "Atur jadwal nyala-mati" : "Anda tidak diberi izin mengatur jadwal"}
+                            title={canSchedule ? t("dash.tipSchedule") : t("dash.tipNoSchedule")}
                             className="ml-auto rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                           >
                             🕒{s.scheduleEnabled && s.actionCount > 0 && (
@@ -546,16 +549,16 @@ export default function Dashboard() {
                                 onChange={() => toggle(s, "isProduction")}
                                 className="h-3 w-3 accent-red-600"
                               />
-                              Production (anti auto-stop)
+                              {t("dash.prodLabel")}
                             </label>
                           ) : s.isProduction ? (
-                            <span className="text-[11px] text-slate-400 dark:text-slate-500">production — anti auto-stop</span>
+                            <span className="text-[11px] text-slate-400 dark:text-slate-500">{t("dash.prodSmall")}</span>
                           ) : null}
                           {s.scheduleEnabled && s.desiredState && (
                             <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                              jadwal:{" "}
+                              {t("dash.scheduleLabel")}{" "}
                               <b className={s.desiredState === "running" ? "text-emerald-600" : "text-slate-500 dark:text-slate-400"}>
-                                {s.desiredState === "running" ? "nyala" : "mati"}
+                                {s.desiredState === "running" ? t("dash.desiredOn") : t("dash.desiredOff")}
                               </b>
                             </span>
                           )}
@@ -571,7 +574,7 @@ export default function Dashboard() {
             {canSsh && sshList.length > 0 && (
               <section key="ssh" className="mb-5">
                 <p className="mb-3 px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Koneksi via SSH
+                  {t("dash.sshSection")}
                 </p>
                 {(() => {
                   const sshGroups = new Map<string, SshConn[]>();
@@ -594,8 +597,8 @@ export default function Dashboard() {
                           <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-100 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
                             {groupName ? groupName.slice(0, 2).toUpperCase() : "··"}
                           </span>
-                          <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{groupName || "Tanpa grup"}</span>
-                          <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500">{items.length} koneksi</span>
+                          <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{groupName || t("dash.noGroup")}</span>
+                          <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500">{items.length} {t("dash.connUnit")}</span>
                         </button>
                         <div className={`space-y-2 overflow-hidden transition-all duration-300 ${isCollapsed ? "max-h-0 opacity-0" : "max-h-[4000px] opacity-100"}`}>
                           {items.map((c) => {
@@ -628,7 +631,7 @@ export default function Dashboard() {
                                     onClick={(e) => { e.stopPropagation(); setTerminalSsh({ id: c.id, name: c.name, host: c.host, username: c.username, port: c.port }); }}
                                     className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium text-emerald-600 transition hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950"
                                   >
-                                    Terminal
+                                    {t("dash.terminal")}
                                   </button>
                                 </div>
                                 <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-slate-100 pt-2.5 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
@@ -636,13 +639,13 @@ export default function Dashboard() {
                                     {c.last?.disk?.[0] ? (
                                       <>💾 {c.last.disk[0].usedMb >= 1024 ? `${(c.last.disk[0].usedMb / 1024).toFixed(1)} Gb` : `${c.last.disk[0].usedMb} Mb`} / {c.last.disk[0].sizeMb >= 1024 ? `${(c.last.disk[0].sizeMb / 1024).toFixed(1)} Gb` : `${c.last.disk[0].sizeMb} Mb`} ({c.last.disk[0].pct}%)</>
                                     ) : (
-                                      <>cek terakhir: {c.last ? new Date(c.last.at).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "—"}</>
+                                      <>{t("dash.lastCheck")} {c.last ? new Date(c.last.at).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "—"}</>
                                     )}
                                   </span>
                                   <span className="tabular-nums">
                                     {c.last?.ok
                                       ? `CPU ${c.last.cpu ?? "—"}% · RAM ${c.last.memPct ?? "—"}%`
-                                      : c.last?.error ?? "belum ada sampel"}
+                                      : c.last?.error ?? t("dash.noSample")}
                                   </span>
                                 </div>
                               </div>
@@ -665,7 +668,7 @@ export default function Dashboard() {
                   onClick={() => { setSelectedId(null); setSelectedSsh(null); }}
                   className="mb-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 lg:hidden"
                 >
-                  ← daftar server
+                  {t("dash.backToList")}
                 </button>
                 {selected ? (
                   <ServerMonitor
@@ -687,7 +690,7 @@ export default function Dashboard() {
                     return (
                       <SshMonitorPanel
                         sshId={selectedSsh ?? ""}
-                        name={c?.name ?? "Koneksi SSH"}
+                        name={c?.name ?? t("dash.sshConn")}
                         host={c?.host ?? ""}
                         username={c?.username ?? ""}
                         port={c?.port ?? 22}
@@ -702,9 +705,9 @@ export default function Dashboard() {
               /* placeholder hanya untuk desktop — di HP daftar server sudah memenuhi layar */
               <div className="animate-fade-up hidden min-h-[360px] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 p-10 text-center dark:border-slate-700 dark:bg-slate-900/40 lg:flex">
                 <p className="text-4xl">📡</p>
-                <p className="mt-3 font-medium text-slate-700 dark:text-slate-200">Belum ada server yang dipantau</p>
+                <p className="mt-3 font-medium text-slate-700 dark:text-slate-200">{t("dash.noMonitor")}</p>
                 <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">
-                  Silakan pilih salah satu server di sebelah kiri untuk melihat monitoring, jadwal, dan backup-nya.
+                  {t("dash.noMonitorHint")}
                 </p>
               </div>
             )}
