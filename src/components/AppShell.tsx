@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLang } from "@/lib/i18n";
 
 type Me = { id: string; name: string; email: string; role: string; uiLayout: string };
@@ -105,6 +105,100 @@ function TeamSwitcher({
 }
 
 type NavItem = { href: string; label: string; icon: string };
+
+/* ---------- bell notifikasi in-app ---------- */
+type NotifItem = { id: string; type: string; title: string; message: string | null; read: boolean; createdAt: string };
+
+function BellNotif({ dropUp }: { dropUp?: boolean }) {
+  const { t } = useLang();
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<NotifItem[]>([]);
+  const [unread, setUnread] = useState(0);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/inapp");
+      const d = await res.json();
+      if (d.ok) {
+        setItems(d.data ?? []);
+        setUnread(d.unreadCount ?? 0);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+    const iv = setInterval(load, 60_000);
+    return () => clearInterval(iv);
+  }, [load]);
+
+  async function markAll() {
+    await fetch("/api/inapp", { method: "POST" });
+    load();
+  }
+  async function markOne(id: string) {
+    await fetch(`/api/inapp/${id}`, { method: "PATCH" });
+    load();
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => {
+          setOpen(!open);
+          if (!open) load();
+        }}
+        title={t("notif.bell")}
+        className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-base transition hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+      >
+        🔔
+        {unread > 0 && (
+          <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+            {unread > 99 ? "99+" : unread}
+          </span>
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            className={`animate-fade-up absolute right-0 z-50 mt-1.5 w-80 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
+              dropUp ? "bottom-full mb-1.5" : "top-full"
+            }`}
+          >
+            <div className="flex items-center justify-between px-2.5 py-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t("notif.bell")}</p>
+              {unread > 0 && (
+                <button onClick={markAll} className="text-[11px] text-indigo-600 hover:underline dark:text-indigo-400">
+                  {t("notif.markAll")}
+                </button>
+              )}
+            </div>
+            {items.length === 0 ? (
+              <p className="px-2.5 py-4 text-center text-xs text-slate-400">{t("notif.empty")}</p>
+            ) : (
+              <div className="max-h-80 overflow-y-auto">
+                {items.map((n) => (
+                  <button
+                    key={n.id}
+                    onClick={() => markOne(n.id)}
+                    className={`block w-full rounded-lg px-2.5 py-2 text-left transition ${n.read ? "opacity-60" : "bg-slate-50 dark:bg-slate-800/60"}`}
+                  >
+                    <p className="text-xs font-medium text-slate-800 dark:text-slate-100">{n.title}</p>
+                    {n.message && <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500 dark:text-slate-400">{n.message}</p>}
+                    <p className="mt-0.5 text-[10px] text-slate-400">{new Date(n.createdAt).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 /* ---------- dropdown grup menu (dipakai topbar) ---------- */
 function NavDropdown({ label, icon, items, pathname }: { label: string; icon: string; items: NavItem[]; pathname: string }) {
@@ -232,6 +326,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         { href: "/dbbackup", label: t_("nav.dbbackup"), icon: "💾", show: at?.canBackupDb ?? false },
         { href: "/dirclone", label: t_("nav.dirclone"), icon: "📦", show: at?.canBackupDb ?? false },
         { href: "/ssh", label: t_("nav.ssh"), icon: "🔐", show: at?.canSsh ?? false },
+        { href: "/approvals", label: t_("nav.approvals"), icon: "🛡️", show: at?.canManage ?? false },
+        { href: "/sshcmd", label: t_("nav.sshcmd"), icon: "⌨️", show: at?.canSsh ?? false },
       ],
     },
     {
@@ -419,6 +515,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <div className={`mt-auto space-y-2 border-t border-slate-200/80 pt-3 dark:border-slate-800/80 ${collapsed ? "flex flex-col items-center" : ""}`}>
               {activeTeam && <TeamSwitcher activeTeam={activeTeam} teams={teams} dropUp mini={collapsed} onSwitch={switchTeam} />}
               <div className={`flex items-center gap-2 px-0.5 ${collapsed ? "flex-col" : ""}`}>
+                <BellNotif dropUp />
                 {langBtn}
                 {themeBtn}
                 {avatar}
@@ -470,6 +567,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {/* kanan: switcher tim (ringkas) · bahasa · tema · profil · keluar */}
           <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5 text-sm sm:gap-2">
             {activeTeam && <TeamSwitcher activeTeam={activeTeam} teams={teams} compact onSwitch={switchTeam} />}
+            <BellNotif />
             {langBtn}
             {themeBtn}
             {avatar}

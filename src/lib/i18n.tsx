@@ -6,6 +6,10 @@ import { dict as sshPages } from "./i18n-pages-ssh";
 import { dict as backupPages } from "./i18n-pages-backup";
 import { dict as miscPages } from "./i18n-pages-misc";
 import { dict as healthPages } from "./i18n-pages-health";
+import { dict as secPages } from "./i18n-pages-sec";
+import { dict as sshcmdPages } from "./i18n-pages-sshcmd";
+import { dict as reportPages } from "./i18n-pages-report";
+import { dict as approvalsPages } from "./i18n-pages-approvals";
 
 export type Lang = "id" | "en";
 
@@ -18,6 +22,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "nav.dbbackup": "Backup DB",
     "nav.dirclone": "Backup File",
     "nav.ssh": "SSH Koneksi",
+    "nav.approvals": "Persetujuan",
+    "nav.sshcmd": "SSH Script",
     "nav.billing": "Saldo",
     "nav.cost": "Biaya",
     "nav.reports": "Laporan",
@@ -43,6 +49,9 @@ const dict: Record<Lang, Record<string, string>> = {
     "imp.back": "← Kembali ke",
     "sidebar.collapse": "Ciutkan menu",
     "sidebar.expand": "Buka menu",
+    "notif.bell": "Notifikasi",
+    "notif.empty": "Tidak ada notifikasi.",
+    "notif.markAll": "Tandai semua dibaca",
     "role.owner": "owner",
     "role.admin": "admin",
     "role.member": "member",
@@ -54,6 +63,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "nav.dbbackup": "DB Backup",
     "nav.dirclone": "File Backup",
     "nav.ssh": "SSH Connections",
+    "nav.approvals": "Approvals",
+    "nav.sshcmd": "SSH Script",
     "nav.billing": "Balance",
     "nav.cost": "Cost",
     "nav.reports": "Reports",
@@ -79,6 +90,9 @@ const dict: Record<Lang, Record<string, string>> = {
     "imp.back": "← Back to",
     "sidebar.collapse": "Collapse menu",
     "sidebar.expand": "Expand menu",
+    "notif.bell": "Notifications",
+    "notif.empty": "No notifications.",
+    "notif.markAll": "Mark all as read",
     "role.owner": "owner",
     "role.admin": "admin",
     "role.member": "member",
@@ -86,7 +100,7 @@ const dict: Record<Lang, Record<string, string>> = {
 };
 
 // gabungkan kamus per-modul halaman
-for (const mod of [serverPages, sshPages, backupPages, miscPages, healthPages]) {
+for (const mod of [serverPages, sshPages, backupPages, miscPages, healthPages, secPages, sshcmdPages, reportPages, approvalsPages]) {
   dict.id = { ...dict.id, ...mod.id };
   dict.en = { ...dict.en, ...mod.en };
 }
