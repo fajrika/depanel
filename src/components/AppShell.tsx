@@ -439,7 +439,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const mobileDropdown = (
     <div
       className={`overflow-hidden border-slate-200/80 transition-all duration-300 dark:border-slate-800/80 md:hidden ${
-        menuOpen ? "max-h-[28rem] border-t" : "max-h-0"
+        menuOpen ? "max-h-[calc(100vh-4rem)] overflow-y-auto border-t" : "max-h-0"
       }`}
     >
       <nav className="flex flex-col gap-1 px-3 py-3">
