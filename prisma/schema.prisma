@@ -23,8 +23,13 @@ model User {
   totpSecret   String? // base32 TOTP secret (2FA) — null = belum diaktifkan
   totpEnabled  Boolean       @default(false)
   createdAt    DateTime      @default(now())
+  sessionRevokedAt DateTime? // saat "logout semua perangkat" — JWT lama jadi tidak valid
+  lastLoginIp  String? // IP terakhir login (deteksi login dari lokasi baru)
   activityLogs ActivityLog[]
   teams        TeamMember[]
+  inAppNotifications InAppNotification[]
+  approvalsRequested DestructiveApproval[] @relation("ApprovalRequester")
+  approvalsApproved  DestructiveApproval[] @relation("ApprovalApprover")
 }
 
 /// A workspace: every user has one personal team; shared teams are created freely.
@@ -45,6 +50,10 @@ model Team {
   notifyChannels NotifyChannel[]
   dirCloneJobs  DirCloneJob[]
   healthChecks  HealthCheck[]
+  inAppNotifications InAppNotification[]
+  sshCmdJobs    SshCommandJob[]
+  scheduledReports ScheduledReport[]
+  approvals     DestructiveApproval[]
 }
 
 /// A notification target for a team (Telegram, Discord, or generic webhook).
@@ -60,6 +69,7 @@ model NotifyChannel {
   onBackup  Boolean  @default(true) // db backup success/failure
   onError   Boolean  @default(true) // server status error / sync failure
   onBalance Boolean  @default(true) // low balance
+  onReport  Boolean  @default(true) // laporan terjadwal
   enabled   Boolean  @default(true)
   createdAt DateTime @default(now())
 }
@@ -154,6 +164,7 @@ model Server {
   activityLogs  ActivityLog[]
   hiddenFor     MemberServerHide[]
   metricSamples MetricSample[]
+  approvals     DestructiveApproval[]
 
   @@unique([accountId, uuid])
 }
@@ -216,6 +227,7 @@ model SshConnection {
   metricSamples     SshMetricSample[]
   cloneSourceJobs   DirCloneJob[] @relation("DirCloneSource")
   cloneDestJobs     DirCloneJob[] @relation("DirCloneDest")
+  cmdJobs           SshCommandJob[] @relation("SshCmdJobs")
 }
 
 /// Grouping container for SSH connections. Team-scoped, 1 level only.
@@ -429,4 +441,106 @@ model ActivityLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+/// Notifikasi di dalam aplikasi (bell). userId null = untuk semua anggota tim.
+model InAppNotification {
+  id        String   @id @default(cuid())
+  teamId    String?
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type      String // power | backup | error | balance | report | security
+  title     String
+  message   String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read, createdAt])
+}
+
+/// Percobaan login untuk rate-limit & lockout.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String?
+  ok        Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+}
+
+/// Job menjalankan perintah/script di server SSH, manual atau terjadwal.
+model SshCommandJob {
+  id           String        @id @default(cuid())
+  teamId       String?
+  team         Team?         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name         String
+  sshId        String
+  ssh          SshConnection @relation("SshCmdJobs", fields: [sshId], references: [id], onDelete: Cascade)
+  command      String
+  scheduleType String        @default("manual") // manual | daily | weekly | monthly | cron
+  timeAt       String?
+  dayOn        Int?
+  cronExpr     String?
+  timezone     String        @default("Asia/Jakarta")
+  timeoutSec   Int           @default(60)
+  enabled      Boolean       @default(true)
+  lastStatus   String?
+  lastRunAt    DateTime?
+  createdAt    DateTime      @default(now())
+  runs         SshCommandRun[]
+}
+
+/// Satu eksekusi job perintah SSH.
+model SshCommandRun {
+  id        String        @id @default(cuid())
+  jobId     String
+  job       SshCommandJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  status    String        @default("running") // running | success | failed
+  exitCode  Int?
+  output    String? // stdout+stderr, dibatasi ~20KB
+  error     String?
+  startedAt DateTime      @default(now())
+  endedAt   DateTime?
+
+  @@index([jobId, startedAt])
+}
+
+/// Laporan ringkas terjadwal (biaya/aktivitas/backup) yang dikirim ke channel notifikasi.
+model ScheduledReport {
+  id           String   @id @default(cuid())
+  teamId       String?
+  team         Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name         String
+  type         String // "cost" | "activity" | "backup"
+  scheduleType String   @default("daily") // daily | weekly | monthly | cron
+  timeAt       String?
+  dayOn        Int?
+  cronExpr     String?
+  timezone     String   @default("Asia/Jakarta")
+  enabled      Boolean  @default(true)
+  lastRunAt    DateTime?
+  createdAt    DateTime @default(now())
+}
+
+/// Persetujuan dua orang untuk aksi destruktif (hapus instance / reinstall).
+model DestructiveApproval {
+  id            String   @id @default(cuid())
+  teamId        String?
+  team          Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  serverId      String?
+  server        Server?  @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  action        String // "delete" | "reinstall"
+  detail        String? // hostname / deskripsi
+  requestedById String
+  requestedBy   User?    @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  requestedAt   DateTime @default(now())
+  approvedById  String?
+  approvedBy    User?    @relation("ApprovalApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  status        String   @default("pending") // pending | approved | rejected | expired
+  resolvedAt    DateTime?
+
+  @@index([teamId, status])
 }
