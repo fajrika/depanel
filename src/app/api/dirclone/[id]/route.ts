@@ -56,7 +56,14 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     if (k === "destPath") data[k] = v || null;
     else if (k === "cronExpr") data[k] = v || null;
     else if (k === "dayOn") data[k] = v ?? null;
+    else if (k === "destSshId" || k === "destGdriveId") data[k] = v || null; // string kosong → null (hindari FK violation)
     else data[k] = v;
+  }
+
+  // sinkronkan field tujuan dengan destType yang dipilih
+  if (data.destType) {
+    if (data.destType !== "ssh") data.destSshId = null;
+    if (data.destType !== "gdrive") data.destGdriveId = null;
   }
 
   const updated = await prisma.dirCloneJob.update({ where: { id }, data });
