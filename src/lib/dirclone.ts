@@ -64,8 +64,10 @@ function execStream(
 
 /** Run `tar czf - -C <dir> <base>` on the source server. dir/base must be absolute-safe. */
 function buildTarCommand(sourcePath: string): string {
-  const dir = path.posix.dirname(sourcePath);
-  const base = path.posix.basename(sourcePath);
+  // hilangkan trailing slash agar basename tidak kosong (mis. "/var/www/")
+  const trimmed = sourcePath.replace(/\/+$/, "");
+  const dir = path.posix.dirname(trimmed === "" ? "/" : trimmed);
+  const base = trimmed === "" ? "." : path.posix.basename(trimmed);
   return `tar czf - -C ${shq(dir)} ${shq(base)}`;
 }
 
