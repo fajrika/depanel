@@ -80,6 +80,25 @@ export default function ProfilePage() {
     }
   }
 
+  async function logoutAll() {
+    if (!window.confirm(t("sec.logoutAllConfirm"))) return;
+    setBusy("logout-all");
+    setMsg(null);
+    try {
+      const res = await fetch("/api/profile/logout-all", { method: "POST" });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.ok) {
+        setMsg({ text: d.message ?? t("prof.errSave"), ok: false });
+        return;
+      }
+      window.location.href = "/login";
+    } catch {
+      setMsg({ text: t("prof.errSave"), ok: false });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-xl">
       <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{t("prof.title")}</h1>
@@ -205,6 +224,22 @@ export default function ProfilePage() {
           </button>
         </div>
       </form>
+
+      {/* Keamanan */}
+      <div className={`${card} mt-5`}>
+        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("sec.securityCard")}</h2>
+        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{t("sec.securitySubtitle")}</p>
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            disabled={busy === "logout-all"}
+            onClick={logoutAll}
+            className="rounded-lg border border-red-200 px-5 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/50"
+          >
+            {busy === "logout-all" ? t("sec.processing") : t("sec.logoutAll")}
+          </button>
+        </div>
+      </div>
 
       {/* 2FA (F6) */}
       <TwoFactorSection />

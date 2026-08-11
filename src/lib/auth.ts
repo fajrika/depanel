@@ -18,6 +18,8 @@ export interface SessionPayload {
   email: string;
   name: string;
   role: string;
+  /** epoch (detik) saat JWT diterbitkan — dipakai untuk deteksi sesi yang dicabut */
+  iat?: number;
   /** id super admin yang sedang menyamar sebagai user ini (impersonation) */
   imp?: string;
 }
@@ -70,6 +72,7 @@ export async function getSession(): Promise<SessionPayload | null> {
       email: String(payload.email),
       name: String(payload.name),
       role: String(payload.role),
+      iat: Number(payload.iat ?? 0),
       ...(payload.imp ? { imp: String(payload.imp) } : {}),
     };
   } catch {
@@ -96,5 +99,8 @@ export async function getCurrentUser() {
   if (!session) return null;
   const user = await prisma.user.findUnique({ where: { id: session.sub } });
   if (!user || !user.active) return null;
+  // sesi yang diterbitkan sebelum "logout semua perangkat" dianggap tidak valid
+  const iatMs = Number(session.iat ?? 0) * 1000;
+  if (user.sessionRevokedAt && iatMs < user.sessionRevokedAt.getTime()) return null;
   return user;
 }
