@@ -44,6 +44,7 @@ model Team {
   activityLogs  ActivityLog[]
   notifyChannels NotifyChannel[]
   dirCloneJobs  DirCloneJob[]
+  healthChecks  HealthCheck[]
 }
 
 /// A notification target for a team (Telegram, Discord, or generic webhook).
@@ -375,6 +376,41 @@ model DirCloneRun {
   endedAt   DateTime?
 
   @@index([jobId, startedAt])
+}
+
+/// An uptime monitor: periodically check an HTTP endpoint availability.
+/// The worker checks due entries every minute; results stored as samples.
+model HealthCheck {
+  id            String   @id @default(cuid())
+  teamId        String?
+  team          Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name          String
+  url           String // http(s) endpoint yang dicek
+  method        String   @default("GET")
+  expectedStatus Int     @default(200)
+  intervalMin   Int      @default(1) // jarak antar cek (menit)
+  timeoutSec    Int      @default(10)
+  enabled       Boolean  @default(true)
+  lastStatus    String? // "up" | "down"
+  lastLatencyMs Int?
+  lastCheckAt   DateTime?
+  lastUpAt      DateTime?
+  createdAt     DateTime @default(now())
+  samples       HealthCheckSample[]
+}
+
+/// One probe result of a health check.
+model HealthCheckSample {
+  id         String     @id @default(cuid())
+  checkId    String
+  check      HealthCheck @relation(fields: [checkId], references: [id], onDelete: Cascade)
+  at         DateTime   @default(now())
+  ok         Boolean
+  statusCode Int?
+  latencyMs  Int?
+  error      String?
+
+  @@index([checkId, at])
 }
 
 /// Audit trail: who did what, when (userId null = scheduler/system). Team-scoped.

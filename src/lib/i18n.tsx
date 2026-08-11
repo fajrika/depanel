@@ -1,6 +1,11 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { dict as serverPages } from "./i18n-pages-server";
+import { dict as sshPages } from "./i18n-pages-ssh";
+import { dict as backupPages } from "./i18n-pages-backup";
+import { dict as miscPages } from "./i18n-pages-misc";
+import { dict as healthPages } from "./i18n-pages-health";
 
 export type Lang = "id" | "en";
 
@@ -17,6 +22,7 @@ const dict: Record<Lang, Record<string, string>> = {
     "nav.cost": "Biaya",
     "nav.reports": "Laporan",
     "nav.notifications": "Notifikasi",
+    "nav.health": "Health Check",
     "nav.logs": "Log",
     "nav.teams": "Tim",
     "nav.superadmin": "Super Admin",
@@ -52,6 +58,7 @@ const dict: Record<Lang, Record<string, string>> = {
     "nav.cost": "Cost",
     "nav.reports": "Reports",
     "nav.notifications": "Notifications",
+    "nav.health": "Health Check",
     "nav.logs": "Logs",
     "nav.teams": "Teams",
     "nav.superadmin": "Super Admin",
@@ -77,6 +84,12 @@ const dict: Record<Lang, Record<string, string>> = {
     "role.member": "member",
   },
 };
+
+// gabungkan kamus per-modul halaman
+for (const mod of [serverPages, sshPages, backupPages, miscPages, healthPages]) {
+  dict.id = { ...dict.id, ...mod.id };
+  dict.en = { ...dict.en, ...mod.en };
+}
 
 type Ctx = {
   lang: Lang;

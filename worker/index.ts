@@ -11,6 +11,7 @@ import cron from "node-cron";
 import { reconcileAll } from "../src/lib/power";
 import { runDueJobs } from "../src/lib/dbbackup";
 import { runDueCloneJobs } from "../src/lib/dirclone";
+import { checkDueHealthChecks } from "../src/lib/healthcheck";
 import { runAlertChecks } from "../src/lib/alerts";
 import { sampleAllMetrics } from "../src/lib/metrics";
 import { sampleAllSshMetrics } from "../src/lib/sshmon";
@@ -65,6 +66,15 @@ async function checkDirClones() {
   }
 }
 
+async function checkHealth() {
+  try {
+    const n = await checkDueHealthChecks();
+    if (n) console.log(`[${new Date().toISOString()}] health check dijalankan: ${n} target`);
+  } catch (e) {
+    console.error(`[${new Date().toISOString()}] health check error:`, (e as Error).message);
+  }
+}
+
 async function checkAlerts() {
   try {
     await runAlertChecks();
@@ -91,11 +101,12 @@ async function sampleSsh() {
   }
 }
 
-console.log(`🕒 Depa scheduler worker aktif. Reconcile: "${CRON}" · Backup DB & clone direktori: tiap menit · Alert & metrik: tiap 15 menit.`);
+console.log(`🕒 Depa scheduler worker aktif. Reconcile: "${CRON}" · Backup DB/clone/health: tiap menit · Alert & metrik: tiap 15 menit.`);
 runOnce("startup");
 cron.schedule(CRON, () => runOnce("tick"));
 cron.schedule("* * * * *", () => checkDbBackups());
 cron.schedule("* * * * *", () => checkDirClones());
+cron.schedule("* * * * *", () => checkHealth());
 // di-offset agar alert, metrik depa, dan metrik SSH tidak menulis DB di menit yang sama
 cron.schedule("1-59/15 * * * *", () => checkAlerts());
 cron.schedule("2-59/15 * * * *", () => sampleMetrics());
