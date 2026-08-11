@@ -12,6 +12,8 @@ import { reconcileAll } from "../src/lib/power";
 import { runDueJobs } from "../src/lib/dbbackup";
 import { runDueCloneJobs } from "../src/lib/dirclone";
 import { checkDueHealthChecks } from "../src/lib/healthcheck";
+import { runDueSshCommandJobs } from "../src/lib/sshcmd";
+import { runDueScheduledReports } from "../src/lib/schedreport";
 import { runAlertChecks } from "../src/lib/alerts";
 import { sampleAllMetrics } from "../src/lib/metrics";
 import { sampleAllSshMetrics } from "../src/lib/sshmon";
@@ -75,6 +77,28 @@ async function checkHealth() {
   }
 }
 
+async function checkSshCmds() {
+  try {
+    const started = await runDueSshCommandJobs();
+    if (started.length) {
+      console.log(`[${new Date().toISOString()}] SSH script dimulai: ${started.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[${new Date().toISOString()}] SSH script error:`, (e as Error).message);
+  }
+}
+
+async function checkReports() {
+  try {
+    const started = await runDueScheduledReports();
+    if (started.length) {
+      console.log(`[${new Date().toISOString()}] laporan terjadwal dikirim: ${started.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[${new Date().toISOString()}] laporan terjadwal error:`, (e as Error).message);
+  }
+}
+
 async function checkAlerts() {
   try {
     await runAlertChecks();
@@ -101,12 +125,14 @@ async function sampleSsh() {
   }
 }
 
-console.log(`🕒 Depa scheduler worker aktif. Reconcile: "${CRON}" · Backup DB/clone/health: tiap menit · Alert & metrik: tiap 15 menit.`);
+console.log(`🕒 Depa scheduler worker aktif. Reconcile: "${CRON}" · Backup DB/clone/health/SSH script/laporan: tiap menit · Alert & metrik: tiap 15 menit.`);
 runOnce("startup");
 cron.schedule(CRON, () => runOnce("tick"));
 cron.schedule("* * * * *", () => checkDbBackups());
 cron.schedule("* * * * *", () => checkDirClones());
 cron.schedule("* * * * *", () => checkHealth());
+cron.schedule("* * * * *", () => checkSshCmds());
+cron.schedule("* * * * *", () => checkReports());
 // di-offset agar alert, metrik depa, dan metrik SSH tidak menulis DB di menit yang sama
 cron.schedule("1-59/15 * * * *", () => checkAlerts());
 cron.schedule("2-59/15 * * * *", () => sampleMetrics());
