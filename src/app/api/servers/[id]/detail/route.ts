@@ -26,6 +26,11 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
       ok: true,
       data: {
         server: { id: server.id, hostname: server.hostname, status: server.status, account: server.account.name },
+        spec: {
+          cpu: server.cpu,
+          memoryGb: server.memoryMb ? Math.round(server.memoryMb / 1024) : null,
+          storageGb: server.storageGb,
+        },
         detail,
       },
     });

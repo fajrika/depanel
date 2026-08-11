@@ -102,6 +102,7 @@ export default function ServerMonitor({
   const [periode, setPeriode] = useState("hour");
   const [rrd, setRrd] = useState<Rrd | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [spec, setSpec] = useState<{ cpu: number | null; memoryGb: number | null; storageGb: number | null } | null>(null);
   const [serverName, setServerName] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [metricsAt, setMetricsAt] = useState<Date | null>(null);
@@ -126,6 +127,7 @@ export default function ServerMonitor({
       .then((d) => {
         if (d.ok) {
           setDetail(d.data.detail as Detail);
+          setSpec(d.data.spec ?? null);
           setServerName(d.data.server.hostname);
         } else {
           setError(d.message ?? "Gagal memuat detail");
@@ -361,7 +363,7 @@ export default function ServerMonitor({
       {tab === "console" && canConsole && <ConsolePanel serverId={serverId} hostname={serverName} />}
 
       {/* ===== TAB: KELOLA — resize/tier/reinstall/hapus (F9/F10/F11) ===== */}
-      {tab === "kelola" && canManage && <ManagePanel serverId={serverId} hostname={serverName} onChanged={onScheduleSaved} />}
+      {tab === "kelola" && canManage && <ManagePanel serverId={serverId} hostname={serverName} spec={spec} onChanged={onScheduleSaved} />}
     </div>
   );
 }
