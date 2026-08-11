@@ -511,15 +511,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               ))}
             </nav>
 
-            {/* grup kiri-bawah: tim, bahasa, tema, profil, logout */}
+            {/* grup kiri-bawah: tim, user (baris 1), aksi (baris 2) */}
             <div className={`mt-auto space-y-2 border-t border-slate-200/80 pt-3 dark:border-slate-800/80 ${collapsed ? "flex flex-col items-center" : ""}`}>
               {activeTeam && <TeamSwitcher activeTeam={activeTeam} teams={teams} dropUp mini={collapsed} onSwitch={switchTeam} />}
-              <div className={`flex items-center gap-2 px-0.5 ${collapsed ? "flex-col" : ""}`}>
-                <BellNotif dropUp />
-                {langBtn}
-                {themeBtn}
-                {avatar}
-                {!collapsed && me && <span className="min-w-0 flex-1 truncate text-xs text-slate-500 dark:text-slate-400">{me.name}</span>}
+              {!collapsed && (
+                <Link
+                  href="/profile"
+                  title={t_("profile.title")}
+                  className="flex items-center gap-2 rounded-lg px-1 py-1 transition hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                >
+                  {avatar}
+                  <span className="min-w-0 flex-1 truncate text-xs text-slate-500 dark:text-slate-400">{me?.name}</span>
+                </Link>
+              )}
+              <div className={`flex items-center gap-1.5 ${collapsed ? "flex-col" : "justify-between"}`}>
+                <div className="flex items-center gap-1.5">
+                  <BellNotif dropUp />
+                  {langBtn}
+                  {themeBtn}
+                </div>
                 <button
                   onClick={logout}
                   title={t_("logout.title")}
