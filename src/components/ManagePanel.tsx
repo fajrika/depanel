@@ -40,14 +40,14 @@ export default function ManagePanel({ serverId, hostname, spec, onChanged }: { s
     fetch(`/api/servers/${serverId}/reinstall`).then((r) => r.json()).then((d) => { if (d.ok) setOses(Array.isArray(d.data.systems) ? d.data.systems : (d.data.systems?.data ?? [])); }).catch(() => {});
   }, [serverId, hostname]);
 
-  async function call(key: string, path: string, method: string, body?: unknown, confirmMsg?: string) {
+  async function call(key: string, path: string, method: string, body?: unknown, confirmMsg?: string, okMsg?: string) {
     if (confirmMsg && !confirm(confirmMsg)) return;
     setBusy(key);
     setMsg(null);
     const res = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
     const d = await res.json().catch(() => ({}));
     setBusy(null);
-    setMsg(d.ok ? { text: t("mg.sent"), ok: true } : { text: d.message ?? t("mg.fail"), ok: false });
+    setMsg(d.ok ? { text: okMsg ?? t("mg.sent"), ok: true } : { text: d.message ?? t("mg.fail"), ok: false });
     if (d.ok) onChanged?.();
   }
 
@@ -98,7 +98,7 @@ export default function ManagePanel({ serverId, hostname, spec, onChanged }: { s
           </div>
           <div><label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("mg.user")}</label><input value={ri.username} onChange={(e) => setRi({ ...ri, username: e.target.value })} className={`${input} mt-1 w-24`} /></div>
           <div><label className="block text-[11px] text-slate-500 dark:text-slate-400">{t("mg.newPassword")}</label><input type="text" value={ri.password} onChange={(e) => setRi({ ...ri, password: e.target.value })} className={`${input} mt-1 w-40`} /></div>
-          <button disabled={busy === "reinstall" || !ri.template_id || ri.password.length < 6} onClick={() => call("reinstall", `/api/servers/${serverId}/reinstall`, "PATCH", ri, `${t("mg.reinstallConfirm1")} ${hostname}${t("mg.reinstallConfirm2")}`)} className="rounded-lg bg-amber-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-amber-500 disabled:opacity-50">{t("mg.reinstallBtn")}</button>
+          <button disabled={busy === "reinstall" || !ri.template_id || ri.password.length < 6} onClick={() => call("reinstall", "/api/approvals", "POST", { serverId, action: "reinstall", detail: JSON.stringify(ri) }, `${t("mg.reinstallConfirm1")} ${hostname}${t("mg.reinstallConfirm2")}`, t("apr.requested"))} className="rounded-lg bg-amber-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-amber-500 disabled:opacity-50">{t("mg.reinstallBtn")}</button>
         </div>
       </div>
 
@@ -110,7 +110,7 @@ export default function ManagePanel({ serverId, hostname, spec, onChanged }: { s
           disabled={busy === "delete"}
           onClick={() => {
             const c = prompt(`${t("mg.deletePrompt")} "${hostname}" ${t("mg.deletePrompt2")}`);
-            if (c === hostname) call("delete", `/api/servers/${serverId}`, "DELETE", { remove_ip: false, remove_block_storage: false });
+            if (c === hostname) call("delete", "/api/approvals", "POST", { serverId, action: "delete", detail: hostname }, undefined, t("apr.requested"));
             else if (c !== null) setMsg({ text: t("mg.nameMismatch"), ok: false });
           }}
           className="mt-3 rounded-lg bg-red-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-red-500 disabled:opacity-50"
