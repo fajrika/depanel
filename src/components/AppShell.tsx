@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useLang } from "@/lib/i18n";
 
 type Me = { id: string; name: string; email: string; role: string; uiLayout: string };
 type TeamInfo = {
@@ -28,27 +29,34 @@ function TeamSwitcher({
   teams,
   compact,
   dropUp,
+  mini,
   onSwitch,
 }: {
   activeTeam: TeamInfo;
   teams: TeamInfo[];
   compact?: boolean; // versi ringkas untuk topbar
   dropUp?: boolean; // dropdown membuka ke atas (sidebar kiri-bawah)
+  mini?: boolean; // sidebar collapsed: hanya ikon
   onSwitch: (id: string) => void;
 }) {
+  const { t } = useLang();
   const [open, setOpen] = useState(false);
   return (
     <div className="relative min-w-0">
       <button
         onClick={() => setOpen(!open)}
-        title={`Tim aktif: ${activeTeam.name}`}
+        title={mini ? activeTeam.name : `Tim aktif: ${activeTeam.name}`}
         className={`flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 ${
-          compact ? "h-8 max-w-[140px] px-2 py-1 text-xs sm:max-w-[180px]" : "w-full px-2.5 py-2"
+          mini
+            ? "h-8 w-8 justify-center"
+            : compact
+              ? "h-8 max-w-[140px] px-2 py-1 text-xs sm:max-w-[180px]"
+              : "w-full px-2.5 py-2"
         }`}
       >
-        <span className="shrink-0">{activeTeam.isPersonal ? "👤" : "👥"}</span>
-        <span className="min-w-0 flex-1 truncate text-left">{activeTeam.name}</span>
-        <span className={`shrink-0 text-[9px] text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}>▼</span>
+        <span className={mini ? "" : "shrink-0"}>{activeTeam.isPersonal ? "👤" : "👥"}</span>
+        {!mini && <span className="min-w-0 flex-1 truncate text-left">{activeTeam.name}</span>}
+        {!mini && <span className={`shrink-0 text-[9px] text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}>▼</span>}
       </button>
       {open && (
         <>
@@ -58,26 +66,26 @@ function TeamSwitcher({
               dropUp ? "bottom-full left-0 mb-1.5" : "right-0 top-full mt-1.5"
             }`}
           >
-            <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Pilih tim</p>
-            {teams.map((t) => (
+            <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t_("team.pilih")}</p>
+            {teams.map((tm) => (
               <button
-                key={t.id}
+                key={tm.id}
                 onClick={() => {
                   setOpen(false);
-                  onSwitch(t.id);
+                  onSwitch(tm.id);
                 }}
                 className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition ${
-                  t.id === activeTeam.id
+                  tm.id === activeTeam.id
                     ? "bg-slate-100 font-medium text-slate-900 dark:bg-slate-800 dark:text-slate-100"
                     : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800/60"
                 }`}
               >
-                <span>{t.isPersonal ? "👤" : "👥"}</span>
-                <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                <span>{tm.isPersonal ? "👤" : "👥"}</span>
+                <span className="min-w-0 flex-1 truncate">{tm.name}</span>
                 <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                  {t.role}
+                  {t_(`role.${tm.role}`)}
                 </span>
-                {t.id === activeTeam.id && <span className="shrink-0 text-emerald-500">✓</span>}
+                {tm.id === activeTeam.id && <span className="shrink-0 text-emerald-500">✓</span>}
               </button>
             ))}
             <div className="mt-1 border-t border-slate-100 pt-1 dark:border-slate-800">
@@ -86,7 +94,7 @@ function TeamSwitcher({
                 onClick={() => setOpen(false)}
                 className="block rounded-lg px-2.5 py-2 text-sm text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/40"
               >
-                + Kelola / buat tim
+                {t_("team.kelola")}
               </Link>
             </div>
           </div>
@@ -145,6 +153,7 @@ function NavDropdown({ label, icon, items, pathname }: { label: string; icon: st
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { t, lang, setLang } = useLang();
   const [me, setMe] = useState<Me | null>(null);
   const [activeTeam, setActiveTeam] = useState<TeamInfo | null>(null);
   const [teams, setTeams] = useState<TeamInfo[]>([]);
@@ -152,9 +161,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [impBy, setImpBy] = useState<{ id: string; name: string } | null>(null);
   const [dark, setDark] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     setDark(document.documentElement.classList.contains("dark"));
+    try {
+      setCollapsed(localStorage.getItem("depanel_sidebar_collapsed") === "1");
+    } catch {
+      /* ignore */
+    }
     const loadMe = () =>
       fetch("/api/me")
         .then((r) => (r.ok ? r.json() : null))
@@ -203,40 +218,39 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     window.location.href = "/superadmin";
   }
 
-  const t = activeTeam;
+  const at = activeTeam;
 
-  // Menu dikelompokkan agar rapih. Grup dengan label tampil sebagai dropdown (topbar)
-  // atau seksi berjudul (sidebar/mobile). Grup tanpa label = tautan langsung.
+  const t_ = t;
   const navGroups: { label: string | null; icon: string; items: (NavItem & { show: boolean })[] }[] = [
-    { label: null, icon: "", items: [{ href: "/", label: "Server", icon: "🖥️", show: true }] },
+    { label: null, icon: "", items: [{ href: "/", label: t_("nav.server"), icon: "🖥️", show: true }] },
     {
-      label: "Kelola",
+      label: t_("group.kelola"),
       icon: "🧰",
       items: [
-        { href: "/infra", label: "Infra", icon: "🧱", show: t?.canInfra ?? false },
-        { href: "/accounts", label: "Akun API", icon: "🔑", show: t?.canAccounts ?? false },
-        { href: "/dbbackup", label: "Backup DB", icon: "💾", show: t?.canBackupDb ?? false },
-        { href: "/dirclone", label: "Backup File", icon: "📦", show: t?.canBackupDb ?? false },
-        { href: "/ssh", label: "SSH Koneksi", icon: "🔐", show: t?.canSsh ?? false },
+        { href: "/infra", label: t_("nav.infra"), icon: "🧱", show: at?.canInfra ?? false },
+        { href: "/accounts", label: t_("nav.accounts"), icon: "🔑", show: at?.canAccounts ?? false },
+        { href: "/dbbackup", label: t_("nav.dbbackup"), icon: "💾", show: at?.canBackupDb ?? false },
+        { href: "/dirclone", label: t_("nav.dirclone"), icon: "📦", show: at?.canBackupDb ?? false },
+        { href: "/ssh", label: t_("nav.ssh"), icon: "🔐", show: at?.canSsh ?? false },
       ],
     },
     {
-      label: "Keuangan",
+      label: t_("group.keuangan"),
       icon: "💰",
       items: [
-        { href: "/billing", label: "Saldo", icon: "💰", show: t?.canViewBilling ?? false },
-        { href: "/cost", label: "Biaya", icon: "📉", show: t?.canViewCost ?? false },
-        { href: "/reports/financial", label: "Laporan", icon: "📊", show: t?.canViewReports ?? false },
+        { href: "/billing", label: t_("nav.billing"), icon: "💰", show: at?.canViewBilling ?? false },
+        { href: "/cost", label: t_("nav.cost"), icon: "📉", show: at?.canViewCost ?? false },
+        { href: "/reports/financial", label: t_("nav.reports"), icon: "📊", show: at?.canViewReports ?? false },
       ],
     },
     {
-      label: "Sistem",
+      label: t_("group.sistem"),
       icon: "⚙️",
       items: [
-        { href: "/notifications", label: "Notifikasi", icon: "🔔", show: t?.canNotify ?? false },
-        { href: "/logs", label: "Log", icon: "📜", show: true },
-        { href: "/teams", label: "Tim", icon: "👥", show: true },
-        { href: "/superadmin", label: "Super Admin", icon: "⚡", show: superAdmin },
+        { href: "/notifications", label: t_("nav.notifications"), icon: "🔔", show: at?.canNotify ?? false },
+        { href: "/logs", label: t_("nav.logs"), icon: "📜", show: true },
+        { href: "/teams", label: t_("nav.teams"), icon: "👥", show: true },
+        { href: "/superadmin", label: t_("nav.superadmin"), icon: "⚡", show: superAdmin },
       ],
     },
   ]
@@ -248,9 +262,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   /* ---------- potongan bersama ---------- */
   const impBanner = impBy && (
     <div className="flex items-center justify-center gap-3 bg-amber-500 px-4 py-1.5 text-xs font-medium text-amber-950">
-      🎭 Anda sedang menyamar sebagai <b>{me?.name}</b>
+      🎭 {t_("imp.banner")} <b>{me?.name}</b>
       <button onClick={stopImpersonate} className="rounded-md bg-amber-950/20 px-2.5 py-0.5 font-semibold transition hover:bg-amber-950/30">
-        ← Kembali ke {impBy.name}
+        {t_("imp.back")} {impBy.name}
       </button>
     </div>
   );
@@ -258,10 +272,38 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const themeBtn = (
     <button
       onClick={toggleTheme}
-      title={dark ? "Mode terang" : "Mode gelap"}
-      className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-base transition hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+      title={dark ? t_("theme.light") : t("theme.dark")}
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-base transition hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
     >
       {dark ? "☀️" : "🌙"}
+    </button>
+  );
+
+  const langBtn = (
+    <button
+      onClick={() => setLang(lang === "id" ? "en" : "id")}
+      title={`${t_("lang.title")}: ${t_(`lang.${lang}`)}`}
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-[11px] font-bold text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+    >
+      {lang === "id" ? "ID" : "EN"}
+    </button>
+  );
+
+  const collapseBtn = (
+    <button
+      onClick={() => {
+        const next = !collapsed;
+        setCollapsed(next);
+        try {
+          localStorage.setItem("depanel_sidebar_collapsed", next ? "1" : "0");
+        } catch {
+          /* ignore */
+        }
+      }}
+      title={collapsed ? t_("sidebar.expand") : t_("sidebar.collapse")}
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-xs text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+    >
+      {collapsed ? "»" : "«"}
     </button>
   );
 
@@ -341,38 +383,49 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="flex min-h-screen">
           {/* sidebar desktop */}
-          <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-slate-200/80 bg-white/60 px-3 py-4 dark:border-slate-800/80 dark:bg-slate-950/60 md:flex">
-            <span className="flex items-center gap-2 px-2 font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 text-sm text-white dark:bg-slate-100 dark:text-slate-900">⚡</span>
-              Depanel
-            </span>
+          <aside className={`sticky top-0 hidden h-screen shrink-0 flex-col border-r border-slate-200/80 bg-white/60 px-3 py-4 transition-all duration-300 dark:border-slate-800/80 dark:bg-slate-950/60 md:flex ${collapsed ? "w-[68px]" : "w-60"}`}>
+            <div className={`flex items-center gap-2 font-semibold tracking-tight text-slate-900 dark:text-slate-100 ${collapsed ? "justify-center" : "px-2"}`}>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm text-white dark:bg-slate-100 dark:text-slate-900">⚡</span>
+              {!collapsed && <span>Depanel</span>}
+              {!collapsed && <span className="ml-auto">{collapseBtn}</span>}
+            </div>
+            {collapsed && (
+              <div className="mt-4 flex justify-center">{collapseBtn}</div>
+            )}
 
-            <nav className="mt-6 flex flex-col gap-1">
+            <nav className={`mt-6 flex flex-col gap-1 ${collapsed ? "items-center" : ""}`}>
               {navGroups.map((g) => (
-                <div key={g.label ?? "utama"} className="mb-1">
-                  {g.label && (
+                <div key={g.label ?? "utama"} className="mb-1 w-full">
+                  {g.label && !collapsed && (
                     <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{g.label}</p>
                   )}
                   {g.items.map((l) => (
-                    <Link key={l.href} href={l.href} className={linkCls(pathname === l.href, true)}>
-                      <span className="text-base">{l.icon}</span> {l.label}
+                    <Link
+                      key={l.href}
+                      href={l.href}
+                      title={collapsed ? l.label : undefined}
+                      className={`${linkCls(pathname === l.href, true)} ${collapsed ? "justify-center !px-0" : ""}`}
+                    >
+                      <span className={`${collapsed ? "" : "text-base"}`}>{l.icon}</span>
+                      {!collapsed && l.label}
                     </Link>
                   ))}
                 </div>
               ))}
             </nav>
 
-            {/* grup kiri-bawah: tim, tema, profil, logout */}
-            <div className="mt-auto space-y-2 border-t border-slate-200/80 pt-3 dark:border-slate-800/80">
-              {activeTeam && <TeamSwitcher activeTeam={activeTeam} teams={teams} dropUp onSwitch={switchTeam} />}
-              <div className="flex items-center gap-2 px-0.5">
+            {/* grup kiri-bawah: tim, bahasa, tema, profil, logout */}
+            <div className={`mt-auto space-y-2 border-t border-slate-200/80 pt-3 dark:border-slate-800/80 ${collapsed ? "flex flex-col items-center" : ""}`}>
+              {activeTeam && <TeamSwitcher activeTeam={activeTeam} teams={teams} dropUp mini={collapsed} onSwitch={switchTeam} />}
+              <div className={`flex items-center gap-2 px-0.5 ${collapsed ? "flex-col" : ""}`}>
+                {langBtn}
                 {themeBtn}
                 {avatar}
-                {me && <span className="min-w-0 flex-1 truncate text-xs text-slate-500 dark:text-slate-400">{me.name}</span>}
+                {!collapsed && me && <span className="min-w-0 flex-1 truncate text-xs text-slate-500 dark:text-slate-400">{me.name}</span>}
                 <button
                   onClick={logout}
-                  title="Keluar"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-sm text-slate-500 transition hover:bg-slate-50 hover:text-red-500 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                  title={t_("logout.title")}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-sm text-slate-500 transition hover:bg-slate-50 hover:text-red-500 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
                 >
                   ⏻
                 </button>
@@ -413,14 +466,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             )}
           </nav>
 
-          {/* kanan: switcher tim (ringkas) · tema · profil · keluar */}
+          {/* kanan: switcher tim (ringkas) · bahasa · tema · profil · keluar */}
           <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5 text-sm sm:gap-2">
             {activeTeam && <TeamSwitcher activeTeam={activeTeam} teams={teams} compact onSwitch={switchTeam} />}
+            {langBtn}
             {themeBtn}
             {avatar}
             <button
               onClick={logout}
-              title="Keluar"
+              title={t_("logout.title")}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-sm text-slate-500 transition hover:bg-slate-50 hover:text-red-500 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
             >
               ⏻
