@@ -144,9 +144,9 @@ export default function SuperAdminPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
-                        {u.teams.filter((t) => !t.isPersonal).map((t) => (
-                          <span key={t.id} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                            {t.name} · {t.role}
+                        {u.teams.filter((tm) => !tm.isPersonal).map((tm) => (
+                          <span key={tm.id} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                            {tm.name} · {tm.role}
                           </span>
                         ))}
                         {u.teams.filter((t) => !t.isPersonal).length === 0 && <span className="text-xs text-slate-400">—</span>}
