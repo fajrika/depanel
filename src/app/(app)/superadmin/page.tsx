@@ -195,18 +195,18 @@ export default function SuperAdminPage() {
           <div className={`${card} h-32 animate-pulse`} />
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
-            {teams.map((t) => (
-              <div key={t.id} className={`${card} p-4`}>
+            {teams.map((tm) => (
+              <div key={tm.id} className={`${card} p-4`}>
                 <div className="flex items-start justify-between gap-2">
                   <p className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                    <span>{t.isPersonal ? "👤" : "👥"}</span>
-                    <span className="truncate">{t.name}</span>
-                    <span className="text-[10px] font-normal text-slate-400">{t.accountCount} {t("sadm.accountsUnit")}</span>
+                    <span>{tm.isPersonal ? "👤" : "👥"}</span>
+                    <span className="truncate">{tm.name}</span>
+                    <span className="text-[10px] font-normal text-slate-400">{tm.accountCount} {t("sadm.accountsUnit")}</span>
                   </p>
                   <div className="flex shrink-0 gap-2">
                     <button
                       onClick={async () => {
-                        const ok = await api(`/api/superadmin/teams/${t.id}/enter`, "POST");
+                        const ok = await api(`/api/superadmin/teams/${tm.id}/enter`, "POST");
                         if (ok) window.location.href = "/";
                       }}
                       disabled={busy}
@@ -215,7 +215,7 @@ export default function SuperAdminPage() {
                       {t("sadm.enter")}
                     </button>
                     <button
-                      onClick={() => confirm(`${t("sadm.delConfirm")} "${t.name}"${t("sadm.delConfirm2")}`) && api(`/api/superadmin/teams/${t.id}`, "DELETE")}
+                      onClick={() => confirm(`${t("sadm.delConfirm")} "${tm.name}"${t("sadm.delConfirm2")}`) && api(`/api/superadmin/teams/${tm.id}`, "DELETE")}
                       disabled={busy}
                       className="text-xs font-medium text-red-500 hover:underline disabled:opacity-40"
                     >
@@ -224,7 +224,7 @@ export default function SuperAdminPage() {
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {t.members.map((m) => (
+                  {tm.members.map((m) => (
                     <span key={m.id} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                       {m.name} · {m.role}
                     </span>
