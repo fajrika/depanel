@@ -152,23 +152,25 @@ export default function SshTerminal({ sshId, name, host, username, port, onClose
       </div>
 
       {/* Terminal */}
-      <div className="flex-1 overflow-hidden p-1">
-        {status === "error" ? (
-          <div className="flex h-full items-center justify-center text-sm text-red-400">
-            <div className="text-center">
-              <p className="mb-2">Koneksi gagal</p>
-              <p className="text-xs text-slate-500">{errorMsg}</p>
+      <div className="relative flex-1 overflow-hidden p-1">
+        <div ref={termRef} className="h-full w-full" />
+        {status === "error" && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0f172a]/70">
+            <div className="rounded-xl bg-red-600 px-6 py-4 text-center shadow-lg">
+              <p className="mb-2 text-sm font-semibold text-white">Koneksi gagal</p>
+              <p className="mb-3 max-w-md text-xs text-red-100">{errorMsg}</p>
+              <button onClick={onClose} className="rounded-lg bg-white/20 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/30">Tutup</button>
             </div>
           </div>
-        ) : status === "disconnected" ? (
-          <div className="flex h-full items-center justify-center text-sm text-slate-400">
-            <div className="text-center">
-              <p className="mb-2">Koneksi terputus</p>
-              <button onClick={onClose} className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-600">Tutup</button>
+        )}
+        {status === "disconnected" && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0f172a]/70">
+            <div className="rounded-xl bg-red-600 px-6 py-4 text-center shadow-lg">
+              <p className="mb-2 text-sm font-semibold text-white">⚠️ Koneksi terputus</p>
+              <p className="mb-3 text-xs text-red-100">Sesi SSH berakhir atau sudah lama tidak diakses.</p>
+              <button onClick={onClose} className="rounded-lg bg-white/20 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/30">Tutup</button>
             </div>
           </div>
-        ) : (
-          <div ref={termRef} className="h-full w-full" />
         )}
       </div>
     </div>
