@@ -357,6 +357,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         { href: "/notifications", label: t_("nav.notifications"), icon: "🔔", show: at?.canNotify ?? false },
         { href: "/healthchecks", label: t_("nav.health"), icon: "🩺", show: at?.canInfra ?? false },
         { href: "/logs", label: t_("nav.logs"), icon: "📜", show: true },
+        { href: "/panelbackup", label: t_("nav.panelbackup"), icon: "🗄️", show: true },
         { href: "/teams", label: t_("nav.teams"), icon: "👥", show: true },
         { href: "/superadmin", label: t_("nav.superadmin"), icon: "⚡", show: superAdmin },
       ],

@@ -15,6 +15,7 @@ import { checkDueHealthChecks } from "../src/lib/healthcheck";
 import { runDueSshCommandJobs } from "../src/lib/sshcmd";
 import { checkDueSshHealth } from "../src/lib/sshhealth";
 import { runDueScheduledReports } from "../src/lib/schedreport";
+import { runDuePanelBackups } from "../src/lib/panelbackup";
 import { runAlertChecks } from "../src/lib/alerts";
 import { sampleAllMetrics } from "../src/lib/metrics";
 import { sampleAllSshMetrics } from "../src/lib/sshmon";
@@ -109,6 +110,17 @@ async function checkReports() {
   }
 }
 
+async function checkPanelBackups() {
+  try {
+    const started = await runDuePanelBackups();
+    if (started.length) {
+      console.log(`[${new Date().toISOString()}] backup panel dimulai: ${started.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[${new Date().toISOString()}] backup panel error:`, (e as Error).message);
+  }
+}
+
 async function checkAlerts() {
   try {
     await runAlertChecks();
@@ -144,6 +156,7 @@ cron.schedule("* * * * *", () => checkHealth());
 cron.schedule("* * * * *", () => checkSshCmds());
 cron.schedule("* * * * *", () => checkSshHealthAll());
 cron.schedule("* * * * *", () => checkReports());
+cron.schedule("* * * * *", () => checkPanelBackups());
 // di-offset agar alert, metrik depa, dan metrik SSH tidak menulis DB di menit yang sama
 cron.schedule("1-59/15 * * * *", () => checkAlerts());
 cron.schedule("2-59/15 * * * *", () => sampleMetrics());

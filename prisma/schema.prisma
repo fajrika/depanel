@@ -56,6 +56,43 @@ model Team {
   approvals     DestructiveApproval[]
   sshHealthChecks SshHealthCheck[]
   healthGroups  HealthGroup[]
+  panelBackups  PanelBackup[]
+}
+
+/// Pengaturan backup database Depanel (SQLite) itu sendiri — snapshot + kirim ke destinasi.
+model PanelBackup {
+  id           String   @id @default(cuid())
+  teamId       String?
+  team         Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name         String   @default("Panel Backup")
+  destType     String   @default("local") // local | ftp | s3 | gdrive
+  destId       String? // DbDest.id untuk ftp/s3/gdrive
+  destPath     String? // path lokal / folder / prefix
+  scheduleType String   @default("daily") // daily | weekly | monthly | cron
+  timeAt       String?  @default("02:00")
+  dayOn        Int?
+  cronExpr     String?
+  timezone     String   @default("Asia/Jakarta")
+  enabled      Boolean  @default(true)
+  lastRunAt    DateTime?
+  lastStatus   String?
+  createdAt    DateTime @default(now())
+  runs         PanelBackupRun[]
+}
+
+/// Satu eksekusi backup panel.
+model PanelBackupRun {
+  id            String      @id @default(cuid())
+  panelBackupId String
+  panelBackup   PanelBackup @relation(fields: [panelBackupId], references: [id], onDelete: Cascade)
+  status        String      @default("running")
+  message       String?
+  sizeBytes     Int?
+  location      String?
+  startedAt     DateTime    @default(now())
+  endedAt       DateTime?
+
+  @@index([panelBackupId, startedAt])
 }
 
 /// Grouping container untuk health check. Team-scoped.
