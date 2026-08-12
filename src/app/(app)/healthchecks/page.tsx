@@ -38,6 +38,35 @@ function fmtTime(s?: string | null): string {
   return new Date(s).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" });
 }
 
+type HcStats = {
+  uptime24h: number | null;
+  uptime7d: number | null;
+  uptime30d: number | null;
+  hours24: { label: string; pct: number | null; ok: boolean | null }[];
+  days30: { label: string; pct: number | null; ok: boolean | null }[];
+};
+
+/** Strip kotak uptime ala Uptime Kuma. */
+function UptimePills({ buckets }: { buckets: { label: string; pct: number | null; ok: boolean | null }[] }) {
+  const color = (b: { pct: number | null; ok: boolean | null }) => {
+    if (b.pct === null) return "bg-slate-200 dark:bg-slate-700";
+    if (b.pct >= 100) return "bg-emerald-500";
+    if (b.pct <= 0) return "bg-red-500";
+    return "bg-amber-400";
+  };
+  return (
+    <div className="flex flex-wrap gap-[3px]">
+      {buckets.map((b, i) => (
+        <span
+          key={i}
+          title={`${b.label}: ${b.pct === null ? "—" : `${b.pct}%`}`}
+          className={`h-3 w-[7px] rounded-[2px] ${color(b)}`}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function HealthChecksPage() {
   const { t } = useLang();
   const [checks, setChecks] = useState<Hc[]>([]);
@@ -48,6 +77,7 @@ export default function HealthChecksPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [samples, setSamples] = useState<Record<string, Sample[]>>({});
+  const [stats, setStats] = useState<Record<string, HcStats>>({});
   const [checking, setChecking] = useState<string | null>(null);
 
   const [fName, setFName] = useState("");
@@ -60,7 +90,18 @@ export default function HealthChecksPage() {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/healthchecks");
-      if (res.ok) setChecks((await res.json()).data ?? []);
+      if (res.ok) {
+        const list = (await res.json()).data ?? [];
+        setChecks(list);
+        // ambil statistik pill per health check (paralel)
+        await Promise.all(
+          list.map(async (c: Hc) => {
+            const sRes = await fetch(`/api/healthchecks/${c.id}/stats`);
+            const d = await sRes.json();
+            if (d.ok) setStats((prev) => ({ ...prev, [c.id]: d.data }));
+          }),
+        );
+      }
     } catch {
       /* biarkan data lama */
     } finally {
@@ -212,19 +253,55 @@ export default function HealthChecksPage() {
         <div className="space-y-3">
           {checks.map((c) => {
             const up = c.lastStatus === "up";
+            const st = stats[c.id];
+            const fmtUptime = (v: number | null) => (v === null ? "—" : `${v.toFixed(2)}%`);
             return (
               <div key={c.id} className={`${card} overflow-hidden`}>
-                <div className="flex flex-wrap items-center gap-3 p-4">
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${up ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:ring-emerald-900" : c.lastStatus === "down" ? "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/60 dark:text-red-400 dark:ring-red-900" : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700"}`}>
-                    {c.lastStatus === "up" ? `● ${t("hc.up")}` : c.lastStatus === "down" ? `● ${t("hc.down")}` : `· ${t("hc.never")}`}
+                <div className="flex flex-wrap items-center gap-4 p-4">
+                  {/* badge besar ala Uptime Kuma */}
+                  <span
+                    className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-2xl shadow-sm ring-1 ${
+                      up ? "bg-emerald-500 text-white ring-emerald-600" : c.lastStatus === "down" ? "bg-red-500 text-white ring-red-600" : "bg-slate-200 text-slate-500 ring-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:ring-slate-600"
+                    }`}
+                  >
+                    {up ? "✓" : c.lastStatus === "down" ? "✕" : "·"}
                   </span>
+
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{c.name}</p>
-                    <p className="truncate text-xs text-slate-400">{c.method} {c.url} · {t("hc.intervalLabel").replace("{n}", String(c.intervalMin))} · {t("hc.expStatus").replace("{n}", String(c.expectedStatus))}</p>
-                    <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                      {t("hc.uptime24h")}: {c.uptimePct === null ? "—" : `${c.uptimePct.toFixed(2)}%`} · {t("hc.latency")}: {c.lastLatencyMs !== null ? `${c.lastLatencyMs}ms` : "—"} · {t("hc.lastCheck")}: {fmtTime(c.lastCheckAt)} · {t("hc.lastUp")}: {fmtTime(c.lastUpAt)}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{c.name}</p>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${up ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:ring-emerald-900" : c.lastStatus === "down" ? "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/60 dark:text-red-400 dark:ring-red-900" : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700"}`}>
+                        {c.lastStatus === "up" ? t("hc.up") : c.lastStatus === "down" ? t("hc.down") : t("hc.never")}
+                      </span>
+                      {c.lastLatencyMs !== null && (
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-400">{c.lastLatencyMs}ms</span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-slate-400">{c.method} {c.url}</p>
+
+                    {/* statistik uptime */}
+                    <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                      <span><b className="text-slate-700 dark:text-slate-200">{fmtUptime(st?.uptime24h ?? null)}</b> · {t("hc.up24h")}</span>
+                      <span><b className="text-slate-700 dark:text-slate-200">{fmtUptime(st?.uptime7d ?? null)}</b> · {t("hc.up7d")}</span>
+                      <span><b className="text-slate-700 dark:text-slate-200">{fmtUptime(st?.uptime30d ?? null)}</b> · {t("hc.up30d")}</span>
+                      <span className="text-slate-400 dark:text-slate-500">{t("hc.lastCheck")}: {fmtTime(c.lastCheckAt)}</span>
+                    </div>
+
+                    {/* pill strip ala Uptime Kuma */}
+                    {st && (
+                      <div className="mt-3 space-y-1.5">
+                        <div>
+                          <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("hc.last24h")}</p>
+                          <UptimePills buckets={st.hours24} />
+                        </div>
+                        <div>
+                          <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("hc.last30d")}</p>
+                          <UptimePills buckets={st.days30} />
+                        </div>
+                      </div>
+                    )}
                   </div>
+
                   <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs">
                     <button onClick={() => toggleEnabled(c)} disabled={busy} className={`rounded-full px-2.5 py-1 font-medium ring-1 transition ${c.enabled ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:ring-emerald-900" : "bg-slate-100 text-slate-500 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700"}`}>
                       {c.enabled ? `✓ ${t("hc.enabled")}` : t("hc.disabled")}

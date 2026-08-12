@@ -107,3 +107,68 @@ export async function getHealthHistory(checkId: string, hours = 24) {
     })),
   };
 }
+
+type PillBucket = { label: string; pct: number | null; ok: boolean | null };
+
+function pctToState(pct: number | null): "up" | "down" | "partial" | "none" {
+  if (pct === null) return "none";
+  if (pct >= 100) return "up";
+  if (pct <= 0) return "down";
+  return "partial";
+}
+
+/**
+ * Statistik gaya Uptime Kuma: strip kotak 24 jam (per jam) + 30 hari (per hari)
+ * + uptime % 24 jam / 7 hari / 30 hari.
+ */
+export async function getHealthStats(checkId: string): Promise<{
+  uptime24h: number | null;
+  uptime7d: number | null;
+  uptime30d: number | null;
+  hours24: { label: string; pct: number | null; ok: boolean | null }[];
+  days30: { label: string; pct: number | null; ok: boolean | null }[];
+}> {
+  const now = Date.now();
+  const since = new Date(now - 30 * 24 * 60 * 60 * 1000);
+  const samples = await prisma.healthCheckSample.findMany({
+    where: { checkId, at: { gte: since } },
+    select: { at: true, ok: true },
+  });
+
+  const uptime = (ms: number): number | null => {
+    const list = samples.filter((s) => s.at.getTime() >= now - ms);
+    if (!list.length) return null;
+    const up = list.filter((s) => s.ok).length;
+    return Math.round((up / list.length) * 1000) / 10;
+  };
+
+  // 24 bucket per jam (jam mulai = jam saat ini - 23 … sekarang)
+  const hours24: PillBucket[] = [];
+  for (let i = 23; i >= 0; i--) {
+    const start = now - i * 60 * 60 * 1000;
+    const end = start + 60 * 60 * 1000;
+    const list = samples.filter((s) => s.at.getTime() >= start && s.at.getTime() < end);
+    const pct = list.length ? Math.round((list.filter((s) => s.ok).length / list.length) * 100) : null;
+    const d = new Date(start);
+    hours24.push({ label: `${String(d.getHours()).padStart(2, "0")}:00`, pct, ok: pctToState(pct) === "up" ? true : pctToState(pct) === "down" ? false : null });
+  }
+
+  // 30 bucket per hari (hari mulai = hari ini - 29 … hari ini)
+  const days30: PillBucket[] = [];
+  for (let i = 29; i >= 0; i--) {
+    const start = new Date(now - i * 24 * 60 * 60 * 1000);
+    start.setHours(0, 0, 0, 0);
+    const end = start.getTime() + 24 * 60 * 60 * 1000;
+    const list = samples.filter((s) => s.at.getTime() >= start.getTime() && s.at.getTime() < end);
+    const pct = list.length ? Math.round((list.filter((s) => s.ok).length / list.length) * 100) : null;
+    days30.push({ label: `${String(start.getDate()).padStart(2, "0")}/${String(start.getMonth() + 1).padStart(2, "0")}`, pct, ok: pctToState(pct) === "up" ? true : pctToState(pct) === "down" ? false : null });
+  }
+
+  return {
+    uptime24h: uptime(24 * 60 * 60 * 1000),
+    uptime7d: uptime(7 * 24 * 60 * 60 * 1000),
+    uptime30d: uptime(30 * 24 * 60 * 60 * 1000),
+    hours24,
+    days30,
+  };
+}
