@@ -31,7 +31,7 @@ type HcStats = {
   uptime24h: number | null;
   uptime7d: number | null;
   uptime30d: number | null;
-  hours24: { label: string; pct: number | null; ok: boolean | null }[];
+  last24: { label: string; pct: number | null; ok: boolean | null }[];
   days30: { label: string; pct: number | null; ok: boolean | null }[];
   rangeStart: string;
   rangeEnd: string;
@@ -219,7 +219,7 @@ function HealthDetail({
               {expandedPills.h24 ? (
                 <SamplePills samples={stats.samples24} />
               ) : (
-                <UptimePills buckets={stats.hours24} />
+                <UptimePills buckets={stats.last24} />
               )}
             </div>
 
@@ -543,7 +543,7 @@ export default function HealthChecksPage() {
                     <span className="text-[11px] text-slate-400">
                       {t("hc.up24h")}: <b className={up ? "text-emerald-600" : "text-red-600"}>{fmtUptime(stats[c.id]?.uptime24h ?? null)}</b>
                     </span>
-                    {stats[c.id] && <UptimePills buckets={stats[c.id].hours24.slice(0, 24)} />}
+                    {stats[c.id] && <UptimePills buckets={stats[c.id].last24.slice(0, 24)} />}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-2.5 dark:border-slate-800" onClick={(e) => e.stopPropagation()}>
                     {actions(c)}
@@ -598,7 +598,7 @@ export default function HealthChecksPage() {
                 </div>
                 {st && (
                   <div className="px-4 pb-3">
-                    <UptimePills buckets={st.hours24.slice(0, 24)} />
+                    <UptimePills buckets={st.last24.slice(0, 24)} />
                   </div>
                 )}
                 <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 px-4 py-2.5 dark:border-slate-800">

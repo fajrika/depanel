@@ -118,9 +118,8 @@ function pctToState(pct: number | null): "up" | "down" | "partial" | "none" {
 }
 
 /**
- * Statistik gaya Uptime Kuma: strip kotak 24 jam (per jam) + 30 hari (per hari,
- * bisa digeser ke periode sebelumnya via offsetDays) + uptime % + sampel mentah
- * untuk mode expand.
+ * Statistik gaya Uptime Kuma: strip 24 pengecekan terakhir + 30 hari (per hari,
+ * bisa digeser via offsetDays) + uptime % + sampel mentah untuk mode expand.
  */
 export async function getHealthStats(
   checkId: string,
@@ -129,7 +128,7 @@ export async function getHealthStats(
   uptime24h: number | null;
   uptime7d: number | null;
   uptime30d: number | null;
-  hours24: { label: string; pct: number | null; ok: boolean | null }[];
+  last24: { label: string; pct: number | null; ok: boolean | null }[];
   days30: { label: string; pct: number | null; ok: boolean | null }[];
   rangeStart: string;
   rangeEnd: string;
@@ -144,23 +143,27 @@ export async function getHealthStats(
     select: { at: true, ok: true, latencyMs: true },
   });
 
+  // 24 pengecekan terakhir (bukan agregat per jam)
+  const lastSamples = await prisma.healthCheckSample.findMany({
+    where: { checkId },
+    orderBy: { at: "desc" },
+    take: 24,
+    select: { at: true, ok: true },
+  });
+  const last24: PillBucket[] = lastSamples
+    .reverse()
+    .map((s) => ({
+      label: new Date(s.at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
+      pct: s.ok ? 100 : 0,
+      ok: s.ok,
+    }));
+
   const uptime = (ms: number): number | null => {
     const list = samples.filter((s) => s.at.getTime() >= now - ms);
     if (!list.length) return null;
     const up = list.filter((s) => s.ok).length;
     return Math.round((up / list.length) * 1000) / 10;
   };
-
-  // 24 bucket per jam (jam mulai = jam saat ini - 23 … sekarang)
-  const hours24: PillBucket[] = [];
-  for (let i = 23; i >= 0; i--) {
-    const start = now - i * 60 * 60 * 1000;
-    const end = start + 60 * 60 * 1000;
-    const list = samples.filter((s) => s.at.getTime() >= start && s.at.getTime() < end);
-    const pct = list.length ? Math.round((list.filter((s) => s.ok).length / list.length) * 100) : null;
-    const d = new Date(start);
-    hours24.push({ label: `${String(d.getHours()).padStart(2, "0")}:00`, pct, ok: pctToState(pct) === "up" ? true : pctToState(pct) === "down" ? false : null });
-  }
 
   // rentang 30 hari untuk periode aktif (offsetDays = 0 → 30 hari terakhir)
   const rangeEndMs = now - offsetDays * 24 * 60 * 60 * 1000;
@@ -197,7 +200,7 @@ export async function getHealthStats(
     uptime24h: uptime(24 * 60 * 60 * 1000),
     uptime7d: uptime(7 * 24 * 60 * 60 * 1000),
     uptime30d: uptime(30 * 24 * 60 * 60 * 1000),
-    hours24,
+    last24,
     days30,
     rangeStart: new Date(rangeStartMs).toISOString(),
     rangeEnd: new Date(rangeEndMs).toISOString(),
