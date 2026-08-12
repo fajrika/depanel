@@ -109,7 +109,7 @@ type NavItem = { href: string; label: string; icon: string };
 /* ---------- bell notifikasi in-app ---------- */
 type NotifItem = { id: string; type: string; title: string; message: string | null; read: boolean; createdAt: string };
 
-function BellNotif({ dropUp }: { dropUp?: boolean }) {
+function BellNotif({ dropUp, left }: { dropUp?: boolean; left?: boolean }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotifItem[]>([]);
@@ -164,9 +164,9 @@ function BellNotif({ dropUp }: { dropUp?: boolean }) {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
-            className={`animate-fade-up absolute right-0 z-50 mt-1.5 w-80 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
-              dropUp ? "bottom-full mb-1.5" : "top-full"
-            }`}
+            className={`animate-fade-up absolute z-50 mt-1.5 w-80 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
+              left ? "left-0" : "right-0"
+            } ${dropUp ? "bottom-full mb-1.5" : "top-full"}`}
           >
             <div className="flex items-center justify-between px-2.5 py-1.5">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t("notif.bell")}</p>
@@ -526,7 +526,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               )}
               <div className={`flex items-center gap-1.5 ${collapsed ? "flex-col" : "justify-between"}`}>
                 <div className="flex items-center gap-1.5">
-                  <BellNotif dropUp />
+                  <BellNotif dropUp left />
                   {langBtn}
                   {themeBtn}
                 </div>
