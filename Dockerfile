@@ -23,8 +23,11 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV DATABASE_URL="file:/tmp/build.db"
-# Typechecking during `next build` takes 16+ min on the deploy box; types are
-# checked locally before pushing (npx tsc --noEmit).
+# Commit SHA dari GitHub Action di-bake ke client bundle untuk badge versi di UI.
+ARG GIT_COMMIT_SHA
+ENV NEXT_PUBLIC_GIT_COMMIT_SHA=$GIT_COMMIT_SHA
+# Typechecking selama `next build` memakan 16+ menit di deploy box; tipe sudah
+# dicek lokal sebelum push (npx tsc --noEmit).
 ENV SKIP_TYPESCRIPT_CHECK=1
 RUN --mount=type=cache,target=/app/.next/cache \
     npx prisma generate \

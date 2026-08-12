@@ -539,6 +539,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   ⏻
                 </button>
               </div>
+              {!collapsed && (() => {
+                const sha = process.env.NEXT_PUBLIC_GIT_COMMIT_SHA;
+                if (!sha) return null;
+                return (
+                  <p title={`Commit ${sha}`} className="truncate px-1 text-center text-[9px] text-slate-400 dark:text-slate-600">
+                    {sha.slice(0, 7)}
+                  </p>
+                );
+              })()}
             </div>
           </aside>
 
