@@ -39,7 +39,7 @@ function TeamSwitcher({
   mini?: boolean; // sidebar collapsed: hanya ikon
   onSwitch: (id: string) => void;
 }) {
-  const { t } = useLang();
+  const { t: t_ } = useLang();
   const [open, setOpen] = useState(false);
   return (
     <div className="relative min-w-0">
