@@ -55,6 +55,20 @@ model Team {
   scheduledReports ScheduledReport[]
   approvals     DestructiveApproval[]
   sshHealthChecks SshHealthCheck[]
+  healthGroups  HealthGroup[]
+}
+
+/// Grouping container untuk health check. Team-scoped.
+model HealthGroup {
+  id           String        @id @default(cuid())
+  teamId       String?
+  team         Team?         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name         String
+  sortOrder    Int           @default(0)
+  createdAt    DateTime      @default(now())
+  checks       HealthCheck[]
+
+  @@unique([teamId, name])
 }
 
 /// A notification target for a team (Telegram, Discord, or generic webhook).
@@ -404,7 +418,8 @@ model HealthCheck {
   team          Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
   name          String
   url           String // http(s) endpoint yang dicek
-  group         String? // label grup opsional (mis. Production, Staging)
+  groupId       String?
+  group         HealthGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   method        String   @default("GET")
   expectedStatus Int     @default(200)
   intervalMin   Int      @default(1) // jarak antar cek (menit)

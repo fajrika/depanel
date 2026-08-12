@@ -7,7 +7,7 @@ type Hc = {
   id: string;
   name: string;
   url: string;
-  group: string | null;
+  group: { id: string; name: string } | null;
   method: string;
   expectedStatus: number;
   intervalMin: number;
@@ -40,6 +40,8 @@ type HcStats = {
   samples30: { t: string; ok: boolean; latencyMs: number | null }[];
   offset: number;
 };
+
+type HcGroup = { id: string; name: string; checkCount: number };
 
 const input =
   "rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300";
@@ -294,11 +296,14 @@ export default function HealthChecksPage() {
 
   const [fName, setFName] = useState("");
   const [fUrl, setFUrl] = useState("");
-  const [fGroup, setFGroup] = useState("");
+  const [fGroupId, setFGroupId] = useState("");
   const [fMethod, setFMethod] = useState("GET");
   const [fStatus, setFStatus] = useState("200");
   const [fInterval, setFInterval] = useState("1");
   const [fTimeout, setFTimeout] = useState("10");
+  const [groups, setGroups] = useState<HcGroup[]>([]);
+  const [showGroupPanel, setShowGroupPanel] = useState(false);
+  const [gName, setGName] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   const loadStats = useCallback(async (id: string, offset: number) => {
@@ -309,7 +314,8 @@ export default function HealthChecksPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/healthchecks");
+      const [res, gRes] = await Promise.all([fetch("/api/healthchecks"), fetch("/api/healthgroups")]);
+      if (gRes.ok) setGroups((await gRes.json()).data ?? []);
       if (res.ok) {
         const list = (await res.json()).data ?? [];
         setChecks(list);
@@ -365,7 +371,7 @@ export default function HealthChecksPage() {
   function resetForm() {
     setFName("");
     setFUrl("");
-    setFGroup("");
+    setFGroupId("");
     setFMethod("GET");
     setFStatus("200");
     setFInterval("1");
@@ -376,7 +382,7 @@ export default function HealthChecksPage() {
     setEditId(c.id);
     setFName(c.name);
     setFUrl(c.url);
-    setFGroup(c.group ?? "");
+    setFGroupId(c.group?.id ?? "");
     setFMethod(c.method);
     setFStatus(String(c.expectedStatus));
     setFInterval(String(c.intervalMin));
@@ -392,7 +398,7 @@ export default function HealthChecksPage() {
     const payload = {
       name: fName,
       url: fUrl,
-      group: fGroup,
+      groupId: fGroupId,
       method: fMethod,
       expectedStatus: Number(fStatus) || 200,
       intervalMin: Number(fInterval) || 1,
@@ -467,11 +473,11 @@ export default function HealthChecksPage() {
     });
   }
 
-  /** Kelompokkan checks per label grup (tanpa grup → key ""). */
+  /** Kelompokkan checks per grup (tanpa grup → key ""). */
   const grouped = (() => {
     const map = new Map<string, Hc[]>();
     for (const c of checks) {
-      const g = c.group ?? "";
+      const g = c.group?.name ?? "";
       if (!map.has(g)) map.set(g, []);
       map.get(g)!.push(c);
     }
@@ -536,7 +542,18 @@ export default function HealthChecksPage() {
 
           <div className="flex flex-wrap gap-4">
             <div><label className={label}>{t("hc.name")}</label><input required value={fName} onChange={(e) => setFName(e.target.value)} placeholder={t("hc.namePh")} className={`${input} mt-1 w-52`} /></div>
-            <div><label className={label}>{t("hc.group")}</label><input value={fGroup} onChange={(e) => setFGroup(e.target.value)} placeholder={t("hc.groupPh")} className={`${input} mt-1 w-40`} /></div>
+            <div>
+              <label className={label}>{t("hc.group")}</label>
+              <div className="mt-1 flex items-center gap-1.5">
+                <select value={fGroupId} onChange={(e) => setFGroupId(e.target.value)} className={`${input} w-40`}>
+                  <option value="">{t("hc.noGroup")}</option>
+                  {groups.map((g) => (<option key={g.id} value={g.id}>{g.name}</option>))}
+                </select>
+                <button type="button" onClick={() => setShowGroupPanel((s) => !s)} className="rounded-lg border border-slate-200 px-2 py-2 text-xs font-medium text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
+                  {t("hc.manageGroups")}
+                </button>
+              </div>
+            </div>
             <div className="flex-1"><label className={label}>{t("hc.url")}</label><input required type="url" value={fUrl} onChange={(e) => setFUrl(e.target.value)} placeholder={t("hc.urlPh")} className={`${input} mt-1 w-full max-w-md font-mono`} /></div>
           </div>
 
@@ -551,6 +568,56 @@ export default function HealthChecksPage() {
             <button disabled={busy} className={btnPrimary}>{busy ? t("hc.saving") : t("hc.save")}</button>
           </div>
         </form>
+      )}
+
+      {showGroupPanel && (
+        <div className={`${card} animate-fade-up space-y-3 p-4`}>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("hc.groupsTitle")}</h3>
+            <button onClick={() => setShowGroupPanel(false)} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">✕</button>
+          </div>
+          <form
+            className="flex items-end gap-2"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const res = await fetch("/api/healthgroups", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: gName }),
+              });
+              const d = await res.json();
+              if (!res.ok || !d.ok) {
+                setMsg({ text: d.message ?? t("hc.savedErr"), ok: false });
+              } else {
+                setGName("");
+                load();
+              }
+            }}
+          >
+            <div className="flex-1"><label className={label}>{t("hc.groupName")}</label><input required value={gName} onChange={(e) => setGName(e.target.value)} placeholder={t("hc.groupNamePh")} className={`${input} mt-1 w-full max-w-xs`} /></div>
+            <button className={btnPrimary}>{t("hc.addGroup")}</button>
+          </form>
+          {groups.length === 0 ? (
+            <p className="text-xs text-slate-400">{t("hc.groupEmpty")}</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {groups.map((g) => (
+                <span key={g.id} className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-700">
+                  {g.name}
+                  <span className="text-[10px] text-slate-400">{g.checkCount}</span>
+                  <button
+                    type="button"
+                    title={t("hc.deleteGroup")}
+                    onClick={() => confirm(`${t("hc.deleteGroupConfirm")} "${g.name}"?`) && fetch(`/api/healthgroups/${g.id}`, { method: "DELETE" }).then(() => { load(); setFGroupId(""); })}
+                    className="text-slate-400 transition hover:text-red-500"
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {loading ? (
