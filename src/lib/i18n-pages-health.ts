@@ -2,6 +2,10 @@
 export const dict: Record<"id" | "en", Record<string, string>> = {
   id: {
     "hc.title": "Health Check",
+    "hc.detail": "Detail",
+    "hc.viewList": "List",
+    "hc.viewGrid": "Card",
+    "hc.pickOne": "Pilih salah satu health check di kiri untuk melihat detailnya.",
     "hc.subtitle": "Pantau ketersediaan endpoint aplikasi secara berkala — notifikasi otomatis saat status berubah.",
     "hc.add": "+ Tambah health check",
     "hc.editTitle": "Edit Health Check",
@@ -52,6 +56,10 @@ export const dict: Record<"id" | "en", Record<string, string>> = {
   },
   en: {
     "hc.title": "Health Check",
+    "hc.detail": "Details",
+    "hc.viewList": "List",
+    "hc.viewGrid": "Cards",
+    "hc.pickOne": "Select a health check on the left to see its details.",
     "hc.subtitle": "Monitor your application endpoints periodically — automatic notifications when status changes.",
     "hc.add": "+ Add health check",
     "hc.editTitle": "Edit Health Check",

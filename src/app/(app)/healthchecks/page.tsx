@@ -27,6 +27,14 @@ type Sample = {
   error: string | null;
 };
 
+type HcStats = {
+  uptime24h: number | null;
+  uptime7d: number | null;
+  uptime30d: number | null;
+  hours24: { label: string; pct: number | null; ok: boolean | null }[];
+  days30: { label: string; pct: number | null; ok: boolean | null }[];
+};
+
 const input =
   "rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300";
 const label = "block text-xs font-medium text-slate-500 dark:text-slate-400";
@@ -38,13 +46,15 @@ function fmtTime(s?: string | null): string {
   return new Date(s).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" });
 }
 
-type HcStats = {
-  uptime24h: number | null;
-  uptime7d: number | null;
-  uptime30d: number | null;
-  hours24: { label: string; pct: number | null; ok: boolean | null }[];
-  days30: { label: string; pct: number | null; ok: boolean | null }[];
-};
+function fmtUptime(v: number | null): string {
+  return v === null ? "—" : `${v.toFixed(2)}%`;
+}
+
+function fmtInterval(m: number): string {
+  if (m < 60) return `${m} mnt`;
+  if (m % 60 === 0) return `${m / 60} jam`;
+  return `${Math.floor(m / 60)}j ${m % 60}m`;
+}
 
 /** Strip kotak uptime ala Uptime Kuma. */
 function UptimePills({ buckets }: { buckets: { label: string; pct: number | null; ok: boolean | null }[] }) {
@@ -57,12 +67,138 @@ function UptimePills({ buckets }: { buckets: { label: string; pct: number | null
   return (
     <div className="flex flex-wrap gap-[3px]">
       {buckets.map((b, i) => (
-        <span
-          key={i}
-          title={`${b.label}: ${b.pct === null ? "—" : `${b.pct}%`}`}
-          className={`h-3 w-[7px] rounded-[2px] ${color(b)}`}
-        />
+        <span key={i} title={`${b.label}: ${b.pct === null ? "—" : `${b.pct}%`}`} className={`h-3 w-[7px] rounded-[2px] ${color(b)}`} />
       ))}
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string | null }) {
+  const up = status === "up";
+  const down = status === "down";
+  const cls = up
+    ? "bg-emerald-500 text-white ring-emerald-600"
+    : down
+      ? "bg-red-500 text-white ring-red-600"
+      : "bg-slate-200 text-slate-500 ring-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:ring-slate-600";
+  return (
+    <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-xl shadow-sm ring-1 ${cls}`}>
+      {up ? "✓" : down ? "✕" : "·"}
+    </span>
+  );
+}
+
+/** Panel detail (dipakai di list-view kanan dan modal grid-view). */
+function HealthDetail({
+  c,
+  stats,
+  samples,
+  onLoadSamples,
+  onClose,
+}: {
+  c: Hc;
+  stats?: HcStats;
+  samples: Sample[] | null;
+  onLoadSamples: (id: string) => void;
+  onClose: () => void;
+}) {
+  const { t } = useLang();
+  const up = c.lastStatus === "up";
+  useEffect(() => {
+    if (samples === null) onLoadSamples(c.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [c.id, samples === null]);
+
+  return (
+    <div className="animate-slide-in-right space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-4">
+          <StatusBadge status={c.lastStatus} />
+          <div className="min-w-0">
+            <h2 className="truncate text-lg font-semibold text-slate-900 dark:text-slate-100">{c.name}</h2>
+            <p className="truncate text-xs text-slate-500 dark:text-slate-400">{c.method} {c.url}</p>
+            <p className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
+              <span>{t("hc.intervalLabel").replace("{n}", String(c.intervalMin))}</span>
+              <span>·</span>
+              <span>{t("hc.expStatus").replace("{n}", String(c.expectedStatus))}</span>
+              <span>·</span>
+              <span>{t("hc.timeout")}: {c.timeoutSec}s</span>
+            </p>
+          </div>
+        </div>
+        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
+          {t("hc.close")}
+        </button>
+      </div>
+
+      <div className={`${card} p-5`}>
+        <div className="flex flex-wrap gap-x-6 gap-y-3 text-sm">
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">{t("hc.up24h")}</p>
+            <p className={`mt-0.5 font-semibold tabular-nums ${(stats?.uptime24h ?? 0) >= 99 ? "text-emerald-600" : (stats?.uptime24h ?? 0) < 90 ? "text-red-600" : "text-slate-800 dark:text-slate-100"}`}>{fmtUptime(stats?.uptime24h ?? null)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">{t("hc.up7d")}</p>
+            <p className="mt-0.5 font-semibold tabular-nums text-slate-800 dark:text-slate-100">{fmtUptime(stats?.uptime7d ?? null)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">{t("hc.up30d")}</p>
+            <p className="mt-0.5 font-semibold tabular-nums text-slate-800 dark:text-slate-100">{fmtUptime(stats?.uptime30d ?? null)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">{t("hc.latency")}</p>
+            <p className="mt-0.5 font-semibold tabular-nums text-slate-800 dark:text-slate-100">{c.lastLatencyMs !== null ? `${c.lastLatencyMs}ms` : "—"}</p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">{t("hc.lastCheck")}</p>
+            <p className="mt-0.5 text-sm text-slate-700 dark:text-slate-200">{fmtTime(c.lastCheckAt)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">{t("hc.lastUp")}</p>
+            <p className="mt-0.5 text-sm text-slate-700 dark:text-slate-200">{fmtTime(c.lastUpAt)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">{t("hc.interval")}</p>
+            <p className="mt-0.5 text-sm text-slate-700 dark:text-slate-200">{fmtInterval(c.intervalMin)}</p>
+          </div>
+        </div>
+
+        {stats && (
+          <div className="mt-5 space-y-1.5">
+            <div>
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("hc.last24h")}</p>
+              <UptimePills buckets={stats.hours24} />
+            </div>
+            <div>
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("hc.last30d")}</p>
+              <UptimePills buckets={stats.days30} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className={`${card} p-5`}>
+        <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">{t("hc.history")}</h3>
+        {samples === null ? (
+          <p className="text-xs text-slate-400">…</p>
+        ) : samples.length === 0 ? (
+          <p className="text-xs text-slate-400">{t("hc.noSamples")}</p>
+        ) : (
+          <div className="max-h-64 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
+            {[...samples].reverse().map((s, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-3 py-2 text-xs">
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${s.ok ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:ring-emerald-900" : "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/60 dark:text-red-400 dark:ring-red-900"}`}>
+                  {s.ok ? t("hc.up") : t("hc.down")}
+                </span>
+                <span className="text-slate-500 dark:text-slate-400">{fmtTime(s.t)}</span>
+                <span className="tabular-nums text-slate-500 dark:text-slate-400">{s.statusCode ?? "—"}</span>
+                <span className="tabular-nums text-slate-500 dark:text-slate-400">{s.latencyMs !== null ? `${s.latencyMs}ms` : "—"}</span>
+                <span className="min-w-0 flex-1 truncate text-slate-400">{s.error ?? ""}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -75,8 +211,10 @@ export default function HealthChecksPage() {
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [samples, setSamples] = useState<Record<string, Sample[]>>({});
+  const [view, setView] = useState<"list" | "grid">("grid");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [modalId, setModalId] = useState<string | null>(null);
+  const [samples, setSamples] = useState<Record<string, Sample[] | null>>({});
   const [stats, setStats] = useState<Record<string, HcStats>>({});
   const [checking, setChecking] = useState<string | null>(null);
 
@@ -93,7 +231,6 @@ export default function HealthChecksPage() {
       if (res.ok) {
         const list = (await res.json()).data ?? [];
         setChecks(list);
-        // ambil statistik pill per health check (paralel)
         await Promise.all(
           list.map(async (c: Hc) => {
             const sRes = await fetch(`/api/healthchecks/${c.id}/stats`);
@@ -110,6 +247,31 @@ export default function HealthChecksPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("depanel_hc_view");
+      if (saved === "list" || saved === "grid") setView(saved);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  function setViewAndSave(v: "list" | "grid") {
+    setView(v);
+    try {
+      localStorage.setItem("depanel_hc_view", v);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function loadSamples(id: string) {
+    if (samples[id] !== undefined) return;
+    const res = await fetch(`/api/healthchecks/${id}/samples?hours=24`);
+    const d = await res.json();
+    setSamples((s) => ({ ...s, [id]: d.ok ? (d.data.samples ?? []) : [] }));
+  }
 
   function resetForm() {
     setFName("");
@@ -183,21 +345,26 @@ export default function HealthChecksPage() {
   async function remove(c: Hc) {
     if (!confirm(`${t("hc.deleteConfirm")} "${c.name}" ${t("hc.deleteConfirm2")}`)) return;
     await fetch(`/api/healthchecks/${c.id}`, { method: "DELETE" });
+    if (selectedId === c.id) setSelectedId(null);
+    if (modalId === c.id) setModalId(null);
     load();
   }
 
-  async function toggleHistory(c: Hc) {
-    if (expanded === c.id) {
-      setExpanded(null);
-      return;
-    }
-    setExpanded(c.id);
-    if (!samples[c.id]) {
-      const res = await fetch(`/api/healthchecks/${c.id}/samples?hours=24`);
-      const d = await res.json();
-      if (d.ok) setSamples((s) => ({ ...s, [c.id]: d.data.samples ?? [] }));
-    }
-  }
+  const selected = checks.find((c) => c.id === selectedId) ?? null;
+  const modalCheck = checks.find((c) => c.id === modalId) ?? null;
+
+  const actions = (c: Hc) => (
+    <div className="flex shrink-0 flex-wrap items-center gap-1.5 text-xs" onClick={(e) => e.stopPropagation()}>
+      <button onClick={() => toggleEnabled(c)} disabled={busy} className={`rounded-full px-2.5 py-1 font-medium ring-1 transition ${c.enabled ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:ring-emerald-900" : "bg-slate-100 text-slate-500 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700"}`}>
+        {c.enabled ? `✓ ${t("hc.enabled")}` : t("hc.disabled")}
+      </button>
+      <button onClick={() => checkNow(c)} disabled={busy || checking === c.id} className="rounded-lg bg-slate-900 px-2.5 py-1.5 font-medium text-white transition hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300">
+        {checking === c.id ? t("hc.checking") : t("hc.checkNow")}
+      </button>
+      <button onClick={() => startEdit(c)} disabled={busy} className="rounded-lg px-2 py-1.5 font-medium text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">{t("hc.edit")}</button>
+      <button onClick={() => remove(c)} disabled={busy} className="rounded-lg px-2 py-1.5 font-medium text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950">{t("hc.delete")}</button>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -206,9 +373,19 @@ export default function HealthChecksPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">🩺 {t("hc.title")}</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("hc.subtitle")}</p>
         </div>
-        <button onClick={() => { setShowForm(!showForm); setEditId(null); if (!showForm) resetForm(); }} className={btnPrimary}>
-          {showForm ? t("hc.close") : t("hc.add")}
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <button onClick={() => setViewAndSave("list")} title={t("hc.viewList")} className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${view === "list" ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"}`}>
+              ☰ {t("hc.viewList")}
+            </button>
+            <button onClick={() => setViewAndSave("grid")} title={t("hc.viewGrid")} className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${view === "grid" ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"}`}>
+              ▦ {t("hc.viewGrid")}
+            </button>
+          </div>
+          <button onClick={() => { setShowForm(!showForm); setEditId(null); if (!showForm) resetForm(); }} className={btnPrimary}>
+            {showForm ? t("hc.close") : t("hc.add")}
+          </button>
+        </div>
       </div>
 
       {msg && (
@@ -249,100 +426,119 @@ export default function HealthChecksPage() {
         <p className="rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 p-8 text-center text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-900/40">
           {t("hc.empty")}
         </p>
+      ) : view === "list" ? (
+        /* ===== LIST VIEW: daftar kiri + detail kanan ===== */
+        <div className="flex flex-col items-start gap-6 lg:flex-row">
+          <div className="w-full shrink-0 space-y-3 lg:w-[380px]">
+            {checks.map((c) => {
+              const active = selectedId === c.id;
+              const up = c.lastStatus === "up";
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedId(active ? null : c.id)}
+                  className={`block w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition dark:bg-slate-900 ${
+                    active
+                      ? "border-indigo-400 ring-2 ring-indigo-300 dark:border-indigo-500 dark:ring-indigo-700"
+                      : "border-slate-200 hover:border-slate-300 dark:border-slate-800 dark:hover:border-slate-600"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${up ? "bg-emerald-500" : c.lastStatus === "down" ? "bg-red-500" : "bg-slate-300 dark:bg-slate-600"}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{c.name}</p>
+                      <p className="truncate text-xs text-slate-400">{c.url}</p>
+                    </div>
+                    <span className="shrink-0 text-[11px] tabular-nums text-slate-400">
+                      {c.lastLatencyMs !== null ? `${c.lastLatencyMs}ms` : "—"}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-slate-400">
+                      {t("hc.up24h")}: <b className={up ? "text-emerald-600" : "text-red-600"}>{fmtUptime(stats[c.id]?.uptime24h ?? null)}</b>
+                    </span>
+                    {stats[c.id] && <UptimePills buckets={stats[c.id].hours24.slice(0, 24)} />}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="w-full min-w-0 flex-1">
+            {selected ? (
+              <HealthDetail
+                c={selected}
+                stats={stats[selected.id]}
+                samples={samples[selected.id] ?? null}
+                onLoadSamples={loadSamples}
+                onClose={() => setSelectedId(null)}
+              />
+            ) : (
+              <div className="flex min-h-[300px] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 p-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
+                <p className="text-4xl">🩺</p>
+                <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">{t("hc.pickOne")}</p>
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
-        <div className="space-y-3">
+        /* ===== GRID VIEW: kartu, klik → modal ===== */
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {checks.map((c) => {
             const up = c.lastStatus === "up";
             const st = stats[c.id];
-            const fmtUptime = (v: number | null) => (v === null ? "—" : `${v.toFixed(2)}%`);
             return (
-              <div key={c.id} className={`${card} overflow-hidden`}>
-                <div className="flex flex-wrap items-center gap-4 p-4">
-                  {/* badge besar ala Uptime Kuma */}
-                  <span
-                    className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-2xl shadow-sm ring-1 ${
-                      up ? "bg-emerald-500 text-white ring-emerald-600" : c.lastStatus === "down" ? "bg-red-500 text-white ring-red-600" : "bg-slate-200 text-slate-500 ring-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:ring-slate-600"
-                    }`}
-                  >
-                    {up ? "✓" : c.lastStatus === "down" ? "✕" : "·"}
-                  </span>
-
+              <div key={c.id} onClick={() => setModalId(c.id)} className={`${card} cursor-pointer overflow-hidden transition hover:-translate-y-0.5 hover:shadow-md`}>
+                <div className="flex items-center gap-3 p-4 pb-2">
+                  <StatusBadge status={c.lastStatus} />
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{c.name}</p>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${up ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:ring-emerald-900" : c.lastStatus === "down" ? "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/60 dark:text-red-400 dark:ring-red-900" : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700"}`}>
-                        {c.lastStatus === "up" ? t("hc.up") : c.lastStatus === "down" ? t("hc.down") : t("hc.never")}
-                      </span>
-                      {c.lastLatencyMs !== null && (
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-400">{c.lastLatencyMs}ms</span>
-                      )}
-                    </div>
-                    <p className="mt-0.5 truncate text-xs text-slate-400">{c.method} {c.url}</p>
-
-                    {/* statistik uptime */}
-                    <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
-                      <span><b className="text-slate-700 dark:text-slate-200">{fmtUptime(st?.uptime24h ?? null)}</b> · {t("hc.up24h")}</span>
-                      <span><b className="text-slate-700 dark:text-slate-200">{fmtUptime(st?.uptime7d ?? null)}</b> · {t("hc.up7d")}</span>
-                      <span><b className="text-slate-700 dark:text-slate-200">{fmtUptime(st?.uptime30d ?? null)}</b> · {t("hc.up30d")}</span>
-                      <span className="text-slate-400 dark:text-slate-500">{t("hc.lastCheck")}: {fmtTime(c.lastCheckAt)}</span>
-                    </div>
-
-                    {/* pill strip ala Uptime Kuma */}
-                    {st && (
-                      <div className="mt-3 space-y-1.5">
-                        <div>
-                          <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("hc.last24h")}</p>
-                          <UptimePills buckets={st.hours24} />
-                        </div>
-                        <div>
-                          <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("hc.last30d")}</p>
-                          <UptimePills buckets={st.days30} />
-                        </div>
-                      </div>
-                    )}
+                    <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{c.name}</p>
+                    <p className="truncate text-xs text-slate-400">{c.method} {c.url}</p>
                   </div>
-
-                  <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs">
-                    <button onClick={() => toggleEnabled(c)} disabled={busy} className={`rounded-full px-2.5 py-1 font-medium ring-1 transition ${c.enabled ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:ring-emerald-900" : "bg-slate-100 text-slate-500 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700"}`}>
-                      {c.enabled ? `✓ ${t("hc.enabled")}` : t("hc.disabled")}
-                    </button>
-                    <button onClick={() => checkNow(c)} disabled={busy || checking === c.id} className="rounded-lg bg-slate-900 px-3 py-1.5 font-medium text-white transition hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300">
-                      {checking === c.id ? t("hc.checking") : t("hc.checkNow")}
-                    </button>
-                    <button onClick={() => startEdit(c)} disabled={busy} className="rounded-lg px-2.5 py-1.5 font-medium text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">{t("hc.edit")}</button>
-                    <button onClick={() => remove(c)} disabled={busy} className="rounded-lg px-2.5 py-1.5 font-medium text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950">{t("hc.delete")}</button>
-                    <button onClick={() => toggleHistory(c)} className="rounded-lg px-2.5 py-1.5 font-medium text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
-                      {expanded === c.id ? t("hc.hideHistory") : t("hc.history")}
-                    </button>
-                  </div>
+                  {c.lastLatencyMs !== null && (
+                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-400">{c.lastLatencyMs}ms</span>
+                  )}
                 </div>
-
-                {expanded === c.id && (
-                  <div className="border-t border-slate-100 dark:border-slate-800">
-                    {!samples[c.id] ? (
-                      <p className="px-4 py-3 text-xs text-slate-400">…</p>
-                    ) : samples[c.id].length === 0 ? (
-                      <p className="px-4 py-3 text-xs text-slate-400">{t("hc.noSamples")}</p>
-                    ) : (
-                      <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {[...samples[c.id]].reverse().map((s, i) => (
-                          <div key={i} className="flex flex-wrap items-center gap-3 px-4 py-2 text-xs">
-                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${s.ok ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:ring-emerald-900" : "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/60 dark:text-red-400 dark:ring-red-900"}`}>
-                              {s.ok ? t("hc.up") : t("hc.down")}
-                            </span>
-                            <span className="text-slate-500 dark:text-slate-400">{fmtTime(s.t)}</span>
-                            <span className="tabular-nums text-slate-500 dark:text-slate-400">{s.statusCode ?? "—"}</span>
-                            <span className="tabular-nums text-slate-500 dark:text-slate-400">{s.latencyMs !== null ? `${s.latencyMs}ms` : "—"}</span>
-                            <span className="min-w-0 flex-1 truncate text-slate-400">{s.error ?? ""}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                <div className="px-4 pb-2">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    <b className={up ? "text-emerald-600" : "text-red-600"}>{fmtUptime(st?.uptime24h ?? null)}</b> · {t("hc.up24h")} · {t("hc.up7d")} <b className="text-slate-700 dark:text-slate-200">{fmtUptime(st?.uptime7d ?? null)}</b> · {t("hc.up30d")} <b className="text-slate-700 dark:text-slate-200">{fmtUptime(st?.uptime30d ?? null)}</b>
+                  </p>
+                </div>
+                {st && (
+                  <div className="px-4 pb-3">
+                    <UptimePills buckets={st.hours24.slice(0, 24)} />
                   </div>
                 )}
+                <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 px-4 py-2.5 dark:border-slate-800">
+                  {actions(c)}
+                </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ===== MODAL detail (grid view) ===== */}
+      {modalCheck && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setModalId(null)}>
+          <div
+            className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-xl dark:border-slate-700 dark:bg-slate-950"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("hc.detail")}</p>
+              <button onClick={() => setModalId(null)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
+                {t("hc.close")}
+              </button>
+            </div>
+            <HealthDetail
+              c={modalCheck}
+              stats={stats[modalCheck.id]}
+              samples={samples[modalCheck.id] ?? null}
+              onLoadSamples={loadSamples}
+              onClose={() => setModalId(null)}
+            />
+          </div>
         </div>
       )}
     </div>
