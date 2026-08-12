@@ -54,6 +54,7 @@ model Team {
   sshCmdJobs    SshCommandJob[]
   scheduledReports ScheduledReport[]
   approvals     DestructiveApproval[]
+  sshHealthChecks SshHealthCheck[]
 }
 
 /// A notification target for a team (Telegram, Discord, or generic webhook).
@@ -228,6 +229,7 @@ model SshConnection {
   cloneSourceJobs   DirCloneJob[] @relation("DirCloneSource")
   cloneDestJobs     DirCloneJob[] @relation("DirCloneDest")
   cmdJobs           SshCommandJob[] @relation("SshCmdJobs")
+  sshHealthChecks   SshHealthCheck[]
 }
 
 /// Grouping container for SSH connections. Team-scoped, 1 level only.
@@ -257,9 +259,13 @@ model SshMetricSample {
   kernel       String? // e.g. "6.2.0-1017-azure"
   cpu          Float? // % CPU terpakai (delta /proc/stat)
   cpuCores     Int? // jumlah core CPU (nproc)
+  cpuCoresPct  String? // JSON array: pemakaian % per core
   memPct       Float? // % RAM terpakai
   memUsedMb    Int? // RAM terpakai (MiB)
   memTotalMb   Int? // total RAM (MiB)
+  swapTotalMb  Int? // total swap (MiB)
+  swapUsedMb   Int? // swap terpakai (MiB)
+  swapPct      Float? // % swap terpakai
   load1        Float?
   load5        Float?
   load15       Float?
@@ -543,4 +549,22 @@ model DestructiveApproval {
   resolvedAt    DateTime?
 
   @@index([teamId, status])
+}
+
+/// Health check aplikasi di server SSH: jalankan perintah cek, sehat bila exit 0.
+model SshHealthCheck {
+  id          String        @id @default(cuid())
+  teamId      String?
+  team        Team?         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name        String
+  sshId       String
+  ssh         SshConnection @relation(fields: [sshId], references: [id], onDelete: Cascade)
+  command     String // perintah cek, mis. systemctl is-active --quiet nginx
+  intervalMin Int           @default(1)
+  timeoutSec  Int           @default(30)
+  enabled     Boolean       @default(true)
+  lastStatus  String? // "healthy" | "down"
+  lastOutput  String? // output terakhir (truncated)
+  lastRunAt   DateTime?
+  createdAt   DateTime      @default(now())
 }

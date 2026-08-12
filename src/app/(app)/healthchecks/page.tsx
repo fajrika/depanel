@@ -459,6 +459,9 @@ export default function HealthChecksPage() {
                     </span>
                     {stats[c.id] && <UptimePills buckets={stats[c.id].hours24.slice(0, 24)} />}
                   </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-2.5 dark:border-slate-800" onClick={(e) => e.stopPropagation()}>
+                    {actions(c)}
+                  </div>
                 </button>
               );
             })}

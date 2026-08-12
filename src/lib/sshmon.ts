@@ -33,9 +33,13 @@ export type LiveSample = {
   kernel?: string;
   cpu?: number;
   cpuCores?: number;
+  cpuCoresPct?: number[];
   memPct?: number;
   memUsedMb?: number;
   memTotalMb?: number;
+  swapTotalMb?: number;
+  swapUsedMb?: number;
+  swapPct?: number;
   load1?: number;
   load5?: number;
   load15?: number;
@@ -154,7 +158,17 @@ function parseMeminfo(out: string): { memTotalMb?: number; memUsedMb?: number; m
   const usedKb = Math.max(0, totalKb - availKb);
   const memTotalMb = Math.round(totalKb / 1024);
   const memUsedMb = Math.round(usedKb / 1024);
-  return { memTotalMb, memUsedMb, memPct: Math.round((usedKb / totalKb) * 1000) / 10 };
+  const swapTotalKb = kv["SwapTotal"] ?? 0;
+  const swapFreeKb = kv["SwapFree"] ?? 0;
+  const swapUsedKb = Math.max(0, swapTotalKb - swapFreeKb);
+  return {
+    memTotalMb,
+    memUsedMb,
+    memPct: Math.round((usedKb / totalKb) * 1000) / 10,
+    swapTotalMb: swapTotalKb ? Math.round(swapTotalKb / 1024) : 0,
+    swapUsedMb: swapTotalKb ? Math.round(swapUsedKb / 1024) : 0,
+    swapPct: swapTotalKb ? Math.round((swapUsedKb / swapTotalKb) * 1000) / 10 : 0,
+  };
 }
 
 function cpuPctFromStat(a: string, b: string): number | undefined {
@@ -168,6 +182,33 @@ function cpuPctFromStat(a: string, b: string): number | undefined {
   const dIdle = idle(fb) - idle(fa);
   if (dTotal <= 0) return undefined;
   return Math.max(0, Math.round((1 - dIdle / dTotal) * 1000) / 10);
+}
+
+/** Pemakaian % per core dari dua snapshot /proc/stat (baris cpu0, cpu1, …). */
+function corePctsFromStat(a: string, b: string): number[] | undefined {
+  const parse = (out: string) => {
+    const map = new Map<number, number[]>();
+    for (const line of out.split("\n")) {
+      const m = line.match(/^cpu(\d+)\s+([\d\s]+)$/);
+      if (!m) continue;
+      map.set(Number(m[1]), m[2].trim().split(/\s+/).map((v) => Number.parseInt(v, 10) || 0));
+    }
+    return map;
+  };
+  const fa = parse(a);
+  const fb = parse(b);
+  if (fa.size === 0 || fb.size === 0) return undefined;
+  const pcts: number[] = [];
+  for (const [idx, f] of fb) {
+    const g = fa.get(idx);
+    if (!g || g.length < 4 || f.length < 4) continue;
+    const idle = (x: number[]) => (x[3] ?? 0) + (x[4] ?? 0);
+    const dTotal = f.reduce((s, v) => s + v, 0) - g.reduce((s, v) => s + v, 0);
+    const dIdle = idle(f) - idle(g);
+    if (dTotal <= 0) continue;
+    pcts.push(Math.max(0, Math.round((1 - dIdle / dTotal) * 1000) / 10));
+  }
+  return pcts.length ? pcts : undefined;
 }
 
 function netRatesFromDev(a: string, b: string, seconds: number): { inBps?: number; outBps?: number } {
@@ -277,6 +318,7 @@ export async function collectSshMetrics(cfg: SshAuthCfg): Promise<LiveSample> {
 
     const osName = /^PRETTY_NAME="?(.*?)"?$/m.exec(osOut)?.[1]?.trim() ?? undefined;
     const cpu = cpuPctFromStat(stat1, stat2);
+    const cores = corePctsFromStat(stat1, stat2);
     const net = netRatesFromDev(net1, net2, SAMPLE_GAP_MS / 1000);
     const load = parseLoadavg(loadOut);
     const mem = parseMeminfo(memOut);
@@ -294,6 +336,7 @@ export async function collectSshMetrics(cfg: SshAuthCfg): Promise<LiveSample> {
       kernel: kernelOut.trim() || undefined,
       cpu,
       cpuCores: num(coresOut),
+      cpuCoresPct: cores,
       ...mem,
       ...load,
       uptimeSec: parseUptime(upOut),
@@ -329,9 +372,13 @@ export async function sampleSshConnection(sshId: string): Promise<{ ok: boolean;
         kernel: sample.kernel,
         cpu: sample.cpu,
         cpuCores: sample.cpuCores,
+        cpuCoresPct: sample.cpuCoresPct ? JSON.stringify(sample.cpuCoresPct) : null,
         memPct: sample.memPct,
         memUsedMb: sample.memUsedMb,
         memTotalMb: sample.memTotalMb,
+        swapTotalMb: sample.swapTotalMb,
+        swapUsedMb: sample.swapUsedMb,
+        swapPct: sample.swapPct,
         load1: sample.load1,
         load5: sample.load5,
         load15: sample.load15,

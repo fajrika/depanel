@@ -13,9 +13,13 @@ type LiveSample = {
   kernel?: string;
   cpu?: number;
   cpuCores?: number;
+  cpuCoresPct?: number[];
   memPct?: number;
   memUsedMb?: number;
   memTotalMb?: number;
+  swapTotalMb?: number;
+  swapUsedMb?: number;
+  swapPct?: number;
   load1?: number;
   load5?: number;
   load15?: number;
@@ -46,9 +50,13 @@ export type SshLastSample = {
   kernel?: string | null;
   cpu?: number | null;
   cpuCores?: number | null;
+  cpuCoresPct?: number[] | null;
   memPct?: number | null;
   memUsedMb?: number | null;
   memTotalMb?: number | null;
+  swapTotalMb?: number | null;
+  swapUsedMb?: number | null;
+  swapPct?: number | null;
   load1?: number | null;
   load5?: number | null;
   load15?: number | null;
@@ -302,7 +310,7 @@ export default function SshMonitorPanel({
               label={t("sshm.memory")}
               value={
                 sample.memUsedMb !== undefined && sample.memTotalMb !== undefined
-                  ? `${fmtMb(sample.memUsedMb)} / ${fmtMb(sample.memTotalMb)} (${sample.memPct ?? "—"}%)`
+                  ? <span className="tabular-nums">{fmtMb(sample.memUsedMb)} / {fmtMb(sample.memTotalMb)} ({sample.memPct ?? "—"}%){sample.swapTotalMb ? ` · SWAP ${fmtMb(sample.swapUsedMb ?? 0)} / ${fmtMb(sample.swapTotalMb)} (${sample.swapPct ?? 0}%)` : ""}</span>
                   : undefined
               }
             />
@@ -448,13 +456,32 @@ export default function SshMonitorPanel({
           <div className="grid gap-4 sm:grid-cols-2">
             <MetricChart
               title={t("sshm.cpu")}
-              subtitle={t("sshm.chartCpuSub")}
+              subtitle={sample.cpuCores ? `${t("sshm.chartCpuSub")} · ${sample.cpuCores} ${t("sshm.coreUnit")}` : t("sshm.chartCpuSub")}
               yMax={100}
               format={(v) => `${v.toFixed(1)}%`}
               series={[
                 { label: t("sshm.cpu"), color: "#6366f1", fill: "rgba(99,102,241,0.12)", points: okSamples("cpu") },
               ]}
             />
+            {sample.cpuCoresPct && sample.cpuCoresPct.length > 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">{t("sshm.coresUsage")}</h3>
+                <div className="space-y-2">
+                  {sample.cpuCoresPct.map((pct, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="w-10 shrink-0 text-right text-[11px] tabular-nums text-slate-400">{i + 1}</span>
+                      <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${pct >= 90 ? "bg-red-500" : pct >= 75 ? "bg-amber-500" : "bg-indigo-500"}`}
+                          style={{ width: `${Math.min(pct, 100)}%` }}
+                        />
+                      </div>
+                      <span className="w-12 shrink-0 text-[11px] font-medium tabular-nums text-slate-600 dark:text-slate-300">{pct.toFixed(1)}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <MetricChart
               title={t("sshm.memory")}
               subtitle={t("sshm.chartMemSub")}
