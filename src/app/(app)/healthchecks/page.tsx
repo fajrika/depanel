@@ -33,6 +33,11 @@ type HcStats = {
   uptime30d: number | null;
   hours24: { label: string; pct: number | null; ok: boolean | null }[];
   days30: { label: string; pct: number | null; ok: boolean | null }[];
+  rangeStart: string;
+  rangeEnd: string;
+  samples24: { t: string; ok: boolean; latencyMs: number | null }[];
+  samples30: { t: string; ok: boolean; latencyMs: number | null }[];
+  offset: number;
 };
 
 const input =
@@ -73,6 +78,38 @@ function UptimePills({ buckets }: { buckets: { label: string; pct: number | null
   );
 }
 
+/** Grid pill per pengetesan (mode expand) — hover menunjukkan waktu persis. */
+function SamplePills({ samples }: { samples: { t: string; ok: boolean; latencyMs: number | null }[] }) {
+  return (
+    <div className="flex max-h-40 flex-wrap gap-[2px] overflow-y-auto">
+      {samples.map((s, i) => (
+        <span
+          key={i}
+          title={`${new Date(s.t).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "medium" })} · ${s.ok ? "up" : "down"}${s.latencyMs !== null ? ` · ${s.latencyMs}ms` : ""}`}
+          className={`h-[7px] w-[7px] rounded-[1px] ${s.ok ? "bg-emerald-500" : "bg-red-500"}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** Daftar sampel mentah (mode expand 30 hari) — scrollable, terbaru di atas. */
+function SampleList({ samples }: { samples: { t: string; ok: boolean; latencyMs: number | null }[] }) {
+  return (
+    <div className="max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-100 dark:divide-slate-800 dark:border-slate-800">
+      {samples.map((s, i) => (
+        <div key={i} className="flex items-center gap-3 px-3 py-1.5 text-xs">
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${s.ok ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:ring-emerald-900" : "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/60 dark:text-red-400 dark:ring-red-900"}`}>
+            {s.ok ? "up" : "down"}
+          </span>
+          <span className="tabular-nums text-slate-500 dark:text-slate-400">{new Date(s.t).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "medium" })}</span>
+          <span className="tabular-nums text-slate-400">{s.latencyMs !== null ? `${s.latencyMs}ms` : "—"}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function StatusBadge({ status }: { status: string | null }) {
   const up = status === "up";
   const down = status === "down";
@@ -93,13 +130,19 @@ function HealthDetail({
   c,
   stats,
   samples,
+  expandedPills,
   onLoadSamples,
+  onToggleExpand,
+  onOffset,
   onClose,
 }: {
   c: Hc;
   stats?: HcStats;
   samples: Sample[] | null;
+  expandedPills: { h24?: boolean; d30?: boolean };
   onLoadSamples: (id: string) => void;
+  onToggleExpand: (id: string, which: "h24" | "d30") => void;
+  onOffset: (id: string, offset: number) => void;
   onClose: () => void;
 }) {
   const { t } = useLang();
@@ -164,14 +207,42 @@ function HealthDetail({
         </div>
 
         {stats && (
-          <div className="mt-5 space-y-1.5">
+          <div className="mt-5 space-y-3">
+            {/* 24 jam */}
             <div>
-              <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("hc.last24h")}</p>
-              <UptimePills buckets={stats.hours24} />
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("hc.last24h")}</p>
+                <button onClick={() => onToggleExpand(c.id, "h24")} className="text-[10px] font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+                  {expandedPills.h24 ? t("hc.collapse") : t("hc.expand")}
+                </button>
+              </div>
+              {expandedPills.h24 ? (
+                <SamplePills samples={stats.samples24} />
+              ) : (
+                <UptimePills buckets={stats.hours24} />
+              )}
             </div>
+
+            {/* 30 hari — bisa digeser ke periode sebelumnya */}
             <div>
-              <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("hc.last30d")}</p>
-              <UptimePills buckets={stats.days30} />
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">{t("hc.last30d")}</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] tabular-nums text-slate-400">
+                    {new Date(stats.rangeStart).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })} – {new Date(stats.rangeEnd).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+                  </span>
+                  <button onClick={() => onOffset(c.id, (stats.offset || 0) + 30)} disabled={stats.offset >= 90} title={t("hc.prevPeriod")} className="rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-500 transition hover:bg-slate-50 disabled:opacity-30 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">◀</button>
+                  <button onClick={() => onOffset(c.id, Math.max(0, (stats.offset || 0) - 30))} disabled={!stats.offset} title={t("hc.nextPeriod")} className="rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-500 transition hover:bg-slate-50 disabled:opacity-30 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">▶</button>
+                  <button onClick={() => onToggleExpand(c.id, "d30")} className="text-[10px] font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+                    {expandedPills.d30 ? t("hc.collapse") : t("hc.expand")}
+                  </button>
+                </div>
+              </div>
+              {expandedPills.d30 ? (
+                <SampleList samples={stats.samples30} />
+              ) : (
+                <UptimePills buckets={stats.days30} />
+              )}
             </div>
           </div>
         )}
@@ -216,6 +287,8 @@ export default function HealthChecksPage() {
   const [modalId, setModalId] = useState<string | null>(null);
   const [samples, setSamples] = useState<Record<string, Sample[] | null>>({});
   const [stats, setStats] = useState<Record<string, HcStats>>({});
+  const [offsets, setOffsets] = useState<Record<string, number>>({});
+  const [expandedPills, setExpandedPills] = useState<Record<string, { h24?: boolean; d30?: boolean }>>({});
   const [checking, setChecking] = useState<string | null>(null);
 
   const [fName, setFName] = useState("");
@@ -225,6 +298,12 @@ export default function HealthChecksPage() {
   const [fInterval, setFInterval] = useState("1");
   const [fTimeout, setFTimeout] = useState("10");
 
+  const loadStats = useCallback(async (id: string, offset: number) => {
+    const sRes = await fetch(`/api/healthchecks/${id}/stats?offset=${offset}`);
+    const d = await sRes.json();
+    if (d.ok) setStats((prev) => ({ ...prev, [id]: d.data }));
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/healthchecks");
@@ -233,9 +312,7 @@ export default function HealthChecksPage() {
         setChecks(list);
         await Promise.all(
           list.map(async (c: Hc) => {
-            const sRes = await fetch(`/api/healthchecks/${c.id}/stats`);
-            const d = await sRes.json();
-            if (d.ok) setStats((prev) => ({ ...prev, [c.id]: d.data }));
+            await loadStats(c.id, 0);
           }),
         );
       }
@@ -244,9 +321,18 @@ export default function HealthChecksPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadStats]);
 
   useEffect(() => { load(); }, [load]);
+
+  function onToggleExpand(id: string, which: "h24" | "d30") {
+    setExpandedPills((prev) => ({ ...prev, [id]: { ...prev[id], [which]: !prev[id]?.[which] } }));
+  }
+
+  function onOffset(id: string, offset: number) {
+    setOffsets((prev) => ({ ...prev, [id]: offset }));
+    void loadStats(id, offset);
+  }
 
   useEffect(() => {
     try {
@@ -473,7 +559,10 @@ export default function HealthChecksPage() {
                 c={selected}
                 stats={stats[selected.id]}
                 samples={samples[selected.id] ?? null}
+                expandedPills={expandedPills[selected.id] ?? {}}
                 onLoadSamples={loadSamples}
+                onToggleExpand={onToggleExpand}
+                onOffset={onOffset}
                 onClose={() => setSelectedId(null)}
               />
             ) : (
@@ -538,7 +627,10 @@ export default function HealthChecksPage() {
               c={modalCheck}
               stats={stats[modalCheck.id]}
               samples={samples[modalCheck.id] ?? null}
+              expandedPills={expandedPills[modalCheck.id] ?? {}}
               onLoadSamples={loadSamples}
+              onToggleExpand={onToggleExpand}
+              onOffset={onOffset}
               onClose={() => setModalId(null)}
             />
           </div>

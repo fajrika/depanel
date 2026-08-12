@@ -118,21 +118,30 @@ function pctToState(pct: number | null): "up" | "down" | "partial" | "none" {
 }
 
 /**
- * Statistik gaya Uptime Kuma: strip kotak 24 jam (per jam) + 30 hari (per hari)
- * + uptime % 24 jam / 7 hari / 30 hari.
+ * Statistik gaya Uptime Kuma: strip kotak 24 jam (per jam) + 30 hari (per hari,
+ * bisa digeser ke periode sebelumnya via offsetDays) + uptime % + sampel mentah
+ * untuk mode expand.
  */
-export async function getHealthStats(checkId: string): Promise<{
+export async function getHealthStats(
+  checkId: string,
+  opts: { offsetDays?: number } = {},
+): Promise<{
   uptime24h: number | null;
   uptime7d: number | null;
   uptime30d: number | null;
   hours24: { label: string; pct: number | null; ok: boolean | null }[];
   days30: { label: string; pct: number | null; ok: boolean | null }[];
+  rangeStart: string;
+  rangeEnd: string;
+  samples24: { t: string; ok: boolean; latencyMs: number | null }[];
+  samples30: { t: string; ok: boolean; latencyMs: number | null }[];
 }> {
+  const offsetDays = opts.offsetDays || 0;
   const now = Date.now();
-  const since = new Date(now - 30 * 24 * 60 * 60 * 1000);
+  const since = new Date(now - (30 + offsetDays) * 24 * 60 * 60 * 1000);
   const samples = await prisma.healthCheckSample.findMany({
     where: { checkId, at: { gte: since } },
-    select: { at: true, ok: true },
+    select: { at: true, ok: true, latencyMs: true },
   });
 
   const uptime = (ms: number): number | null => {
@@ -153,10 +162,14 @@ export async function getHealthStats(checkId: string): Promise<{
     hours24.push({ label: `${String(d.getHours()).padStart(2, "0")}:00`, pct, ok: pctToState(pct) === "up" ? true : pctToState(pct) === "down" ? false : null });
   }
 
-  // 30 bucket per hari (hari mulai = hari ini - 29 … hari ini)
+  // rentang 30 hari untuk periode aktif (offsetDays = 0 → 30 hari terakhir)
+  const rangeEndMs = now - offsetDays * 24 * 60 * 60 * 1000;
+  const rangeStartMs = rangeEndMs - 30 * 24 * 60 * 60 * 1000;
+
+  // 30 bucket per hari
   const days30: PillBucket[] = [];
   for (let i = 29; i >= 0; i--) {
-    const start = new Date(now - i * 24 * 60 * 60 * 1000);
+    const start = new Date(rangeEndMs - i * 24 * 60 * 60 * 1000);
     start.setHours(0, 0, 0, 0);
     const end = start.getTime() + 24 * 60 * 60 * 1000;
     const list = samples.filter((s) => s.at.getTime() >= start.getTime() && s.at.getTime() < end);
@@ -164,11 +177,31 @@ export async function getHealthStats(checkId: string): Promise<{
     days30.push({ label: `${String(start.getDate()).padStart(2, "0")}/${String(start.getMonth() + 1).padStart(2, "0")}`, pct, ok: pctToState(pct) === "up" ? true : pctToState(pct) === "down" ? false : null });
   }
 
+  const mapSample = (s: { at: Date; ok: boolean; latencyMs: number | null }) => ({
+    t: s.at.toISOString(),
+    ok: s.ok,
+    latencyMs: s.latencyMs,
+  });
+
+  // sampel mentah untuk mode expand
+  const samples24 = samples
+    .filter((s) => s.at.getTime() >= now - 24 * 60 * 60 * 1000)
+    .map(mapSample);
+  const samples30 = samples
+    .filter((s) => s.at.getTime() >= rangeStartMs && s.at.getTime() < rangeEndMs)
+    .map(mapSample)
+    .reverse()
+    .slice(0, 1500);
+
   return {
     uptime24h: uptime(24 * 60 * 60 * 1000),
     uptime7d: uptime(7 * 24 * 60 * 60 * 1000),
     uptime30d: uptime(30 * 24 * 60 * 60 * 1000),
     hours24,
     days30,
+    rangeStart: new Date(rangeStartMs).toISOString(),
+    rangeEnd: new Date(rangeEndMs).toISOString(),
+    samples24,
+    samples30,
   };
 }

@@ -5,7 +5,7 @@ import { canUseFeature } from "@/lib/team";
 import { getHealthStats } from "@/lib/healthcheck";
 
 /** Statistik gaya Uptime Kuma: pill strip 24 jam & 30 hari + uptime %. */
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
 
@@ -16,6 +16,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: false, message: "Anda tidak diberi izin" }, { status: 403 });
   }
 
-  const data = await getHealthStats(id);
-  return NextResponse.json({ ok: true, data });
+  const offset = Math.max(0, Number(new URL(request.url).searchParams.get("offset") ?? 0) || 0);
+  const data = await getHealthStats(id, { offsetDays: offset });
+  return NextResponse.json({ ok: true, data: { ...data, offset } });
 }
