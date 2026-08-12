@@ -326,6 +326,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         { href: "/dbbackup", label: t_("nav.dbbackup"), icon: "💾", show: at?.canBackupDb ?? false },
         { href: "/dirclone", label: t_("nav.dirclone"), icon: "📦", show: at?.canBackupDb ?? false },
         { href: "/ssh", label: t_("nav.ssh"), icon: "🔐", show: at?.canSsh ?? false },
+        { href: "/sshhealth", label: t_("nav.sshhealth"), icon: "🧪", show: at?.canSsh ?? false },
         { href: "/approvals", label: t_("nav.approvals"), icon: "🛡️", show: at?.canManage ?? false },
         { href: "/sshcmd", label: t_("nav.sshcmd"), icon: "⌨️", show: at?.canSsh ?? false },
       ],
