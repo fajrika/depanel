@@ -256,6 +256,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [dark, setDark] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [navGroupCollapsed, setNavGroupCollapsed] = useState<Set<string>>(new Set()); // grup menu yang di-ciutkan (default semua expand)
+
+  function toggleNavGroup(label: string) {
+    setNavGroupCollapsed((s) => {
+      const n = new Set(s);
+      if (n.has(label)) n.delete(label);
+      else n.add(label);
+      return n;
+    });
+  }
 
   useEffect(() => {
     setDark(document.documentElement.classList.contains("dark"));
@@ -491,23 +501,46 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <div className="mt-4 flex justify-center">{collapseBtn}</div>
             )}
 
-            <nav className={`mt-6 flex flex-col gap-1 ${collapsed ? "items-center" : ""}`}>
+            {/* nav bisa di-scroll; grup bawah selalu terlihat */}
+            <nav className={`mt-6 min-h-0 flex-1 flex-col gap-1 overflow-y-auto ${collapsed ? "flex items-center" : "flex"}`}>
               {navGroups.map((g) => (
                 <div key={g.label ?? "utama"} className="mb-1 w-full">
-                  {g.label && !collapsed && (
-                    <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{g.label}</p>
+                  {g.label ? (
+                    !collapsed && (
+                      <>
+                        <button
+                          onClick={() => toggleNavGroup(g.label!)}
+                          title={navGroupCollapsed.has(g.label!) ? g.label : undefined}
+                          className="flex w-full items-center gap-1 px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 transition hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+                        >
+                          <span className={`text-[9px] transition-transform duration-200 ${navGroupCollapsed.has(g.label!) ? "-rotate-90" : ""}`}>▾</span>
+                          <span className="flex-1 text-left">{g.label}</span>
+                        </button>
+                        {!navGroupCollapsed.has(g.label!) &&
+                          g.items.map((l) => (
+                            <Link
+                              key={l.href}
+                              href={l.href}
+                              className={`${linkCls(pathname === l.href, true)}`}
+                            >
+                              <span className="text-base">{l.icon}</span> {l.label}
+                            </Link>
+                          ))}
+                      </>
+                    )
+                  ) : (
+                    g.items.map((l) => (
+                      <Link
+                        key={l.href}
+                        href={l.href}
+                        title={collapsed ? l.label : undefined}
+                        className={`${linkCls(pathname === l.href, true)} ${collapsed ? "justify-center !px-0" : ""}`}
+                      >
+                        <span className={`${collapsed ? "" : "text-base"}`}>{l.icon}</span>
+                        {!collapsed && l.label}
+                      </Link>
+                    ))
                   )}
-                  {g.items.map((l) => (
-                    <Link
-                      key={l.href}
-                      href={l.href}
-                      title={collapsed ? l.label : undefined}
-                      className={`${linkCls(pathname === l.href, true)} ${collapsed ? "justify-center !px-0" : ""}`}
-                    >
-                      <span className={`${collapsed ? "" : "text-base"}`}>{l.icon}</span>
-                      {!collapsed && l.label}
-                    </Link>
-                  ))}
                 </div>
               ))}
             </nav>
