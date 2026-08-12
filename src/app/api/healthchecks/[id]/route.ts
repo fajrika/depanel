@@ -8,6 +8,7 @@ import { logActivity } from "@/lib/power";
 const patchSchema = z.object({
   name: z.string().min(1).optional(),
   url: z.string().url("URL tidak valid").optional(),
+  group: z.string().nullable().optional(),
   method: z.enum(["GET", "HEAD", "POST"]).optional(),
   expectedStatus: z.coerce.number().int().min(100).max(599).optional(),
   intervalMin: z.coerce.number().int().min(1).max(1440).optional(),
@@ -30,8 +31,10 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message ?? "Data tidak valid" }, { status: 400 });
   }
+  const d = parsed.data;
+  if (d.group !== undefined) d.group = d.group || null;
 
-  await prisma.healthCheck.update({ where: { id }, data: parsed.data });
+  await prisma.healthCheck.update({ where: { id }, data: d });
   await logActivity({ teamId: hc.teamId, userId: user.id, action: "healthcheck-update", message: `Ubah health check "${hc.name}"` });
   return NextResponse.json({ ok: true });
 }

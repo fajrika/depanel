@@ -2,6 +2,9 @@
 export const dict: Record<"id" | "en", Record<string, string>> = {
   id: {
     "hc.title": "Health Check",
+    "hc.group": "Grup (opsional)",
+    "hc.groupPh": "mis. Production",
+    "hc.noGroup": "Tanpa grup",
     "hc.detail": "Detail",
     "hc.viewList": "List",
     "hc.viewGrid": "Card",
@@ -60,6 +63,9 @@ export const dict: Record<"id" | "en", Record<string, string>> = {
   },
   en: {
     "hc.title": "Health Check",
+    "hc.group": "Group (optional)",
+    "hc.groupPh": "e.g. Production",
+    "hc.noGroup": "No group",
     "hc.detail": "Details",
     "hc.viewList": "List",
     "hc.viewGrid": "Cards",

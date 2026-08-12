@@ -9,6 +9,7 @@ import { getHealthHistory } from "@/lib/healthcheck";
 const createSchema = z.object({
   name: z.string().min(1),
   url: z.string().url("URL tidak valid").refine((u) => u.startsWith("http://") || u.startsWith("https://"), "Hanya URL http(s) yang didukung"),
+  group: z.string().optional().default(""),
   method: z.enum(["GET", "HEAD", "POST"]).default("GET"),
   expectedStatus: z.coerce.number().int().min(100).max(599).default(200),
   intervalMin: z.coerce.number().int().min(1).max(1440).default(1),
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
   const d = parsed.data;
 
   const check = await prisma.healthCheck.create({
-    data: { teamId: team.id, name: d.name, url: d.url, method: d.method, expectedStatus: d.expectedStatus, intervalMin: d.intervalMin, timeoutSec: d.timeoutSec },
+    data: { teamId: team.id, name: d.name, url: d.url, group: d.group || null, method: d.method, expectedStatus: d.expectedStatus, intervalMin: d.intervalMin, timeoutSec: d.timeoutSec },
   });
   await logActivity({ teamId: team.id, userId: user.id, action: "healthcheck-create", message: `Buat health check "${d.name}"` });
   return NextResponse.json({ ok: true, data: { id: check.id } });
