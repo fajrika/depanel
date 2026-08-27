@@ -145,6 +145,51 @@ export function adjacentFactor(a: WifiApDto, b: WifiApDto): number {
   return 0;
 }
 
+export interface PointInfo {
+  x: number;
+  y: number;
+  bestRssi: number | null; // sinyal terbaik (dBm)
+  bestAp: WifiApDto | null; // AP yang memberi sinyal terbaik
+  sinrDb: number | null;
+  isDead: boolean; // RSSI < ambang dead zone
+  coverageOk: boolean; // tercakup (bukan dead zone) && SINR ≥ 15
+  interferers: { ap: WifiApDto; rssi: number; factor: number }[]; // AP lain yang mengganggu
+}
+
+/** Evaluasi satu titik denah — simulasi user berdiri di titik itu. */
+export function evaluatePoint(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiWallDto[], x: number, y: number): PointInfo {
+  const enabled = aps.filter((a) => a.enabled);
+  if (enabled.length === 0) {
+    return { x, y, bestRssi: null, bestAp: null, sinrDb: null, isDead: true, coverageOk: false, interferers: [] };
+  }
+  let best = -Infinity;
+  let bestAp: WifiApDto | null = null;
+  const rssis: { ap: WifiApDto; rssi: number }[] = [];
+  for (const ap of enabled) {
+    const r = computeRssi(ap, walls, x, y, proj.pathLossExponent);
+    rssis.push({ ap, rssi: r });
+    if (r > best) {
+      best = r;
+      bestAp = ap;
+    }
+  }
+  const sLin = Math.pow(10, best / 10);
+  let iLin = 0;
+  const interferers: { ap: WifiApDto; rssi: number; factor: number }[] = [];
+  for (const { ap, rssi } of rssis) {
+    if (!bestAp || ap.id === bestAp.id) continue;
+    const f = adjacentFactor(bestAp, ap);
+    if (f <= 0) continue;
+    iLin += f * Math.pow(10, rssi / 10);
+    interferers.push({ ap, rssi, factor: f });
+  }
+  const noiseLin = Math.pow(10, NOISE_FLOOR_DBM / 10);
+  const sinrDb = 10 * Math.log10(sLin / (noiseLin + iLin));
+  const isDead = best < proj.deadZoneDbm;
+  const coverageOk = !isDead && sinrDb >= 15;
+  return { x, y, bestRssi: best, bestAp, sinrDb, isDead, coverageOk, interferers };
+}
+
 export interface SimResult {
   rssi: Float32Array; // dBm terbaik per sel (-Infinity bila tidak ada AP aktif)
   sinr: Float32Array; // dB per sel (-Infinity bila tidak ada AP aktif)

@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useLang } from "@/lib/i18n";
 import {
   computeGrid,
+  evaluatePoint,
   CHANNELS_BY_BAND,
   CHANNEL_WIDTHS,
   MATERIAL_LOSS,
@@ -18,9 +19,10 @@ import {
   type WifiAntennaType,
   type WifiWallMaterial,
   type SimResult,
+  type PointInfo,
 } from "@/lib/wifi-engine";
 
-type Tool = "select" | "wall" | "ap" | "measure" | "delete";
+type Tool = "select" | "wall" | "ap" | "measure" | "status" | "delete";
 type Mode = "signal" | "sinr" | "dead" | "coverage";
 type WallMaterialKey = "DRYWALL" | "WOOD" | "GLASS" | "BRICK" | "CONCRETE";
 
@@ -31,6 +33,7 @@ const TOOLS: { id: Tool; icon: string }[] = [
   { id: "wall", icon: "🧱" },
   { id: "ap", icon: "📶" },
   { id: "measure", icon: "📐" },
+  { id: "status", icon: "🧍" },
   { id: "delete", icon: "🗑️" },
 ];
 
@@ -70,14 +73,15 @@ export default function WifiEditorPage() {
   const [view, setView] = useState({ x: 40, y: 20, scale: 1 });
   const [measure, setMeasure] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [draftWall, setDraftWall] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const [pointInfo, setPointInfo] = useState<{ x: number; y: number; info: PointInfo } | null>(null);
   const [sim, setSim] = useState<SimResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [showPanel, setShowPanel] = useState(true);
 
   // refs agar draw loop & event handler tidak stale-closure
-  const stateRef = useRef({ project, walls, aps, view, tool, mode, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim });
-  stateRef.current = { project, walls, aps, view, tool, mode, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim };
+  const stateRef = useRef({ project, walls, aps, view, tool, mode, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, pointInfo });
+  stateRef.current = { project, walls, aps, view, tool, mode, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, pointInfo };
 
   const dragRef = useRef<{ kind: "pan" | "ap" | "wall" | "measure"; id?: string; sx: number; sy: number; startX: number; startY: number; startX2?: number; startY2?: number; startSnap?: { walls: WifiWallDto[]; aps: WifiApDto[] } } | null>(null);
   const wallStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -557,6 +561,22 @@ export default function WifiEditorPage() {
       ctx.font = "12px system-ui, sans-serif";
       ctx.fillText(`${dist.toFixed(2)} m`, mx + 8, my - 6);
     }
+
+    // marker simulasi user (tool status)
+    if (s.pointInfo) {
+      const [px, py] = toScreen(s.pointInfo.x, s.pointInfo.y);
+      ctx.beginPath();
+      ctx.arc(px, py, 10, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.fill();
+      ctx.strokeStyle = "#0f172a";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.font = "13px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("🧍", px, py + 4);
+      ctx.textAlign = "left";
+    }
   }
 
   /* ---------- interaksi ---------- */
@@ -606,6 +626,14 @@ export default function WifiEditorPage() {
       measureStartRef.current = { x: wx, y: wy };
       setMeasure({ x1: wx, y1: wy, x2: wx, y2: wy });
       dragRef.current = { kind: "measure", sx, sy, startX: wx, startY: wy };
+      return;
+    }
+    if (s.tool === "status") {
+      const [wx, wy] = toWorld(sx, sy);
+      if (!s.project) return;
+      const x = Math.min(Math.max(wx, 0), s.project.widthM);
+      const y = Math.min(Math.max(wy, 0), s.project.heightM);
+      setPointInfo({ x, y, info: evaluatePoint(s.project, s.aps, s.walls, x, y) });
       return;
     }
     if (s.tool === "delete") {
@@ -719,6 +747,7 @@ export default function WifiEditorPage() {
     if (e.key === "Escape") {
       setDraftWall(null);
       setMeasure(null);
+      setPointInfo(null);
       setSelectedApId(null);
       setSelectedWallId(null);
       setTool("select");
@@ -845,6 +874,7 @@ export default function WifiEditorPage() {
                 setTool(tl.id);
                 setDraftWall(null);
                 setMeasure(null);
+                setPointInfo(null);
               }}
               title={t(`wif.tool.${tl.id}`)}
               className={`flex h-9 w-9 items-center justify-center rounded-lg text-lg transition ${
@@ -1010,6 +1040,56 @@ export default function WifiEditorPage() {
             >
               {msg.text}
               <button onClick={() => setMsg(null)} className="ml-2 opacity-50 hover:opacity-100">✕</button>
+            </div>
+          )}
+          {/* kartu simulasi user (tool status) */}
+          {pointInfo && (
+            <div className="pointer-events-none absolute bottom-3 right-3 w-72 space-y-1.5 rounded-lg border border-slate-200 bg-white/95 px-3 py-2.5 text-[11px] text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-300">
+              <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                🧍 {t("wif.statusTitle")} ({pointInfo.x.toFixed(1)}, {pointInfo.y.toFixed(1)}) m
+              </p>
+              {pointInfo.info.bestAp && pointInfo.info.bestRssi !== null && pointInfo.info.sinrDb !== null ? (
+                <>
+                  <p className="flex items-center gap-1.5">
+                    {t("wif.statusSignal")}: <b>{pointInfo.info.bestRssi.toFixed(1)} dBm</b>
+                    <SignalBadge rssi={pointInfo.info.bestRssi} dead={project.deadZoneDbm} labelDead={t("wif.statusDead")} labelGood={t("wif.statusGood")} labelOk={t("wif.statusOk")} />
+                  </p>
+                  <p className="text-slate-400">
+                    {t("wif.statusBestAp")}: {pointInfo.info.bestAp.name} · ch{pointInfo.info.bestAp.channel} ({bandLabel(pointInfo.info.bestAp.band)} GHz)
+                  </p>
+                  <p className="flex items-center gap-1.5">
+                    {t("wif.statusSinr")}: <b>{pointInfo.info.sinrDb.toFixed(1)} dB</b>
+                    <SinrBadge sinr={pointInfo.info.sinrDb} labelGood={t("wif.statusGood")} labelOk={t("wif.statusOk")} labelBad={t("wif.statusInterfered")} />
+                  </p>
+                  <p>
+                    {t("wif.statusCoverage")}:{" "}
+                    <b className={pointInfo.info.coverageOk ? "text-emerald-600" : "text-red-500"}>
+                      {pointInfo.info.coverageOk ? `✓ ${t("wif.statusCovered")}` : `✗ ${t("wif.statusNotCovered")}`}
+                    </b>
+                  </p>
+                  <p>
+                    {t("wif.statusDead")}:{" "}
+                    <b className={pointInfo.info.isDead ? "text-red-500" : "text-emerald-600"}>{pointInfo.info.isDead ? t("wif.yes") : t("wif.no")}</b>
+                  </p>
+                  <div className="border-t border-slate-100 pt-1.5 dark:border-slate-800">
+                    <p className="font-medium">{t("wif.statusInterferers")}:</p>
+                    {pointInfo.info.interferers.length === 0 ? (
+                      <p className="mt-0.5 text-emerald-600">{t("wif.statusNoInterf")}</p>
+                    ) : (
+                      <ul className="mt-0.5 space-y-0.5">
+                        {pointInfo.info.interferers.map((it) => (
+                          <li key={it.ap.id}>
+                            {it.ap.name} (ch{it.ap.channel}) · {it.rssi.toFixed(1)} dBm ·{" "}
+                            {it.factor === 1 ? t("wif.statusCoChannel") : `${t("wif.statusAdjacent")} (${it.factor})`}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-slate-400">{t("wif.statusNoAp")}</p>
+              )}
             </div>
           )}
         </div>
@@ -1193,6 +1273,28 @@ export default function WifiEditorPage() {
 }
 
 /* ---------- util ---------- */
+function SignalBadge({ rssi, dead, labelDead, labelGood, labelOk }: { rssi: number; dead: number; labelDead: string; labelGood: string; labelOk: string }) {
+  const cls =
+    rssi >= -60
+      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400"
+      : rssi >= dead
+        ? "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400"
+        : "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400";
+  const label = rssi >= -60 ? labelGood : rssi >= dead ? labelOk : labelDead;
+  return <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${cls}`}>{label}</span>;
+}
+
+function SinrBadge({ sinr, labelGood, labelOk, labelBad }: { sinr: number; labelGood: string; labelOk: string; labelBad: string }) {
+  const cls =
+    sinr >= 25
+      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400"
+      : sinr >= 15
+        ? "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400"
+        : "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400";
+  const label = sinr >= 25 ? labelGood : sinr >= 15 ? labelOk : labelBad;
+  return <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${cls}`}>{label}</span>;
+}
+
 function distToSeg(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax;
   const dy = by - ay;
