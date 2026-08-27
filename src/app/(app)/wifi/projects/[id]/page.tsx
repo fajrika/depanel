@@ -67,6 +67,7 @@ export default function WifiEditorPage() {
   const [tool, setTool] = useState<Tool>("select");
   const [wallMaterial, setWallMaterial] = useState<WallMaterialKey>("DRYWALL");
   const [mode, setMode] = useState<Mode>("signal");
+  const [bandFilter, setBandFilter] = useState<"ALL" | WifiBand>("ALL");
   const [selectedApId, setSelectedApId] = useState<string | null>(null);
   const [selectedWallId, setSelectedWallId] = useState<string | null>(null);
 
@@ -80,8 +81,8 @@ export default function WifiEditorPage() {
   const [showPanel, setShowPanel] = useState(true);
 
   // refs agar draw loop & event handler tidak stale-closure
-  const stateRef = useRef({ project, walls, aps, view, tool, mode, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, pointInfo });
-  stateRef.current = { project, walls, aps, view, tool, mode, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, pointInfo };
+  const stateRef = useRef({ project, walls, aps, view, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, pointInfo });
+  stateRef.current = { project, walls, aps, view, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, pointInfo };
 
   const dragRef = useRef<{ kind: "pan" | "ap" | "wall" | "measure"; id?: string; sx: number; sy: number; startX: number; startY: number; startX2?: number; startY2?: number; startSnap?: { walls: WifiWallDto[]; aps: WifiApDto[] } } | null>(null);
   const wallStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -138,14 +139,14 @@ export default function WifiEditorPage() {
 
   /* ---------- sim ---------- */
   const recomputeSim = useCallback(() => {
-    const p = stateRef.current.project;
-    const w = stateRef.current.walls;
-    const a = stateRef.current.aps;
+    const s = stateRef.current;
+    const p = s.project;
     if (!p) return;
+    const a = s.bandFilter === "ALL" ? s.aps : s.aps.filter((ap) => ap.band === s.bandFilter);
     const cellWorld = Math.max(0.25, Math.max(p.widthM, p.heightM) / 180);
     const cols = Math.max(4, Math.ceil(p.widthM / cellWorld));
     const rows = Math.max(4, Math.ceil(p.heightM / cellWorld));
-    setSim(computeGrid(p, a, w, cols, rows));
+    setSim(computeGrid(p, a, s.walls, cols, rows));
   }, []);
 
   const debounceRef = useRef<number | null>(null);
@@ -196,7 +197,7 @@ export default function WifiEditorPage() {
   useEffect(() => {
     if (project) scheduleSim();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.widthM, project?.heightM, project?.pathLossExponent, project?.deadZoneDbm, walls, aps]);
+  }, [project?.widthM, project?.heightM, project?.pathLossExponent, project?.deadZoneDbm, walls, aps, bandFilter]);
 
   /* ---------- hit-test ---------- */
   function hitTest(sx: number, sy: number): { ap?: WifiApDto; wall?: WifiWallDto } {
@@ -426,7 +427,7 @@ export default function WifiEditorPage() {
     }
 
     // heatmap
-    if (s.sim && s.project && s.aps.some((a) => a.enabled)) {
+    if (s.sim && s.project && (s.bandFilter === "ALL" ? s.aps : s.aps.filter((a) => a.band === s.bandFilter)).some((a) => a.enabled)) {
       const cellWorld = Math.max(0.25, Math.max(p.widthM, p.heightM) / 180);
       const cols = Math.max(4, Math.ceil(p.widthM / cellWorld));
       const rows = Math.max(4, Math.ceil(p.heightM / cellWorld));
@@ -633,7 +634,8 @@ export default function WifiEditorPage() {
       if (!s.project) return;
       const x = Math.min(Math.max(wx, 0), s.project.widthM);
       const y = Math.min(Math.max(wy, 0), s.project.heightM);
-      setPointInfo({ x, y, info: evaluatePoint(s.project, s.aps, s.walls, x, y) });
+      const bandAps = s.bandFilter === "ALL" ? s.aps : s.aps.filter((a) => a.band === s.bandFilter);
+      setPointInfo({ x, y, info: evaluatePoint(s.project, bandAps, s.walls, x, y) });
       return;
     }
     if (s.tool === "delete") {
@@ -944,6 +946,24 @@ export default function WifiEditorPage() {
             </button>
           ))}
         </div>
+        <div className="flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-900" title={t("wif.band")}>
+          {(
+            [
+              { id: "ALL", label: t("wif.bandAll") },
+              { id: "BAND_2_4", label: "2.4 GHz" },
+              { id: "BAND_5", label: "5 GHz" },
+              { id: "BAND_6", label: "6 GHz" },
+            ] as { id: "ALL" | WifiBand; label: string }[]
+          ).map((b) => (
+            <button
+              key={b.id}
+              onClick={() => setBandFilter(b.id)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${bandFilter === b.id ? "bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900" : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"}`}
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
         <div className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <span className="text-slate-500 dark:text-slate-400">
             {t("wif.statCoverage")}: <b className="text-emerald-600">{sim ? sim.signalCoveragePct.toFixed(1) : "0"}%</b>
@@ -952,7 +972,7 @@ export default function WifiEditorPage() {
             {t("wif.statDead")}: <b className="text-red-500">{sim ? sim.deadZonePct.toFixed(1) : "100"}%</b>
           </span>
           <span className="text-slate-500 dark:text-slate-400">
-            {t("wif.statAp")}: <b className="text-slate-800 dark:text-slate-100">{sim?.totalEnabled ?? 0}/{aps.length}</b>
+            {t("wif.statAp")}{bandFilter !== "ALL" ? ` (${bandLabel(bandFilter)})` : ""}: <b className="text-slate-800 dark:text-slate-100">{sim?.totalEnabled ?? 0}/{aps.length}</b>
           </span>
           <label className="ml-auto flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
             {t("wif.threshold")}
