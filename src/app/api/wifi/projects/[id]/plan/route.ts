@@ -27,17 +27,25 @@ const planSchema = z.object({
       z.object({
         name: z.string().min(1).default("Access Point"),
         ssid: z.string().max(32).optional().nullable(),
-        band: z.enum(["BAND_2_4", "BAND_5", "BAND_6"]),
-        channel: z.coerce.number().int().min(1).max(233),
-        channelWidth: z.coerce.number().int().refine((v) => [20, 40, 80, 160].includes(v)),
-        txPowerDbm: z.coerce.number().min(0).max(30),
-        antennaGainDbi: z.coerce.number().min(0).max(20),
-        antennaType: z.enum(["OMNIDIRECTIONAL", "PATCH", "PANEL"]),
-        azimuthDeg: z.coerce.number().int().min(0).max(360).optional().nullable(),
         heightM: z.coerce.number().min(0.5).max(10),
         posX: z.coerce.number(),
         posY: z.coerce.number(),
         enabled: z.boolean().default(true),
+        radios: z
+          .array(
+            z.object({
+              band: z.enum(["BAND_2_4", "BAND_5", "BAND_6"]),
+              channel: z.coerce.number().int().min(1).max(233),
+              channelWidth: z.coerce.number().int().refine((v) => [20, 40, 80, 160].includes(v)),
+              txPowerDbm: z.coerce.number().min(0).max(30),
+              antennaGainDbi: z.coerce.number().min(0).max(20),
+              antennaType: z.enum(["OMNIDIRECTIONAL", "PATCH", "PANEL"]),
+              azimuthDeg: z.coerce.number().int().min(0).max(360).optional().nullable(),
+              enabled: z.boolean().default(true),
+            }),
+          )
+          .min(1)
+          .max(3),
       }),
     )
     .max(500)
@@ -73,24 +81,31 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       });
     }
     if (d.accessPoints && d.accessPoints.length > 0) {
-      await tx.wifiAccessPoint.createMany({
-        data: d.accessPoints.map((a) => ({
-          projectId: id,
-          name: a.name,
-          ssid: a.ssid ?? null,
-          band: a.band,
-          channel: a.channel,
-          channelWidth: a.channelWidth,
-          txPowerDbm: a.txPowerDbm,
-          antennaGainDbi: a.antennaGainDbi,
-          antennaType: a.antennaType,
-          azimuthDeg: a.azimuthDeg ?? null,
-          heightM: a.heightM,
-          posX: a.posX,
-          posY: a.posY,
-          enabled: a.enabled,
-        })),
-      });
+      for (const a of d.accessPoints) {
+        await tx.wifiAccessPoint.create({
+          data: {
+            projectId: id,
+            name: a.name,
+            ssid: a.ssid ?? null,
+            heightM: a.heightM,
+            posX: a.posX,
+            posY: a.posY,
+            enabled: a.enabled,
+            radios: {
+              create: a.radios.map((r) => ({
+                band: r.band,
+                channel: r.channel,
+                channelWidth: r.channelWidth,
+                txPowerDbm: r.txPowerDbm,
+                antennaGainDbi: r.antennaGainDbi,
+                antennaType: r.antennaType,
+                azimuthDeg: r.azimuthDeg ?? null,
+                enabled: r.enabled,
+              })),
+            },
+          },
+        });
+      }
     }
   });
 

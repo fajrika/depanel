@@ -661,28 +661,41 @@ model WifiWall {
   @@index([projectId])
 }
 
-/// Access point pada denah dengan konfigurasi antena lengkap.
+/// Access point pada denah. Bisa punya banyak radio (2.4/5/6 GHz sekaligus).
 model WifiAccessPoint {
+  id        String         @id @default(cuid())
+  projectId String
+  project   WifiProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  ssid      String?
+  heightM   Float          @default(2.5)
+  posX      Float
+  posY      Float
+  enabled   Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  radios    WifiApRadio[]
+
+  @@index([projectId])
+}
+
+/// Satu radio/band pada access point — setting antena & channel lengkap.
+model WifiApRadio {
   id             String           @id @default(cuid())
-  projectId      String
-  project        WifiProject      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  name           String
-  ssid           String?
-  band           WifiBand         @default(BAND_2_4)
+  apId           String
+  ap             WifiAccessPoint  @relation(fields: [apId], references: [id], onDelete: Cascade)
+  band           WifiBand
   channel        Int              @default(1)
   channelWidth   Int              @default(20) // 20/40/80/160 MHz
   txPowerDbm     Float            @default(20) // 10-30 dBm
   antennaGainDbi Float            @default(3) // 0-12 dBi
   antennaType    WifiAntennaType  @default(OMNIDIRECTIONAL)
   azimuthDeg     Int?             @default(0) // arah antena directional (0-360)
-  heightM        Float            @default(2.5)
-  posX           Float
-  posY           Float
   enabled        Boolean          @default(true)
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
-  @@index([projectId])
+  @@index([apId])
 }
 
 /// Preset vendor AP (seed data).

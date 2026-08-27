@@ -1,5 +1,6 @@
 // Mesin simulasi WiFi (COST-231 Multi-Wall + log-distance). Pure TS, tanpa React —
 // dipakai dari editor canvas (client). Interferensi dihitung on-the-fly (tidak disimpan).
+// Satu access point bisa punya banyak radio (2.4/5/6 GHz sekaligus).
 
 export type WifiBand = "BAND_2_4" | "BAND_5" | "BAND_6";
 export type WifiAntennaType = "OMNIDIRECTIONAL" | "PATCH" | "PANEL";
@@ -14,10 +15,9 @@ export interface WifiWallDto {
   material: WifiWallMaterial;
 }
 
-export interface WifiApDto {
+/** Satu radio (satu band) pada access point. */
+export interface WifiRadioDto {
   id: string;
-  name: string;
-  ssid?: string | null;
   band: WifiBand;
   channel: number;
   channelWidth: number;
@@ -25,10 +25,18 @@ export interface WifiApDto {
   antennaGainDbi: number;
   antennaType: WifiAntennaType;
   azimuthDeg?: number | null;
+  enabled: boolean;
+}
+
+export interface WifiApDto {
+  id: string;
+  name: string;
+  ssid?: string | null;
   heightM: number;
   posX: number;
   posY: number;
   enabled: boolean;
+  radios: WifiRadioDto[];
 }
 
 export interface WifiProjectDto {
@@ -99,44 +107,45 @@ export function segIntersect(ax: number, ay: number, bx: number, by: number, cx:
   return t >= 0 && t <= 1 && u >= 0 && u <= 1;
 }
 
-/** Gain efektif antena ke arah titik (dB). Directional: cos² terhadap azimuth, ±60°, falloff di luar. */
-export function antennaGain(ap: WifiApDto, dx: number, dy: number): number {
-  if (ap.antennaType === "OMNIDIRECTIONAL") return ap.antennaGainDbi;
-  const az = ((ap.azimuthDeg ?? 0) % 360) * (Math.PI / 180);
+/** Gain efektif antena radio ke arah titik (dB). Directional: cos² terhadap azimuth, ±60°, falloff di luar. */
+export function antennaGain(radio: WifiRadioDto, dx: number, dy: number): number {
+  if (radio.antennaType === "OMNIDIRECTIONAL") return radio.antennaGainDbi;
+  const az = ((radio.azimuthDeg ?? 0) % 360) * (Math.PI / 180);
   const theta = Math.atan2(dy, dx);
   const delta = normDeg(((theta - az) * 180) / Math.PI) * (Math.PI / 180);
   const deg = Math.abs((delta * 180) / Math.PI);
   if (deg <= 60) {
     const cos2 = Math.cos(delta) ** 2;
-    return ap.antennaGainDbi + 10 * Math.log10(Math.max(cos2, 1e-6));
+    return radio.antennaGainDbi + 10 * Math.log10(Math.max(cos2, 1e-6));
   }
-  return ap.antennaGainDbi - 15;
+  return radio.antennaGainDbi - 15;
 }
 
-/** RSSI di titik (x,y) dari satu AP, tanpa interferensi. */
-export function computeRssi(ap: WifiApDto, walls: WifiWallDto[], x: number, y: number, n: number): number {
+/** RSSI di titik (x,y) dari satu radio AP, tanpa interferensi. */
+export function computeRssi(ap: WifiApDto, radio: WifiRadioDto, walls: WifiWallDto[], x: number, y: number, n: number): number {
   const dx = x - ap.posX;
   const dy = y - ap.posY;
   let d = Math.sqrt(dx * dx + dy * dy);
   if (d < 1) d = 1;
-  const pl0 = BAND_PL0[ap.band];
+  const pl0 = BAND_PL0[radio.band];
   let wallLoss = 0;
   for (const w of walls) {
     if (segIntersect(ap.posX, ap.posY, x, y, w.x1, w.y1, w.x2, w.y2)) wallLoss += MATERIAL_LOSS[w.material];
   }
   const pl = pl0 + 10 * n * Math.log10(d) + wallLoss;
-  return ap.txPowerDbm + antennaGain(ap, dx, dy) - pl;
+  return radio.txPowerDbm + antennaGain(radio, dx, dy) - pl;
 }
 
 /**
- * Faktor interferensi antar kanal (0 = tidak mengganggu, 1 = co-channel).
+ * Faktor interferensi antar radio (0 = tidak mengganggu, 1 = co-channel).
  * 2.4G: beda 1 ≈ 0.3, beda 2 ≈ 0.6, beda ≥3 ≈ 0; 5G/6G: beda 1 ≈ 0.7, sisanya 0.
+ * Beda band = 0 (tidak saling mengganggu).
  */
-export function adjacentFactor(a: WifiApDto, b: WifiApDto): number {
-  if (a.band !== b.band) return 0;
-  const d = Math.abs(a.channel - b.channel);
+export function adjacentFactor(r1: WifiRadioDto, r2: WifiRadioDto): number {
+  if (r1.band !== r2.band) return 0;
+  const d = Math.abs(r1.channel - r2.channel);
   if (d === 0) return 1;
-  if (a.band === "BAND_2_4") {
+  if (r1.band === "BAND_2_4") {
     if (d === 1) return 0.3;
     if (d === 2) return 0.6;
     return 0;
@@ -145,66 +154,35 @@ export function adjacentFactor(a: WifiApDto, b: WifiApDto): number {
   return 0;
 }
 
-export interface PointInfo {
-  x: number;
-  y: number;
-  bestRssi: number | null; // sinyal terbaik (dBm)
-  bestAp: WifiApDto | null; // AP yang memberi sinyal terbaik
-  sinrDb: number | null;
-  isDead: boolean; // RSSI < ambang dead zone
-  coverageOk: boolean; // tercakup (bukan dead zone) && SINR ≥ 15
-  interferers: { ap: WifiApDto; rssi: number; factor: number }[]; // AP lain yang mengganggu
-}
-
-/** Evaluasi satu titik denah — simulasi user berdiri di titik itu. */
-export function evaluatePoint(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiWallDto[], x: number, y: number): PointInfo {
-  const enabled = aps.filter((a) => a.enabled);
-  if (enabled.length === 0) {
-    return { x, y, bestRssi: null, bestAp: null, sinrDb: null, isDead: true, coverageOk: false, interferers: [] };
-  }
-  let best = -Infinity;
-  let bestAp: WifiApDto | null = null;
-  const rssis: { ap: WifiApDto; rssi: number }[] = [];
-  for (const ap of enabled) {
-    const r = computeRssi(ap, walls, x, y, proj.pathLossExponent);
-    rssis.push({ ap, rssi: r });
-    if (r > best) {
-      best = r;
-      bestAp = ap;
+/** Semua radio aktif dari daftar AP, opsional difilter per band. */
+export function activeRadios(aps: WifiApDto[], onlyBand?: WifiBand | null): { ap: WifiApDto; radio: WifiRadioDto }[] {
+  const out: { ap: WifiApDto; radio: WifiRadioDto }[] = [];
+  for (const ap of aps) {
+    if (!ap.enabled) continue;
+    for (const radio of ap.radios) {
+      if (!radio.enabled) continue;
+      if (onlyBand && radio.band !== onlyBand) continue;
+      out.push({ ap, radio });
     }
   }
-  const sLin = Math.pow(10, best / 10);
-  let iLin = 0;
-  const interferers: { ap: WifiApDto; rssi: number; factor: number }[] = [];
-  for (const { ap, rssi } of rssis) {
-    if (!bestAp || ap.id === bestAp.id) continue;
-    const f = adjacentFactor(bestAp, ap);
-    if (f <= 0) continue;
-    iLin += f * Math.pow(10, rssi / 10);
-    interferers.push({ ap, rssi, factor: f });
-  }
-  const noiseLin = Math.pow(10, NOISE_FLOOR_DBM / 10);
-  const sinrDb = 10 * Math.log10(sLin / (noiseLin + iLin));
-  const isDead = best < proj.deadZoneDbm;
-  const coverageOk = !isDead && sinrDb >= 15;
-  return { x, y, bestRssi: best, bestAp, sinrDb, isDead, coverageOk, interferers };
+  return out;
 }
 
 export interface SimResult {
-  rssi: Float32Array; // dBm terbaik per sel (-Infinity bila tidak ada AP aktif)
-  sinr: Float32Array; // dB per sel (-Infinity bila tidak ada AP aktif)
+  rssi: Float32Array; // dBm terbaik per sel (-Infinity bila tidak ada radio aktif)
+  sinr: Float32Array; // dB per sel (-Infinity bila tidak ada radio aktif)
   signalCoveragePct: number; // % sel dengan RSSI ≥ deadZoneDbm
   sinrCoveragePct: number; // % sel dengan SINR ≥ 15 dB
   deadZonePct: number; // % sel dead zone (RSSI < deadZoneDbm)
-  totalEnabled: number;
+  totalEnabled: number; // jumlah radio aktif (sesuai filter band)
 }
 
 /** Hitung grid RSSI + SINR. cols×rows = jumlah sel; sel = luasDenah/cols. */
-export function computeGrid(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiWallDto[], cols: number, rows: number): SimResult {
+export function computeGrid(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiWallDto[], cols: number, rows: number, onlyBand?: WifiBand | null): SimResult {
   const n = cols * rows;
   const rssi = new Float32Array(n);
   const sinr = new Float32Array(n);
-  const enabled = aps.filter((a) => a.enabled);
+  const radios = activeRadios(aps, onlyBand);
   const cellW = proj.widthM / cols;
   const cellH = proj.heightM / rows;
   let signalOk = 0;
@@ -216,7 +194,7 @@ export function computeGrid(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiW
     const x = (cx + 0.5) * cellW;
     const y = (cy + 0.5) * cellH;
 
-    if (enabled.length === 0) {
+    if (radios.length === 0) {
       rssi[i] = -Infinity;
       sinr[i] = -Infinity;
       continue;
@@ -224,8 +202,8 @@ export function computeGrid(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiW
 
     let best = -Infinity;
     let bestIdx = -1;
-    for (let k = 0; k < enabled.length; k++) {
-      const r = computeRssi(enabled[k], walls, x, y, proj.pathLossExponent);
+    for (let k = 0; k < radios.length; k++) {
+      const r = computeRssi(radios[k].ap, radios[k].radio, walls, x, y, proj.pathLossExponent);
       if (r > best) {
         best = r;
         bestIdx = k;
@@ -236,11 +214,11 @@ export function computeGrid(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiW
     if (bestIdx >= 0) {
       const sLin = Math.pow(10, best / 10);
       let iLin = 0;
-      for (let k = 0; k < enabled.length; k++) {
+      for (let k = 0; k < radios.length; k++) {
         if (k === bestIdx) continue;
-        const f = adjacentFactor(enabled[bestIdx], enabled[k]);
+        const f = adjacentFactor(radios[bestIdx].radio, radios[k].radio);
         if (f <= 0) continue;
-        const r = computeRssi(enabled[k], walls, x, y, proj.pathLossExponent);
+        const r = computeRssi(radios[k].ap, radios[k].radio, walls, x, y, proj.pathLossExponent);
         iLin += f * Math.pow(10, r / 10);
       }
       const noiseLin = Math.pow(10, NOISE_FLOOR_DBM / 10);
@@ -254,15 +232,62 @@ export function computeGrid(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiW
   }
 
   const total = Math.max(n, 1);
-  const activeCount = enabled.length;
   return {
     rssi,
     sinr,
-    signalCoveragePct: activeCount === 0 ? 0 : (signalOk / total) * 100,
-    sinrCoveragePct: activeCount === 0 ? 0 : (sinrOk / total) * 100,
-    deadZonePct: activeCount === 0 ? 100 : ((total - signalOk) / total) * 100,
-    totalEnabled: activeCount,
+    signalCoveragePct: radios.length === 0 ? 0 : (signalOk / total) * 100,
+    sinrCoveragePct: radios.length === 0 ? 0 : (sinrOk / total) * 100,
+    deadZonePct: radios.length === 0 ? 100 : ((total - signalOk) / total) * 100,
+    totalEnabled: radios.length,
   };
+}
+
+export interface PointInfo {
+  x: number;
+  y: number;
+  bestRssi: number | null; // sinyal terbaik (dBm)
+  bestAp: WifiApDto | null; // AP yang memberi sinyal terbaik
+  bestRadio: WifiRadioDto | null; // radio (band/channel) yang memberi sinyal terbaik
+  sinrDb: number | null;
+  isDead: boolean; // RSSI < ambang dead zone
+  coverageOk: boolean; // tercakup (bukan dead zone) && SINR ≥ 15
+  interferers: { ap: WifiApDto; radio: WifiRadioDto; rssi: number; factor: number }[]; // radio lain yang mengganggu
+}
+
+/** Evaluasi satu titik denah — simulasi user berdiri di titik itu. */
+export function evaluatePoint(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiWallDto[], x: number, y: number, onlyBand?: WifiBand | null): PointInfo {
+  const radios = activeRadios(aps, onlyBand);
+  if (radios.length === 0) {
+    return { x, y, bestRssi: null, bestAp: null, bestRadio: null, sinrDb: null, isDead: true, coverageOk: false, interferers: [] };
+  }
+  let best = -Infinity;
+  let bestIdx = -1;
+  const rssis: { ap: WifiApDto; radio: WifiRadioDto; rssi: number }[] = [];
+  for (const { ap, radio } of radios) {
+    const r = computeRssi(ap, radio, walls, x, y, proj.pathLossExponent);
+    rssis.push({ ap, radio, rssi: r });
+    if (r > best) {
+      best = r;
+      bestIdx = rssis.length - 1;
+    }
+  }
+  const bestAp = rssis[bestIdx]?.ap ?? null;
+  const bestRadio = rssis[bestIdx]?.radio ?? null;
+  const sLin = Math.pow(10, best / 10);
+  let iLin = 0;
+  const interferers: { ap: WifiApDto; radio: WifiRadioDto; rssi: number; factor: number }[] = [];
+  for (const { ap, radio, rssi } of rssis) {
+    if (radio.id === bestRadio?.id) continue;
+    const f = adjacentFactor(bestRadio!, radio);
+    if (f <= 0) continue;
+    iLin += f * Math.pow(10, rssi / 10);
+    interferers.push({ ap, radio, rssi, factor: f });
+  }
+  const noiseLin = Math.pow(10, NOISE_FLOOR_DBM / 10);
+  const sinrDb = 10 * Math.log10(sLin / (noiseLin + iLin));
+  const isDead = best < proj.deadZoneDbm;
+  const coverageOk = !isDead && sinrDb >= 15;
+  return { x, y, bestRssi: best, bestAp, bestRadio, sinrDb, isDead, coverageOk, interferers };
 }
 
 /** Warna heatmap RSSI: t 0..1 (merah → kuning → hijau), -95 dBm → -50 dBm. */

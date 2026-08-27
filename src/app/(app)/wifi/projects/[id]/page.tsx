@@ -6,6 +6,7 @@ import { useLang } from "@/lib/i18n";
 import {
   computeGrid,
   evaluatePoint,
+  activeRadios,
   CHANNELS_BY_BAND,
   CHANNEL_WIDTHS,
   MATERIAL_LOSS,
@@ -14,6 +15,7 @@ import {
   sinrColor,
   type WifiWallDto,
   type WifiApDto,
+  type WifiRadioDto,
   type WifiProjectDto,
   type WifiBand,
   type WifiAntennaType,
@@ -142,11 +144,11 @@ export default function WifiEditorPage() {
     const s = stateRef.current;
     const p = s.project;
     if (!p) return;
-    const a = s.bandFilter === "ALL" ? s.aps : s.aps.filter((ap) => ap.band === s.bandFilter);
+    const onlyBand = s.bandFilter === "ALL" ? null : s.bandFilter;
     const cellWorld = Math.max(0.25, Math.max(p.widthM, p.heightM) / 180);
     const cols = Math.max(4, Math.ceil(p.widthM / cellWorld));
     const rows = Math.max(4, Math.ceil(p.heightM / cellWorld));
-    setSim(computeGrid(p, a, s.walls, cols, rows));
+    setSim(computeGrid(p, s.aps, s.walls, cols, rows, onlyBand));
   }, []);
 
   const debounceRef = useRef<number | null>(null);
@@ -234,17 +236,20 @@ export default function WifiEditorPage() {
       accessPoints: prev.aps.map((a) => ({
         name: a.name,
         ssid: a.ssid,
-        band: a.band,
-        channel: a.channel,
-        channelWidth: a.channelWidth,
-        txPowerDbm: a.txPowerDbm,
-        antennaGainDbi: a.antennaGainDbi,
-        antennaType: a.antennaType,
-        azimuthDeg: a.azimuthDeg,
         heightM: a.heightM,
         posX: a.posX,
         posY: a.posY,
         enabled: a.enabled,
+        radios: a.radios.map((r) => ({
+          band: r.band,
+          channel: r.channel,
+          channelWidth: r.channelWidth,
+          txPowerDbm: r.txPowerDbm,
+          antennaGainDbi: r.antennaGainDbi,
+          antennaType: r.antennaType,
+          azimuthDeg: r.azimuthDeg,
+          enabled: r.enabled,
+        })),
       })),
     };
     setSaving(true);
@@ -334,14 +339,80 @@ export default function WifiEditorPage() {
     }, 400);
   }
 
-  async function applyPreset(apId: string, preset: Preset) {
-    updateApLocal(apId, {
-      band: preset.band,
-      txPowerDbm: preset.txPowerDbm,
-      antennaGainDbi: preset.antennaGainDbi,
-      antennaType: preset.antennaType,
-      channel: CHANNELS_BY_BAND[preset.band][0],
+  const patchRadioRef = useRef<{ timer: number | null; pending: Partial<WifiRadioDto> }>({ timer: null, pending: {} });
+  function updateRadioLocal(apId: string, radioId: string, patch: Partial<WifiRadioDto>) {
+    setAps((list) =>
+      list.map((a) => (a.id === apId ? { ...a, radios: a.radios.map((r) => (r.id === radioId ? { ...r, ...patch } : r)) } : a)),
+    );
+    patchRadioRef.current.pending = { ...patchRadioRef.current.pending, ...patch };
+    if (patchRadioRef.current.timer) window.clearTimeout(patchRadioRef.current.timer);
+    patchRadioRef.current.timer = window.setTimeout(async () => {
+      const pending = patchRadioRef.current.pending;
+      patchRadioRef.current.pending = {};
+      if (Object.keys(pending).length === 0) return;
+      try {
+        const res = await fetch(`/api/wifi/projects/${id}/access-points/${apId}/radios/${radioId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(pending),
+        });
+        const d = await res.json();
+        if (!res.ok || d.ok === false) setMsg({ text: d.message ?? t("wif.saveErr"), ok: false });
+      } catch {
+        setMsg({ text: t("wif.saveErr"), ok: false });
+      }
+    }, 400);
+  }
+
+  async function addRadio(apId: string, band: WifiBand) {
+    pushHistory();
+    const res = await fetch(`/api/wifi/projects/${id}/access-points/${apId}/radios`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ band, channel: CHANNELS_BY_BAND[band][0] }),
     });
+    const d = await res.json();
+    if (d.ok && d.data) {
+      setAps((list) => list.map((a) => (a.id === apId ? { ...a, radios: [...a.radios, d.data] } : a)));
+    } else setMsg({ text: d.message ?? t("wif.saveErr"), ok: false });
+  }
+
+  async function removeRadio(apId: string, radioId: string) {
+    pushHistory();
+    const res = await fetch(`/api/wifi/projects/${id}/access-points/${apId}/radios/${radioId}`, { method: "DELETE" });
+    const d = await res.json();
+    if (d.ok) {
+      setAps((list) => list.map((a) => (a.id === apId ? { ...a, radios: a.radios.filter((r) => r.id !== radioId) } : a)));
+    } else setMsg({ text: d.message ?? t("wif.deleteErr"), ok: false });
+  }
+
+  async function applyPreset(apId: string, preset: Preset) {
+    const ap = aps.find((a) => a.id === apId);
+    const existing = ap?.radios.find((r) => r.band === preset.band);
+    if (existing) {
+      updateRadioLocal(apId, existing.id, {
+        txPowerDbm: preset.txPowerDbm,
+        antennaGainDbi: preset.antennaGainDbi,
+        antennaType: preset.antennaType,
+      });
+    } else {
+      pushHistory();
+      const res = await fetch(`/api/wifi/projects/${id}/access-points/${apId}/radios`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          band: preset.band,
+          channel: CHANNELS_BY_BAND[preset.band][0],
+          txPowerDbm: preset.txPowerDbm,
+          antennaGainDbi: preset.antennaGainDbi,
+          antennaType: preset.antennaType,
+        }),
+      });
+      const d = await res.json();
+      if (d.ok && d.data) {
+        setAps((list) => list.map((a) => (a.id === apId ? { ...a, radios: [...a.radios, d.data] } : a)));
+      } else setMsg({ text: d.message ?? t("wif.saveErr"), ok: false });
+    }
   }
 
   const selectedAp = aps.find((a) => a.id === selectedApId) ?? null;
@@ -427,7 +498,7 @@ export default function WifiEditorPage() {
     }
 
     // heatmap
-    if (s.sim && s.project && (s.bandFilter === "ALL" ? s.aps : s.aps.filter((a) => a.band === s.bandFilter)).some((a) => a.enabled)) {
+    if (s.sim && s.project && activeRadios(s.aps, s.bandFilter === "ALL" ? null : s.bandFilter).length > 0) {
       const cellWorld = Math.max(0.25, Math.max(p.widthM, p.heightM) / 180);
       const cols = Math.max(4, Math.ceil(p.widthM / cellWorld));
       const rows = Math.max(4, Math.ceil(p.heightM / cellWorld));
@@ -508,15 +579,29 @@ export default function WifiEditorPage() {
     for (const ap of s.aps) {
       const [px, py] = toScreen(ap.posX, ap.posY);
       const isSel = ap.id === s.selectedApId;
+      const bands = [...new Set(ap.radios.map((r) => r.band))];
       ctx.beginPath();
       ctx.arc(px, py, 11, 0, Math.PI * 2);
-      ctx.fillStyle = BAND_COLOR[ap.band];
+      ctx.fillStyle = "#fff";
       ctx.fill();
-      ctx.strokeStyle = isSel ? "#f59e0b" : "#fff";
+      ctx.strokeStyle = isSel ? "#f59e0b" : "#0f172a";
       ctx.lineWidth = isSel ? 3 : 2;
       ctx.stroke();
-      if (ap.antennaType !== "OMNIDIRECTIONAL") {
-        const az = ((ap.azimuthDeg ?? 0) * Math.PI) / 180;
+      // dot per band radio
+      const dots = bands.filter((b) => ap.radios.some((r) => r.band === b && r.enabled));
+      if (dots.length > 0) {
+        const step = (Math.PI * 2) / dots.length;
+        dots.forEach((b, i) => {
+          const a = -Math.PI / 2 + i * step;
+          ctx.beginPath();
+          ctx.arc(px + Math.cos(a) * 6, py + Math.sin(a) * 6, 3.2, 0, Math.PI * 2);
+          ctx.fillStyle = BAND_COLOR[b];
+          ctx.fill();
+        });
+      }
+      if (ap.radios.some((r) => r.antennaType !== "OMNIDIRECTIONAL")) {
+        const r = ap.radios.find((x) => x.antennaType !== "OMNIDIRECTIONAL")!;
+        const az = ((r.azimuthDeg ?? 0) * Math.PI) / 180;
         ctx.beginPath();
         ctx.moveTo(px, py);
         ctx.lineTo(px + Math.cos(az) * 18, py + Math.sin(az) * 18);
@@ -528,7 +613,7 @@ export default function WifiEditorPage() {
         ctx.beginPath();
         ctx.moveTo(px - 6, py - 6);
         ctx.lineTo(px + 6, py + 6);
-        ctx.strokeStyle = "#fff";
+        ctx.strokeStyle = "#0f172a";
         ctx.lineWidth = 2;
         ctx.stroke();
       }
@@ -536,8 +621,9 @@ export default function WifiEditorPage() {
       ctx.font = "11px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(ap.name, px, py - 16);
+      const chText = ap.radios.map((r) => `ch${r.channel}`).join(" ");
       ctx.fillStyle = "rgba(15,23,42,0.7)";
-      ctx.fillText(`ch${ap.channel}`, px, py + 22);
+      ctx.fillText(chText, px, py + 22);
       ctx.textAlign = "left";
     }
 
@@ -634,8 +720,8 @@ export default function WifiEditorPage() {
       if (!s.project) return;
       const x = Math.min(Math.max(wx, 0), s.project.widthM);
       const y = Math.min(Math.max(wy, 0), s.project.heightM);
-      const bandAps = s.bandFilter === "ALL" ? s.aps : s.aps.filter((a) => a.band === s.bandFilter);
-      setPointInfo({ x, y, info: evaluatePoint(s.project, bandAps, s.walls, x, y) });
+      const onlyBand = s.bandFilter === "ALL" ? null : s.bandFilter;
+      setPointInfo({ x, y, info: evaluatePoint(s.project, s.aps, s.walls, x, y, onlyBand) });
       return;
     }
     if (s.tool === "delete") {
@@ -852,7 +938,12 @@ export default function WifiEditorPage() {
   }
 
   const coChannelWarn = (ap: WifiApDto) =>
-    aps.some((o) => o.id !== ap.id && o.enabled && o.band === ap.band && o.channel === ap.channel);
+    aps.some(
+      (o) =>
+        o.id !== ap.id &&
+        o.enabled &&
+        o.radios.some((r) => r.enabled && ap.radios.some((r2) => r2.enabled && r.band === r2.band && r.channel === r2.channel)),
+    );
 
   return (
     <div
@@ -1075,7 +1166,7 @@ export default function WifiEditorPage() {
                     <SignalBadge rssi={pointInfo.info.bestRssi} dead={project.deadZoneDbm} labelDead={t("wif.statusDead")} labelGood={t("wif.statusGood")} labelOk={t("wif.statusOk")} />
                   </p>
                   <p className="text-slate-400">
-                    {t("wif.statusBestAp")}: {pointInfo.info.bestAp.name} · ch{pointInfo.info.bestAp.channel} ({bandLabel(pointInfo.info.bestAp.band)} GHz)
+                    {t("wif.statusBestAp")}: {pointInfo.info.bestAp.name} · {pointInfo.info.bestRadio ? `ch${pointInfo.info.bestRadio.channel} (${bandLabel(pointInfo.info.bestRadio.band)} GHz)` : ""}
                   </p>
                   <p className="flex items-center gap-1.5">
                     {t("wif.statusSinr")}: <b>{pointInfo.info.sinrDb.toFixed(1)} dB</b>
@@ -1098,8 +1189,8 @@ export default function WifiEditorPage() {
                     ) : (
                       <ul className="mt-0.5 space-y-0.5">
                         {pointInfo.info.interferers.map((it) => (
-                          <li key={it.ap.id}>
-                            {it.ap.name} (ch{it.ap.channel}) · {it.rssi.toFixed(1)} dBm ·{" "}
+                          <li key={it.radio.id}>
+                            {it.ap.name} · ch{it.radio.channel} ({bandLabel(it.radio.band)} GHz) · {it.rssi.toFixed(1)} dBm ·{" "}
                             {it.factor === 1 ? t("wif.statusCoChannel") : `${t("wif.statusAdjacent")} (${it.factor})`}
                           </li>
                         ))}
@@ -1155,59 +1246,99 @@ export default function WifiEditorPage() {
                   </select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                    {t("wif.band")}
-                    <select value={selectedAp.band} onChange={(e) => updateApLocal(selectedAp.id, { band: e.target.value as WifiBand, channel: CHANNELS_BY_BAND[e.target.value as WifiBand][0] })} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
-                      <option value="BAND_2_4">2.4 GHz</option>
-                      <option value="BAND_5">5 GHz</option>
-                      <option value="BAND_6">6 GHz</option>
-                    </select>
-                  </label>
-                  <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                    {t("wif.channel")}
-                    <select value={selectedAp.channel} onChange={(e) => updateApLocal(selectedAp.id, { channel: Number(e.target.value) })} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
-                      {CHANNELS_BY_BAND[selectedAp.band].map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                    {t("wif.chWidth")}
-                    <select value={selectedAp.channelWidth} onChange={(e) => updateApLocal(selectedAp.id, { channelWidth: Number(e.target.value) })} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
-                      {CHANNEL_WIDTHS.map((w) => (
-                        <option key={w} value={w}>
-                          {w} MHz
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                    {t("wif.antenna")}
-                    <select value={selectedAp.antennaType} onChange={(e) => updateApLocal(selectedAp.id, { antennaType: e.target.value as WifiAntennaType })} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
-                      <option value="OMNIDIRECTIONAL">{t("wif.antOmni")}</option>
-                      <option value="PATCH">{t("wif.antPatch")}</option>
-                      <option value="PANEL">{t("wif.antPanel")}</option>
-                    </select>
-                  </label>
+                <div>
+                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{t("wif.radios")}</p>
+                  <div className="mt-1 space-y-2">
+                    {selectedAp.radios.map((radio) => (
+                      <div key={radio.id} className="rounded-lg border border-slate-200 p-2 dark:border-slate-700">
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                            <span className="h-2.5 w-2.5 rounded-full" style={{ background: BAND_COLOR[radio.band] }} />
+                            {bandLabel(radio.band)} GHz
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <label className="flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400">
+                              <input type="checkbox" checked={radio.enabled} onChange={(e) => updateRadioLocal(selectedAp.id, radio.id, { enabled: e.target.checked })} className="h-3 w-3 accent-emerald-600" />
+                              {t("wif.enabled")}
+                            </label>
+                            <button onClick={() => removeRadio(selectedAp.id, radio.id)} title={t("wif.deleteRadio")} className="text-red-500 hover:text-red-400">
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                          <label className="block text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                            {t("wif.channel")}
+                            <select value={radio.channel} onChange={(e) => updateRadioLocal(selectedAp.id, radio.id, { channel: Number(e.target.value) })} className="mt-0.5 w-full rounded-md border border-slate-300 px-1.5 py-1 text-xs outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                              {CHANNELS_BY_BAND[radio.band].map((c) => (
+                                <option key={c} value={c}>
+                                  {c}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="block text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                            {t("wif.chWidth")}
+                            <select value={radio.channelWidth} onChange={(e) => updateRadioLocal(selectedAp.id, radio.id, { channelWidth: Number(e.target.value) })} className="mt-0.5 w-full rounded-md border border-slate-300 px-1.5 py-1 text-xs outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                              {CHANNEL_WIDTHS.map((w) => (
+                                <option key={w} value={w}>
+                                  {w} MHz
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="col-span-2 block text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                            {t("wif.antenna")}
+                            <select value={radio.antennaType} onChange={(e) => updateRadioLocal(selectedAp.id, radio.id, { antennaType: e.target.value as WifiAntennaType })} className="mt-0.5 w-full rounded-md border border-slate-300 px-1.5 py-1 text-xs outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                              <option value="OMNIDIRECTIONAL">{t("wif.antOmni")}</option>
+                              <option value="PATCH">{t("wif.antPatch")}</option>
+                              <option value="PANEL">{t("wif.antPanel")}</option>
+                            </select>
+                          </label>
+                        </div>
+                        <label className="mt-1.5 block text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                          {t("wif.txPower")}: <b>{radio.txPowerDbm} dBm</b>
+                          <input type="range" min={0} max={30} step={1} value={radio.txPowerDbm} onChange={(e) => updateRadioLocal(selectedAp.id, radio.id, { txPowerDbm: Number(e.target.value) })} className="mt-0.5 w-full accent-indigo-600" />
+                        </label>
+                        <label className="mt-1 block text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                          {t("wif.gain")}: <b>{radio.antennaGainDbi} dBi</b>
+                          <input type="range" min={0} max={20} step={0.5} value={radio.antennaGainDbi} onChange={(e) => updateRadioLocal(selectedAp.id, radio.id, { antennaGainDbi: Number(e.target.value) })} className="mt-0.5 w-full accent-indigo-600" />
+                        </label>
+                        {radio.antennaType !== "OMNIDIRECTIONAL" && (
+                          <label className="mt-1 block text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                            {t("wif.azimuth")}: <b>{radio.azimuthDeg ?? 0}°</b>
+                            <input type="range" min={0} max={360} step={5} value={radio.azimuthDeg ?? 0} onChange={(e) => updateRadioLocal(selectedAp.id, radio.id, { azimuthDeg: Number(e.target.value) })} className="mt-0.5 w-full accent-indigo-600" />
+                          </label>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {(() => {
+                    const missing = (["BAND_2_4", "BAND_5", "BAND_6"] as WifiBand[]).filter((b) => !selectedAp.radios.some((r) => r.band === b));
+                    if (missing.length === 0) return null;
+                    return (
+                      <div className="mt-2 flex items-center gap-1.5">
+                        <span className="text-[10px] text-slate-400">{t("wif.addRadio")}</span>
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) addRadio(selectedAp.id, e.target.value as WifiBand);
+                            e.target.value = "";
+                          }}
+                          className="rounded-md border border-slate-300 px-1.5 py-1 text-xs outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                        >
+                          <option value="">—</option>
+                          {missing.map((b) => (
+                            <option key={b} value={b}>
+                              {bandLabel(b)} GHz
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })()}
                 </div>
 
-                <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                  {t("wif.txPower")}: <b>{selectedAp.txPowerDbm} dBm</b>
-                  <input type="range" min={0} max={30} step={1} value={selectedAp.txPowerDbm} onChange={(e) => updateApLocal(selectedAp.id, { txPowerDbm: Number(e.target.value) })} className="mt-1 w-full accent-indigo-600" />
-                </label>
-                <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                  {t("wif.gain")}: <b>{selectedAp.antennaGainDbi} dBi</b>
-                  <input type="range" min={0} max={20} step={0.5} value={selectedAp.antennaGainDbi} onChange={(e) => updateApLocal(selectedAp.id, { antennaGainDbi: Number(e.target.value) })} className="mt-1 w-full accent-indigo-600" />
-                </label>
-                {selectedAp.antennaType !== "OMNIDIRECTIONAL" && (
-                  <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                    {t("wif.azimuth")}: <b>{selectedAp.azimuthDeg ?? 0}°</b>
-                    <input type="range" min={0} max={360} step={5} value={selectedAp.azimuthDeg ?? 0} onChange={(e) => updateApLocal(selectedAp.id, { azimuthDeg: Number(e.target.value) })} className="mt-1 w-full accent-indigo-600" />
-                  </label>
-                )}
                 <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
                   {t("wif.height")}: <b>{selectedAp.heightM} m</b>
                   <input type="range" min={0.5} max={10} step={0.1} value={selectedAp.heightM} onChange={(e) => updateApLocal(selectedAp.id, { heightM: Number(e.target.value) })} className="mt-1 w-full accent-indigo-600" />
@@ -1266,9 +1397,15 @@ export default function WifiEditorPage() {
                         }}
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
                       >
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: BAND_COLOR[ap.band] }} />
+                        <span className="flex gap-0.5">
+                          {ap.radios.map((r) => (
+                            <span key={r.id} className="h-2.5 w-2.5 rounded-full" style={{ background: BAND_COLOR[r.band], opacity: r.enabled ? 1 : 0.3 }} />
+                          ))}
+                        </span>
                         <span className="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-200">{ap.name}</span>
-                        <span className="text-[10px] text-slate-400">ch{ap.channel}</span>
+                        <span className="text-[10px] text-slate-400">
+                          {ap.radios.map((r) => `${bandLabel(r.band)}:${r.channel}`).join(" ")}
+                        </span>
                         {coChannelWarn(ap) && <span className="text-[10px]">⚠️</span>}
                       </button>
                     ))}
