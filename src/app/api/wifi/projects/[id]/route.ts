@@ -26,7 +26,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
     where: { id },
     include: {
       walls: { orderBy: { createdAt: "asc" } },
-      accessPoints: { orderBy: { createdAt: "asc" } },
+      accessPoints: { orderBy: { createdAt: "asc" }, include: { radios: { orderBy: { createdAt: "asc" } } } },
     },
   });
   return NextResponse.json({ ok: true, data: project });
