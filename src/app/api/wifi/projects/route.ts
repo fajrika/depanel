@@ -16,9 +16,10 @@ const createSchema = z.object({
 });
 
 export async function GET() {
-  const { team } = await requireWifi();
+  const guard = await requireWifi();
+  if (!guard.ok) return NextResponse.json({ ok: false, message: guard.message }, { status: guard.status });
   const projects = await prisma.wifiProject.findMany({
-    where: { teamId: team.id },
+    where: { teamId: guard.team.id },
     orderBy: { updatedAt: "desc" },
     include: { _count: { select: { accessPoints: true, walls: true } } },
   });
@@ -26,7 +27,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { user, team } = await requireWifi();
+  const guard = await requireWifi();
+  if (!guard.ok) return NextResponse.json({ ok: false, message: guard.message }, { status: guard.status });
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message ?? "Data tidak valid" }, { status: 400 });
@@ -34,7 +36,7 @@ export async function POST(request: Request) {
   const d = parsed.data;
   const project = await prisma.wifiProject.create({
     data: {
-      teamId: team.id,
+      teamId: guard.team.id,
       name: d.name,
       description: d.description ?? null,
       widthM: d.widthM,
@@ -45,6 +47,6 @@ export async function POST(request: Request) {
       deadZoneDbm: d.deadZoneDbm,
     },
   });
-  await logActivity({ teamId: team.id, userId: user.id, action: "wifi-project-create", message: `Buat proyek WiFi "${d.name}"` });
+  await logActivity({ teamId: guard.team.id, userId: guard.user.id, action: "wifi-project-create", message: `Buat proyek WiFi "${d.name}"` });
   return NextResponse.json({ ok: true, data: { id: project.id } });
 }

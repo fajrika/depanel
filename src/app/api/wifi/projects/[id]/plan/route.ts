@@ -45,9 +45,11 @@ const planSchema = z.object({
 });
 
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
-  const { user, team } = await requireWifi();
+  const guard = await requireWifi();
+  if (!guard.ok) return NextResponse.json({ ok: false, message: guard.message }, { status: guard.status });
   const { id } = await ctx.params;
-  await ownWifiProject(team.id, id);
+  const owned = await ownWifiProject(guard.team.id, id);
+  if (!owned.ok) return NextResponse.json({ ok: false, message: owned.message }, { status: owned.status });
   const parsed = planSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message ?? "Plan tidak valid" }, { status: 400 });
@@ -92,6 +94,6 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     }
   });
 
-  await logActivity({ teamId: team.id, userId: user.id, action: "wifi-plan-import", message: "Import plan WiFi" });
+  await logActivity({ teamId: guard.team.id, userId: guard.user.id, action: "wifi-plan-import", message: "Import plan WiFi" });
   return NextResponse.json({ ok: true });
 }

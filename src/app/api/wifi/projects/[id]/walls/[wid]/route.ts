@@ -12,9 +12,11 @@ const wallSchema = z.object({
 });
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string; wid: string }> }) {
-  const { team } = await requireWifi();
+  const guard = await requireWifi();
+  if (!guard.ok) return NextResponse.json({ ok: false, message: guard.message }, { status: guard.status });
   const { id, wid } = await ctx.params;
-  await ownWifiProject(team.id, id);
+  const owned = await ownWifiProject(guard.team.id, id);
+  if (!owned.ok) return NextResponse.json({ ok: false, message: owned.message }, { status: owned.status });
   const parsed = wallSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: "Data tidak valid" }, { status: 400 });
@@ -26,9 +28,11 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 }
 
 export async function DELETE(_request: Request, ctx: { params: Promise<{ id: string; wid: string }> }) {
-  const { team } = await requireWifi();
+  const guard = await requireWifi();
+  if (!guard.ok) return NextResponse.json({ ok: false, message: guard.message }, { status: guard.status });
   const { id, wid } = await ctx.params;
-  await ownWifiProject(team.id, id);
+  const owned = await ownWifiProject(guard.team.id, id);
+  if (!owned.ok) return NextResponse.json({ ok: false, message: owned.message }, { status: owned.status });
   const wall = await prisma.wifiWall.findFirst({ where: { id: wid, projectId: id } });
   if (!wall) return NextResponse.json({ ok: false, message: "Dinding tidak ditemukan" }, { status: 404 });
   await prisma.wifiWall.delete({ where: { id: wid } });

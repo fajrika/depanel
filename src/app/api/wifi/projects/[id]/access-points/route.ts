@@ -20,9 +20,11 @@ const apSchema = z.object({
 });
 
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
-  const { team } = await requireWifi();
+  const guard = await requireWifi();
+  if (!guard.ok) return NextResponse.json({ ok: false, message: guard.message }, { status: guard.status });
   const { id } = await ctx.params;
-  await ownWifiProject(team.id, id);
+  const owned = await ownWifiProject(guard.team.id, id);
+  if (!owned.ok) return NextResponse.json({ ok: false, message: owned.message }, { status: owned.status });
   const parsed = apSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message ?? "Data tidak valid" }, { status: 400 });

@@ -17,9 +17,11 @@ const patchSchema = z.object({
 });
 
 export async function GET(_request: Request, ctx: { params: Promise<{ id: string }> }) {
-  const { team } = await requireWifi();
+  const guard = await requireWifi();
+  if (!guard.ok) return NextResponse.json({ ok: false, message: guard.message }, { status: guard.status });
   const { id } = await ctx.params;
-  await ownWifiProject(team.id, id);
+  const owned = await ownWifiProject(guard.team.id, id);
+  if (!owned.ok) return NextResponse.json({ ok: false, message: owned.message }, { status: owned.status });
   const project = await prisma.wifiProject.findUnique({
     where: { id },
     include: {
@@ -31,24 +33,28 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
 }
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
-  const { user, team } = await requireWifi();
+  const guard = await requireWifi();
+  if (!guard.ok) return NextResponse.json({ ok: false, message: guard.message }, { status: guard.status });
   const { id } = await ctx.params;
-  await ownWifiProject(team.id, id);
+  const owned = await ownWifiProject(guard.team.id, id);
+  if (!owned.ok) return NextResponse.json({ ok: false, message: owned.message }, { status: owned.status });
   const parsed = patchSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message ?? "Data tidak valid" }, { status: 400 });
   }
   const d = parsed.data;
   const project = await prisma.wifiProject.update({ where: { id }, data: d });
-  await logActivity({ teamId: team.id, userId: user.id, action: "wifi-project-update", message: `Ubah proyek WiFi "${project.name}"` });
+  await logActivity({ teamId: guard.team.id, userId: guard.user.id, action: "wifi-project-update", message: `Ubah proyek WiFi "${project.name}"` });
   return NextResponse.json({ ok: true, data: project });
 }
 
 export async function DELETE(_request: Request, ctx: { params: Promise<{ id: string }> }) {
-  const { user, team } = await requireWifi();
+  const guard = await requireWifi();
+  if (!guard.ok) return NextResponse.json({ ok: false, message: guard.message }, { status: guard.status });
   const { id } = await ctx.params;
-  const project = await ownWifiProject(team.id, id);
+  const owned = await ownWifiProject(guard.team.id, id);
+  if (!owned.ok) return NextResponse.json({ ok: false, message: owned.message }, { status: owned.status });
   await prisma.wifiProject.delete({ where: { id } });
-  await logActivity({ teamId: team.id, userId: user.id, action: "wifi-project-delete", message: `Hapus proyek WiFi "${project.name}"` });
+  await logActivity({ teamId: guard.team.id, userId: guard.user.id, action: "wifi-project-delete", message: `Hapus proyek WiFi "${owned.project.name}"` });
   return NextResponse.json({ ok: true });
 }

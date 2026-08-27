@@ -5,29 +5,28 @@ import { getCurrentUser } from "./auth";
 import { getActiveTeam, canUseFeature, type ActiveTeam } from "./team";
 import type { WifiBand, WifiAntennaType } from "./wifi-engine";
 
-export interface WifiCtx {
-  user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
-  team: ActiveTeam;
-}
+export type WifiGuard =
+  | { ok: true; user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>; team: ActiveTeam }
+  | { ok: false; status: number; message: string };
 
-/** Auth + scope team + izin fitur wifi. Lempar Response 401/403 bila gagal. */
-export async function requireWifi(): Promise<WifiCtx> {
+/** Auth + scope team + izin fitur wifi. */
+export async function requireWifi(): Promise<WifiGuard> {
   const user = await getCurrentUser();
-  if (!user) throw new Response(JSON.stringify({ ok: false, message: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+  if (!user) return { ok: false, status: 401, message: "Unauthorized" };
   const team = await getActiveTeam(user);
   if (!(await canUseFeature(user.id, team.id, "wifi"))) {
-    throw new Response(JSON.stringify({ ok: false, message: "Anda tidak diberi izin membuka simulator WiFi" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    return { ok: false, status: 403, message: "Anda tidak diberi izin membuka simulator WiFi" };
   }
-  return { user, team };
+  return { ok: true, user, team };
 }
 
-/** Pastikan proyek milik tim aktif. Lempar Response 404 bila bukan. */
+/** Pastikan proyek milik tim aktif. */
 export async function ownWifiProject(teamId: string, projectId: string) {
   const p = await prisma.wifiProject.findFirst({ where: { id: projectId, teamId } });
   if (!p) {
-    throw new Response(JSON.stringify({ ok: false, message: "Proyek tidak ditemukan" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    return { ok: false as const, status: 404, message: "Proyek tidak ditemukan" };
   }
-  return p;
+  return { ok: true as const, project: p };
 }
 
 /** Daftar preset vendor AP (diseed otomatis saat pertama kali diminta). */
