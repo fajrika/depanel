@@ -82,6 +82,26 @@ export default function WifiEditorPage() {
   const dragRef = useRef<{ kind: "pan" | "ap" | "wall" | "measure"; id?: string; sx: number; sy: number; startX: number; startY: number; startX2?: number; startY2?: number; startSnap?: { walls: WifiWallDto[]; aps: WifiApDto[] } } | null>(null);
   const wallStartRef = useRef<{ x: number; y: number } | null>(null);
   const measureStartRef = useRef<{ x: number; y: number } | null>(null);
+  const wallFinalizedRef = useRef(false);
+
+  // finalisasi gambar dinding — dipanggil dari mouseup canvas & window (agar
+  // tetap jadi walau mouse dilepas di luar canvas), dijaga anti-dobel.
+  const finalizeWallRef = useRef<() => void>(() => {});
+  finalizeWallRef.current = () => {
+    const s = stateRef.current;
+    if (s.tool !== "wall" || !s.draftWall || wallFinalizedRef.current) return;
+    wallFinalizedRef.current = true;
+    const d = s.draftWall;
+    if (Math.hypot(d.x2 - d.x1, d.y2 - d.y1) > 0.2) createWall(d.x1, d.y1, d.x2, d.y2, s.wallMaterial);
+    setDraftWall(null);
+    wallStartRef.current = null;
+  };
+
+  useEffect(() => {
+    const onWinUp = () => finalizeWallRef.current();
+    window.addEventListener("mouseup", onWinUp);
+    return () => window.removeEventListener("mouseup", onWinUp);
+  }, []);
   const floorplanImgRef = useRef<HTMLImageElement | null>(null);
   const historyRef = useRef<{ walls: WifiWallDto[]; aps: WifiApDto[] }[]>([]);
 
@@ -572,6 +592,7 @@ export default function WifiEditorPage() {
     if (s.tool === "wall") {
       const [wx, wy] = toWorld(sx, sy);
       wallStartRef.current = { x: wx, y: wy };
+      wallFinalizedRef.current = false;
       setDraftWall({ x1: wx, y1: wy, x2: wx, y2: wy });
       return;
     }
@@ -638,12 +659,7 @@ export default function WifiEditorPage() {
     const drag = dragRef.current;
     const s = stateRef.current;
     dragRef.current = null;
-    if (drag?.kind === "wall" && s.draftWall) {
-      const d = s.draftWall;
-      if (Math.hypot(d.x2 - d.x1, d.y2 - d.y1) > 0.2) createWall(d.x1, d.y1, d.x2, d.y2, s.wallMaterial);
-      setDraftWall(null);
-      wallStartRef.current = null;
-    }
+    finalizeWallRef.current();
     if (drag?.kind === "measure") {
       measureStartRef.current = null;
     }
