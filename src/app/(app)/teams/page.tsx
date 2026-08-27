@@ -21,6 +21,7 @@ type Member = {
   canFirewall: boolean;
   canConsole: boolean;
   canManage: boolean;
+  canWifi: boolean;
   hiddenServerIds: string[];
 };
 type Team = {
@@ -343,6 +344,16 @@ export default function TeamsPage() {
                                     className="h-3 w-3 accent-emerald-600"
                                   />
                                   {t("teams.permManage")}
+                                </label>
+                                <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400" title={t("teams.tipWifi")}>
+                                  <input
+                                    type="checkbox"
+                                    checked={m.canWifi}
+                                    disabled={busy}
+                                    onChange={() => api(`/api/teams/${team.id}/members`, "PATCH", { userId: m.id, canWifi: !m.canWifi })}
+                                    className="h-3 w-3 accent-emerald-600"
+                                  />
+                                  {t("teams.permWifi")}
                                 </label>
                                 <button
                                   onClick={() => setServerEditor(serverEditor === `${team.id}:${m.id}` ? null : `${team.id}:${m.id}`)}

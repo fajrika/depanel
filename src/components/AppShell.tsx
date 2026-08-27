@@ -21,6 +21,8 @@ type TeamInfo = {
   canInfra: boolean;
   canAccounts: boolean;
   canNotify: boolean;
+  canManage: boolean;
+  canWifi: boolean;
 };
 
 /* ---------- switcher tim (dipakai topbar & sidebar) ---------- */
@@ -339,6 +341,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         { href: "/sshhealth", label: t_("nav.sshhealth"), icon: "🧪", show: at?.canSsh ?? false },
         { href: "/approvals", label: t_("nav.approvals"), icon: "🛡️", show: at?.canManage ?? false },
         { href: "/sshcmd", label: t_("nav.sshcmd"), icon: "⌨️", show: at?.canSsh ?? false },
+        { href: "/wifi/projects", label: t_("nav.wifi"), icon: "📶", show: at?.canWifi ?? false },
       ],
     },
     {

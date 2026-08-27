@@ -12,6 +12,7 @@ import { dict as reportPages } from "./i18n-pages-report";
 import { dict as approvalsPages } from "./i18n-pages-approvals";
 import { dict as sshhealthPages } from "./i18n-pages-sshhealth";
 import { dict as panelbackupPages } from "./i18n-pages-panelbackup";
+import { dict as wifiPages } from "./i18n-pages-wifi";
 
 export type Lang = "id" | "en";
 
@@ -27,6 +28,7 @@ const dict: Record<Lang, Record<string, string>> = {
     "nav.sshhealth": "Health App",
     "nav.approvals": "Persetujuan",
     "nav.sshcmd": "SSH Script",
+    "nav.wifi": "WiFi",
     "nav.billing": "Saldo",
     "nav.cost": "Biaya",
     "nav.reports": "Laporan",
@@ -75,6 +77,7 @@ const dict: Record<Lang, Record<string, string>> = {
     "nav.sshhealth": "App Health",
     "nav.approvals": "Approvals",
     "nav.sshcmd": "SSH Script",
+    "nav.wifi": "WiFi",
     "nav.billing": "Balance",
     "nav.cost": "Cost",
     "nav.reports": "Reports",
@@ -116,7 +119,7 @@ const dict: Record<Lang, Record<string, string>> = {
 };
 
 // gabungkan kamus per-modul halaman
-for (const mod of [serverPages, sshPages, backupPages, miscPages, healthPages, secPages, sshcmdPages, reportPages, approvalsPages, sshhealthPages, panelbackupPages]) {
+for (const mod of [serverPages, sshPages, backupPages, miscPages, healthPages, secPages, sshcmdPages, reportPages, approvalsPages, sshhealthPages, panelbackupPages, wifiPages]) {
   dict.id = { ...dict.id, ...mod.id };
   dict.en = { ...dict.en, ...mod.en };
 }

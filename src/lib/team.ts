@@ -31,7 +31,8 @@ export type FeatureCap =
   | "notify"
   | "firewall"
   | "console"
-  | "manage";
+  | "manage"
+  | "wifi";
 
 /** Kolom TeamMember yang menjadi sumber kebenaran tiap fitur. */
 export const FEATURE_FIELD: Record<FeatureCap, keyof CapRow> = {
@@ -48,6 +49,7 @@ export const FEATURE_FIELD: Record<FeatureCap, keyof CapRow> = {
   firewall: "canFirewall",
   console: "canConsole",
   manage: "canManage",
+  wifi: "canWifi",
 };
 
 export const ALL_CAPS = Object.keys(FEATURE_FIELD) as FeatureCap[];
@@ -68,6 +70,7 @@ export type CapRow = {
   canFirewall: boolean;
   canConsole: boolean;
   canManage: boolean;
+  canWifi: boolean;
 };
 
 /** Staff (owner/admin) selalu punya semua izin; member mengikuti flag-nya. */
@@ -139,6 +142,7 @@ function toActiveTeam(m: CapRow, team: { id: string; name: string; isPersonal: b
     canFirewall: staff || m.canFirewall,
     canConsole: staff || m.canConsole,
     canManage: staff || m.canManage,
+    canWifi: staff || m.canWifi,
   };
 }
 
@@ -178,6 +182,7 @@ export async function getActiveTeam(user: { id: string; name: string; lastTeamId
     canFirewall: true,
     canConsole: true,
     canManage: true,
+    canWifi: true,
   };
 }
 

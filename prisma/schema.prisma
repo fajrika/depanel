@@ -57,6 +57,7 @@ model Team {
   sshHealthChecks SshHealthCheck[]
   healthGroups  HealthGroup[]
   panelBackups  PanelBackup[]
+  wifiProjects  WifiProject[]
 }
 
 /// Pengaturan backup database Depanel (SQLite) itu sendiri — snapshot + kirim ke destinasi.
@@ -159,6 +160,7 @@ model TeamMember {
   canFirewall    Boolean            @default(false) // member boleh mengakses tab Firewall
   canConsole     Boolean            @default(false) // member boleh mengakses tab Console
   canManage      Boolean            @default(false) // member boleh mengakses tab Kelola
+  canWifi        Boolean            @default(false) // member boleh membuka/mengelola simulator WiFi
   serverHides    MemberServerHide[]
 
   @@unique([teamId, userId])
@@ -620,4 +622,96 @@ model SshHealthCheck {
   lastOutput  String? // output terakhir (truncated)
   lastRunAt   DateTime?
   createdAt   DateTime      @default(now())
+}
+
+/// Proyek simulasi WiFi heatmap — denah ruangan + AP + dinding. Team-scoped.
+model WifiProject {
+  id               String            @id @default(cuid())
+  teamId           String
+  team             Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name             String
+  description      String?
+  widthM           Float             @default(20) // lebar denah (meter)
+  heightM          Float             @default(15) // tinggi denah (meter)
+  scalePxPerM      Float             @default(20) // skala pixel per meter
+  bgColor          String            @default("#f8fafc")
+  floorplanData    String? // upload denah sebagai data URL (downscale client ~1600px)
+  pathLossExponent Float             @default(3.0) // n di COST-231
+  deadZoneDbm      Float             @default(-70) // threshold dead zone
+  walls            WifiWall[]
+  accessPoints     WifiAccessPoint[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([teamId])
+}
+
+/// Dinding penghalang sinyal (segment dari x1,y1 ke x2,y2 dalam meter).
+model WifiWall {
+  id        String         @id @default(cuid())
+  projectId String
+  project   WifiProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  x1        Float
+  y1        Float
+  x2        Float
+  y2        Float
+  material  WifiWallMaterial @default(DRYWALL)
+  createdAt DateTime       @default(now())
+
+  @@index([projectId])
+}
+
+/// Access point pada denah dengan konfigurasi antena lengkap.
+model WifiAccessPoint {
+  id             String           @id @default(cuid())
+  projectId      String
+  project        WifiProject      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name           String
+  ssid           String?
+  band           WifiBand         @default(BAND_2_4)
+  channel        Int              @default(1)
+  channelWidth   Int              @default(20) // 20/40/80/160 MHz
+  txPowerDbm     Float            @default(20) // 10-30 dBm
+  antennaGainDbi Float            @default(3) // 0-12 dBi
+  antennaType    WifiAntennaType  @default(OMNIDIRECTIONAL)
+  azimuthDeg     Int?             @default(0) // arah antena directional (0-360)
+  heightM        Float            @default(2.5)
+  posX           Float
+  posY           Float
+  enabled        Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([projectId])
+}
+
+/// Preset vendor AP (seed data).
+model WifiApPreset {
+  id             String           @id @default(cuid())
+  brand          String // "TP-Link", "Ubiquiti", "MikroTik"
+  model          String
+  band           WifiBand
+  txPowerDbm     Float
+  antennaGainDbi Float
+  antennaType    WifiAntennaType
+}
+
+enum WifiBand {
+  BAND_2_4
+  BAND_5
+  BAND_6
+}
+
+enum WifiWallMaterial {
+  DRYWALL
+  WOOD
+  GLASS
+  BRICK
+  CONCRETE
+}
+
+enum WifiAntennaType {
+  OMNIDIRECTIONAL
+  PATCH
+  PANEL
 }
