@@ -62,6 +62,9 @@ export const BAND_PL0: Record<WifiBand, number> = {
 
 export const NOISE_FLOOR_DBM = -95;
 
+/** Sinyal kuat — ujung hijau gradasi RSSI. */
+export const STRONG_SIGNAL_DBM = -50;
+
 /** Kanal yang valid per band. */
 export const CHANNELS_BY_BAND: Record<WifiBand, number[]> = {
   BAND_2_4: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
@@ -217,9 +220,9 @@ export function computeGrid(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiW
   };
 }
 
-/** Warna heatmap RSSI: t 0..1 (merah → kuning → hijau). */
-export function rssiColor(rssiDbm: number, deadZoneDbm: number): string {
-  const t = Math.min(1, Math.max(0, (rssiDbm - NOISE_FLOOR_DBM) / (deadZoneDbm - NOISE_FLOOR_DBM)));
+/** Warna heatmap RSSI: t 0..1 (merah → kuning → hijau), -95 dBm → -50 dBm. */
+export function rssiColor(rssiDbm: number): string {
+  const t = Math.min(1, Math.max(0, (rssiDbm - NOISE_FLOOR_DBM) / (STRONG_SIGNAL_DBM - NOISE_FLOOR_DBM)));
   return hsl(t * 120, 80, 50);
 }
 

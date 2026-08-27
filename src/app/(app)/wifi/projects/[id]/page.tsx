@@ -440,7 +440,7 @@ export default function WifiEditorPage() {
         for (let i = 0; i < cols * rows; i++) {
           const r = s.mode === "sinr" ? s.sim.sinr[i] : s.sim.rssi[i];
           let col: string | null = null;
-          if (s.mode === "signal") col = rssiColor(r, p.deadZoneDbm);
+          if (s.mode === "signal") col = rssiColor(r);
           else if (s.mode === "sinr") col = sinrColor(r);
           else if (s.mode === "dead") col = r < p.deadZoneDbm ? "rgba(239,68,68,0.6)" : null;
           else col = r >= p.deadZoneDbm ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.45)";
@@ -961,6 +961,44 @@ export default function WifiEditorPage() {
           />
           <div className="pointer-events-none absolute left-3 top-2 rounded-lg bg-slate-900/70 px-2 py-1 text-[10px] text-white">
             {project.widthM}×{project.heightM} m · n={project.pathLossExponent} · {t("wif.disclaimer")}
+          </div>
+          {/* legenda mode aktif */}
+          <div className="pointer-events-none absolute bottom-3 left-3 rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-[10px] text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-300">
+            {mode === "signal" && (
+              <>
+                <div className="h-2 w-40 rounded bg-gradient-to-r from-red-500 via-yellow-400 to-green-500" />
+                <div className="mt-1 flex justify-between text-[9px] text-slate-400">
+                  <span>-95 dBm</span>
+                  <span>{project.deadZoneDbm} dBm</span>
+                  <span>-50 dBm</span>
+                </div>
+                <p className="mt-1">{t("wif.legendSignal")}</p>
+              </>
+            )}
+            {mode === "sinr" && (
+              <>
+                <div className="h-2 w-40 rounded bg-gradient-to-r from-red-500 via-yellow-400 to-green-500" />
+                <div className="mt-1 flex justify-between text-[9px] text-slate-400">
+                  <span>0 dB</span>
+                  <span>30 dB</span>
+                </div>
+                <p className="mt-1">{t("wif.legendSinr")}</p>
+              </>
+            )}
+            {mode === "dead" && (
+              <>
+                <span className="mr-1.5 inline-block h-3 w-3 rounded-sm bg-red-500/60 align-middle" />
+                {t("wif.legendDead")} (&lt; {project.deadZoneDbm} dBm)
+              </>
+            )}
+            {mode === "coverage" && (
+              <>
+                <span className="mr-1.5 inline-block h-3 w-3 rounded-sm bg-green-500/60 align-middle" />
+                {t("wif.legendCovered")}
+                <span className="mx-1.5 ml-3 inline-block h-3 w-3 rounded-sm bg-red-500/50 align-middle" />
+                {t("wif.legendDead")} (&lt; {project.deadZoneDbm} dBm)
+              </>
+            )}
           </div>
           {msg && (
             <div
