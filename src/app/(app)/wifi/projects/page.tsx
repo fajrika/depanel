@@ -39,6 +39,8 @@ export default function WifiProjectsPage() {
   const [modal, setModal] = useState<"create" | "edit" | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [delId, setDelId] = useState<string | null>(null);
+  const [cloneId, setCloneId] = useState<string | null>(null);
+  const [cloneName, setCloneName] = useState("");
   const [form, setForm] = useState<Form>({ name: "", description: "", widthM: 20, heightM: 15, scalePxPerM: 20 });
 
   const load = useCallback(async () => {
@@ -98,6 +100,29 @@ export default function WifiProjectsPage() {
       return;
     }
     setMsg({ text: t("wif.deleted"), ok: true });
+    load();
+  }
+
+  async function cloneProject() {
+    if (!cloneId || !cloneName.trim()) {
+      setMsg({ text: t("wif.nameRequired"), ok: false });
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    const res = await fetch(`/api/wifi/projects/${cloneId}/clone`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: cloneName.trim() }),
+    });
+    const d = await res.json().catch(() => ({}));
+    setBusy(false);
+    setCloneId(null);
+    if (!res.ok || d.ok === false) {
+      setMsg({ text: d.message ?? t("wif.cloneErr"), ok: false });
+      return;
+    }
+    setMsg({ text: t("wif.cloned"), ok: true });
     load();
   }
 
@@ -191,6 +216,16 @@ export default function WifiProjectsPage() {
                   {t("wif.edit")}
                 </button>
                 <button
+                  onClick={() => {
+                    setCloneId(p.id);
+                    setCloneName(`${p.name} ${t("wif.cloneSuffix")}`);
+                  }}
+                  title={t("wif.clone")}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  📋
+                </button>
+                <button
                   onClick={() => setDelId(p.id)}
                   className="ml-auto rounded-lg border border-red-200 px-3 py-1.5 font-medium text-red-600 transition hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/50"
                 >
@@ -258,6 +293,27 @@ export default function WifiProjectsPage() {
               </button>
               <button onClick={remove} disabled={busy} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-500 disabled:opacity-60">
                 {busy ? t("wif.processing") : t("wif.delete")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    {/* modal clone */}
+      {cloneId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className={`${card} w-full max-w-sm`}>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">📋 {t("wif.cloneTitle")}</h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("wif.cloneDesc")}</p>
+            <div className="mt-3">
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{t("wif.fieldName")}</label>
+              <input value={cloneName} onChange={(e) => setCloneName(e.target.value)} className={`${input} w-full`} autoFocus />
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setCloneId(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+                {t("wif.cancel")}
+              </button>
+              <button onClick={cloneProject} disabled={busy} className={btnPrimary}>
+                {busy ? t("wif.processing") : `📋 ${t("wif.clone")}`}
               </button>
             </div>
           </div>

@@ -5,11 +5,11 @@ import { requireWifi, ownWifiProject } from "@/lib/wifi";
 
 const radioSchema = z.object({
   band: z.enum(["BAND_2_4", "BAND_5", "BAND_6"]),
-  channel: z.coerce.number().int().min(1).max(233),
-  channelWidth: z.coerce.number().int().refine((v) => [20, 40, 80, 160].includes(v), "Channel width tidak valid"),
-  txPowerDbm: z.coerce.number().min(0).max(30),
-  antennaGainDbi: z.coerce.number().min(0).max(20),
-  antennaType: z.enum(["OMNIDIRECTIONAL", "PATCH", "PANEL"]),
+  channel: z.coerce.number().int().min(1).max(233).default(1),
+  channelWidth: z.coerce.number().int().refine((v) => [20, 40, 80, 160].includes(v), "Channel width tidak valid").default(20),
+  txPowerDbm: z.coerce.number().min(0).max(30).default(20),
+  antennaGainDbi: z.coerce.number().min(0).max(20).default(3),
+  antennaType: z.enum(["OMNIDIRECTIONAL", "PATCH", "PANEL"]).default("OMNIDIRECTIONAL"),
   azimuthDeg: z.coerce.number().int().min(0).max(360).optional().nullable(),
   enabled: z.boolean().default(true),
 });
