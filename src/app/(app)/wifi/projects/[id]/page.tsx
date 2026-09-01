@@ -96,7 +96,8 @@ export default function WifiEditorPage() {
   const stateRef = useRef({ project, floors, activeFloorId, walls, aps, view, view3d, iso, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, simsByFloor, pointInfo });
   stateRef.current = { project, floors, activeFloorId, walls, aps, view, view3d, iso, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, simsByFloor, pointInfo };
 
-  const dragRef = useRef<{ kind: "pan" | "ap" | "wall" | "measure" | "iso"; id?: string; sx: number; sy: number; startX: number; startY: number; startX2?: number; startY2?: number; startSnap?: { floors: WifiFloorDto[]; walls: WifiWallDto[]; aps: WifiApDto[] } } | null>(null);
+  const dragRef = useRef<{ kind: "pan" | "ap" | "wall" | "measure" | "iso"; id?: string; sx: number; sy: number; startX: number; startY: number; startX2?: number; startY2?: number; toolAtStart?: string; startSnap?: { floors: WifiFloorDto[]; walls: WifiWallDto[]; aps: WifiApDto[] } } | null>(null);
+  const mousePosRef = useRef({ x: 0, y: 0 });
   const wallStartRef = useRef<{ x: number; y: number } | null>(null);
   const measureStartRef = useRef<{ x: number; y: number } | null>(null);
   const wallFinalizedRef = useRef(false);
@@ -984,12 +985,8 @@ export default function WifiEditorPage() {
     const [sx, sy] = canvasPos(e);
     const s = stateRef.current;
     if (s.view3d) {
-      // 3D: klik = info titik (status/select), seret = pan, roda = zoom
-      if (s.tool === "status" || s.tool === "select") {
-        pick3dPoint(sx, sy);
-      } else {
-        dragRef.current = { kind: "iso", sx, sy, startX: s.iso.ox, startY: s.iso.oy };
-      }
+      // 3D: seret = geser (pan) di semua tool; klik tanpa geser (status/select) = info titik
+      dragRef.current = { kind: "iso", sx, sy, startX: s.iso.ox, startY: s.iso.oy, toolAtStart: s.tool };
       return;
     }
     if (e.button === 1) {
@@ -1083,6 +1080,7 @@ export default function WifiEditorPage() {
 
   function onMouseMove(e: React.MouseEvent) {
     const [sx, sy] = canvasPos(e);
+    mousePosRef.current = { x: sx, y: sy };
     const drag = dragRef.current;
     const s = stateRef.current;
     if (!drag) {
@@ -1130,6 +1128,13 @@ export default function WifiEditorPage() {
     const s = stateRef.current;
     dragRef.current = null;
     finalizeWallRef.current();
+    if (drag?.kind === "iso") {
+      // klik tanpa geser di 3D (tool status/select) → info titik
+      const moved = Math.abs(mousePosRef.current.x - drag.sx) + Math.abs(mousePosRef.current.y - drag.sy);
+      if (moved < 5 && (drag.toolAtStart === "status" || drag.toolAtStart === "select")) {
+        pick3dPoint(drag.sx, drag.sy);
+      }
+    }
     if (drag?.kind === "measure") {
       measureStartRef.current = null;
     }
@@ -1208,6 +1213,22 @@ export default function WifiEditorPage() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
       e.preventDefault();
       undo();
+    }
+    if (s.view3d) {
+      const STEP = 28;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setIso((i) => ({ ...i, ox: i.ox + STEP }));
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setIso((i) => ({ ...i, ox: i.ox - STEP }));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setIso((i) => ({ ...i, oy: i.oy + STEP }));
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setIso((i) => ({ ...i, oy: i.oy - STEP }));
+      }
     }
   }
 
@@ -1418,6 +1439,21 @@ export default function WifiEditorPage() {
           ↩ {t("wif.undo")}
         </button>
         <div className="ml-auto flex items-center gap-1.5">
+          {view3d && (
+            <>
+              <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 p-0.5 dark:border-slate-700" title={t("wif.pan3d")}>
+                <button onClick={() => setIso((i) => ({ ...i, ox: i.ox + 32 }))} className="h-7 w-7 rounded-md text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">◀</button>
+                <div className="flex flex-col">
+                  <button onClick={() => setIso((i) => ({ ...i, oy: i.oy + 32 }))} className="h-7 w-7 rounded-md text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">▲</button>
+                  <button onClick={() => setIso((i) => ({ ...i, oy: i.oy - 32 }))} className="h-7 w-7 rounded-md text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">▼</button>
+                </div>
+                <button onClick={() => setIso((i) => ({ ...i, ox: i.ox - 32 }))} className="h-7 w-7 rounded-md text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">▶</button>
+              </div>
+              <button onClick={() => setIso({ rot: 0, zoom: 1, ox: 0, oy: 0 })} title={t("wif.reset3d")} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+                ⟲
+              </button>
+            </>
+          )}
           {view3d && (
             <button onClick={() => setIso((i) => ({ ...i, rot: (i.rot + 1) % 4 }))} title={t("wif.rotate3d")} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
               ⟳ {t("wif.rotate3d")}
