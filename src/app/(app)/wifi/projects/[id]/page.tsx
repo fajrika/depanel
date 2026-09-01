@@ -83,6 +83,7 @@ export default function WifiEditorPage() {
   const [view3d, setView3d] = useState(false);
   const [iso, setIso] = useState({ rot: 0, zoom: 1, ox: 0, oy: 0 }); // rotasi 90°, zoom, pan 3D
   const [isoOpacity, setIsoOpacity] = useState(60); // transparansi slab lantai atas di 3D (0 = lantai bawah disembunyikan)
+  const [otherApOpacity, setOtherApOpacity] = useState(25); // transparansi AP lantai lain di 2D (0 = disembunyikan)
   const [floorPanelId, setFloorPanelId] = useState<string | null>(null);
   const [measure, setMeasure] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [draftWall, setDraftWall] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
@@ -94,8 +95,8 @@ export default function WifiEditorPage() {
   const [showPanel, setShowPanel] = useState(true);
 
   // refs agar draw loop & event handler tidak stale-closure
-  const stateRef = useRef({ project, floors, activeFloorId, walls, aps, view, view3d, iso, isoOpacity, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, simsByFloor, pointInfo });
-  stateRef.current = { project, floors, activeFloorId, walls, aps, view, view3d, iso, isoOpacity, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, simsByFloor, pointInfo };
+  const stateRef = useRef({ project, floors, activeFloorId, walls, aps, view, view3d, iso, isoOpacity, otherApOpacity, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, simsByFloor, pointInfo });
+  stateRef.current = { project, floors, activeFloorId, walls, aps, view, view3d, iso, isoOpacity, otherApOpacity, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, simsByFloor, pointInfo };
 
   const dragRef = useRef<{ kind: "pan" | "ap" | "wall" | "measure" | "iso"; id?: string; sx: number; sy: number; startX: number; startY: number; startX2?: number; startY2?: number; toolAtStart?: string; startSnap?: { floors: WifiFloorDto[]; walls: WifiWallDto[]; aps: WifiApDto[] } } | null>(null);
   const mousePosRef = useRef({ x: 0, y: 0 });
@@ -672,9 +673,10 @@ export default function WifiEditorPage() {
 
     // AP
     for (const ap of s.aps) {
+      if (ap.floorId !== s.activeFloorId && s.otherApOpacity <= 0) continue; // AP lantai lain disembunyikan
       const [px, py] = toScreen(ap.posX, ap.posY);
       const isSel = ap.id === s.selectedApId;
-      ctx.globalAlpha = ap.floorId === s.activeFloorId ? 1 : 0.25;
+      ctx.globalAlpha = ap.floorId === s.activeFloorId ? 1 : Math.min(1, Math.max(0, s.otherApOpacity / 100));
       const bands = [...new Set(ap.radios.map((r) => r.band))];
       ctx.beginPath();
       ctx.arc(px, py, 11, 0, Math.PI * 2);
@@ -1446,6 +1448,24 @@ export default function WifiEditorPage() {
           ↩ {t("wif.undo")}
         </button>
         <div className="ml-auto flex items-center gap-1.5">
+          {!view3d && floors.length > 1 && (
+            <label
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300"
+              title={t("wif.otherApOpacityHint")}
+            >
+              {t("wif.otherApOpacity")}
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={otherApOpacity}
+                onChange={(e) => setOtherApOpacity(Number(e.target.value))}
+                className="w-20 accent-indigo-600"
+              />
+              <span className="w-9 text-right tabular-nums">{otherApOpacity}%</span>
+            </label>
+          )}
           {view3d && (
             <label
               className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300"
