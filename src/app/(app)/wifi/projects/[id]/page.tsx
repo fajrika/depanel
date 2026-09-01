@@ -82,6 +82,7 @@ export default function WifiEditorPage() {
   const [view, setView] = useState({ x: 40, y: 20, scale: 1 });
   const [view3d, setView3d] = useState(false);
   const [iso, setIso] = useState({ rot: 0, zoom: 1, ox: 0, oy: 0 }); // rotasi 90°, zoom, pan 3D
+  const [isoOpacity, setIsoOpacity] = useState(60); // transparansi slab lantai atas di 3D (0 = lantai bawah disembunyikan)
   const [floorPanelId, setFloorPanelId] = useState<string | null>(null);
   const [measure, setMeasure] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [draftWall, setDraftWall] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
@@ -93,8 +94,8 @@ export default function WifiEditorPage() {
   const [showPanel, setShowPanel] = useState(true);
 
   // refs agar draw loop & event handler tidak stale-closure
-  const stateRef = useRef({ project, floors, activeFloorId, walls, aps, view, view3d, iso, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, simsByFloor, pointInfo });
-  stateRef.current = { project, floors, activeFloorId, walls, aps, view, view3d, iso, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, simsByFloor, pointInfo };
+  const stateRef = useRef({ project, floors, activeFloorId, walls, aps, view, view3d, iso, isoOpacity, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, simsByFloor, pointInfo });
+  stateRef.current = { project, floors, activeFloorId, walls, aps, view, view3d, iso, isoOpacity, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, simsByFloor, pointInfo };
 
   const dragRef = useRef<{ kind: "pan" | "ap" | "wall" | "measure" | "iso"; id?: string; sx: number; sy: number; startX: number; startY: number; startX2?: number; startY2?: number; toolAtStart?: string; startSnap?: { floors: WifiFloorDto[]; walls: WifiWallDto[]; aps: WifiApDto[] } } | null>(null);
   const mousePosRef = useRef({ x: 0, y: 0 });
@@ -847,14 +848,20 @@ export default function WifiEditorPage() {
 
     const slabThick = 0.25;
     const floors = [...s.floors].sort((a, b) => a.level - b.level);
+    const op = Math.min(1, Math.max(0, s.isoOpacity / 100)); // 1 = slab atas tembus pandang
+    const skipLower = op < 0.2; // lantai bawah disembunyikan penuh bila hampir opaque
+    const topFloor = floors[floors.length - 1];
 
     for (const f of floors) {
+      const isTop = f.id === topFloor?.id;
+      if (skipLower && !isTop) continue;
       const base = floorBaseZ(floors, f);
       const matColor = FLOOR_DRAW[f.material];
       const topZ = base;
 
-      // slab (bawah topZ — sisi + alas)
+      // slab (bawah topZ — sisi + alas); slab lantai non-puncak mengikuti transparansi
       const zBot = base - slabThick;
+      const slabSideAlpha = isTop ? 0.8 : 0.8 * (1 - op);
       const slabFaces: { pts: [number, number, number][]; fill: string }[] = [];
       if (faceVisible(1, 0)) slabFaces.push({ pts: [[p.widthM, 0, zBot], [p.widthM, p.heightM, zBot], [p.widthM, p.heightM, topZ], [p.widthM, 0, topZ]], fill: matColor });
       if (faceVisible(-1, 0)) slabFaces.push({ pts: [[0, 0, zBot], [0, p.heightM, zBot], [0, p.heightM, topZ], [0, 0, topZ]], fill: matColor });
@@ -869,7 +876,7 @@ export default function WifiEditorPage() {
         ctx.lineTo(dd[0], dd[1]);
         ctx.closePath();
         ctx.fillStyle = face.fill;
-        ctx.globalAlpha = 0.8;
+        ctx.globalAlpha = slabSideAlpha;
         ctx.fill();
       }
       ctx.globalAlpha = 1;
@@ -1439,6 +1446,24 @@ export default function WifiEditorPage() {
           ↩ {t("wif.undo")}
         </button>
         <div className="ml-auto flex items-center gap-1.5">
+          {view3d && (
+            <label
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300"
+              title={t("wif.floorOpacityHint")}
+            >
+              {t("wif.floorOpacity")}
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={isoOpacity}
+                onChange={(e) => setIsoOpacity(Number(e.target.value))}
+                className="w-20 accent-indigo-600"
+              />
+              <span className="w-9 text-right tabular-nums">{isoOpacity}%</span>
+            </label>
+          )}
           {view3d && (
             <>
               <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 p-0.5 dark:border-slate-700" title={t("wif.pan3d")}>
