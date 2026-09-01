@@ -4,15 +4,31 @@ import { prisma } from "@/lib/db";
 import { requireWifi, ownWifiProject } from "@/lib/wifi";
 import { logActivity } from "@/lib/power";
 
+const MAX_FLOORS = 5;
+
 const planSchema = z.object({
   widthM: z.coerce.number().min(1).max(200).optional(),
   heightM: z.coerce.number().min(1).max(200).optional(),
   scalePxPerM: z.coerce.number().min(5).max(100).optional(),
   pathLossExponent: z.coerce.number().min(1.5).max(6).optional(),
   deadZoneDbm: z.coerce.number().min(-100).max(-50).optional(),
+  floors: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(60),
+        level: z.coerce.number().int().min(1).max(99),
+        heightM: z.coerce.number().min(1).max(10),
+        material: z.enum(["CONCRETE", "WOOD", "GYPSUM"]),
+        floorplanData: z.string().max(8_000_000).optional().nullable(),
+      }),
+    )
+    .min(1)
+    .max(MAX_FLOORS)
+    .optional(),
   walls: z
     .array(
       z.object({
+        floorIndex: z.coerce.number().int().min(0),
         x1: z.coerce.number(),
         y1: z.coerce.number(),
         x2: z.coerce.number(),
@@ -25,6 +41,7 @@ const planSchema = z.object({
   accessPoints: z
     .array(
       z.object({
+        floorIndex: z.coerce.number().int().min(0),
         name: z.string().min(1).default("Access Point"),
         ssid: z.string().max(32).optional().nullable(),
         heightM: z.coerce.number().min(0.5).max(10),
@@ -74,17 +91,33 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   await prisma.$transaction(async (tx) => {
     await tx.wifiWall.deleteMany({ where: { projectId: id } });
     await tx.wifiAccessPoint.deleteMany({ where: { projectId: id } });
+    await tx.wifiFloor.deleteMany({ where: { projectId: id } });
     await tx.wifiProject.update({ where: { id }, data: projectData });
-    if (d.walls && d.walls.length > 0) {
-      await tx.wifiWall.createMany({
-        data: d.walls.map((w) => ({ ...w, projectId: id })),
+
+    const floors = d.floors ?? [{ name: "Lantai 1", level: 1, heightM: 3, material: "CONCRETE" as const }];
+    const floorIds: string[] = [];
+    for (const f of floors) {
+      const created = await tx.wifiFloor.create({
+        data: { projectId: id, name: f.name, level: f.level, heightM: f.heightM, material: f.material, floorplanData: f.floorplanData ?? null },
       });
+      floorIds.push(created.id);
+    }
+
+    if (d.walls && d.walls.length > 0) {
+      for (const w of d.walls) {
+        const floorId = floorIds[w.floorIndex];
+        if (!floorId) continue;
+        await tx.wifiWall.create({ data: { projectId: id, floorId, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, material: w.material } });
+      }
     }
     if (d.accessPoints && d.accessPoints.length > 0) {
       for (const a of d.accessPoints) {
+        const floorId = floorIds[a.floorIndex];
+        if (!floorId) continue;
         await tx.wifiAccessPoint.create({
           data: {
             projectId: id,
+            floorId,
             name: a.name,
             ssid: a.ssid ?? null,
             heightM: a.heightM,

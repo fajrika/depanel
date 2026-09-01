@@ -25,6 +25,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
   const project = await prisma.wifiProject.findUnique({
     where: { id },
     include: {
+      floors: { orderBy: { level: "asc" } },
       walls: { orderBy: { createdAt: "asc" } },
       accessPoints: { orderBy: { createdAt: "asc" }, include: { radios: { orderBy: { createdAt: "asc" } } } },
     },

@@ -7,15 +7,19 @@ import {
   computeGrid,
   evaluatePoint,
   activeRadios,
+  floorBaseZ,
   CHANNELS_BY_BAND,
   CHANNEL_WIDTHS,
   MATERIAL_LOSS,
+  FLOOR_MATERIAL_LOSS,
   bandLabel,
   rssiColor,
   sinrColor,
   type WifiWallDto,
   type WifiApDto,
   type WifiRadioDto,
+  type WifiFloorDto,
+  type WifiFloorMaterial,
   type WifiProjectDto,
   type WifiBand,
   type WifiAntennaType,
@@ -60,6 +64,8 @@ export default function WifiEditorPage() {
   const gridRef = useRef<HTMLCanvasElement | null>(null);
 
   const [project, setProject] = useState<WifiProjectDto | null>(null);
+  const [floors, setFloors] = useState<WifiFloorDto[]>([]);
+  const [activeFloorId, setActiveFloorId] = useState<string | null>(null);
   const [walls, setWalls] = useState<WifiWallDto[]>([]);
   const [aps, setAps] = useState<WifiApDto[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -74,19 +80,23 @@ export default function WifiEditorPage() {
   const [selectedWallId, setSelectedWallId] = useState<string | null>(null);
 
   const [view, setView] = useState({ x: 40, y: 20, scale: 1 });
+  const [view3d, setView3d] = useState(false);
+  const [iso, setIso] = useState({ rot: 0, zoom: 1, ox: 0, oy: 0 }); // rotasi 90°, zoom, pan 3D
+  const [floorPanelId, setFloorPanelId] = useState<string | null>(null);
   const [measure, setMeasure] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [draftWall, setDraftWall] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [pointInfo, setPointInfo] = useState<{ x: number; y: number; info: PointInfo } | null>(null);
   const [sim, setSim] = useState<SimResult | null>(null);
+  const [simsByFloor, setSimsByFloor] = useState<Record<string, SimResult>>({});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [showPanel, setShowPanel] = useState(true);
 
   // refs agar draw loop & event handler tidak stale-closure
-  const stateRef = useRef({ project, walls, aps, view, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, pointInfo });
-  stateRef.current = { project, walls, aps, view, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, pointInfo };
+  const stateRef = useRef({ project, floors, activeFloorId, walls, aps, view, view3d, iso, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, simsByFloor, pointInfo });
+  stateRef.current = { project, floors, activeFloorId, walls, aps, view, view3d, iso, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, simsByFloor, pointInfo };
 
-  const dragRef = useRef<{ kind: "pan" | "ap" | "wall" | "measure"; id?: string; sx: number; sy: number; startX: number; startY: number; startX2?: number; startY2?: number; startSnap?: { walls: WifiWallDto[]; aps: WifiApDto[] } } | null>(null);
+  const dragRef = useRef<{ kind: "pan" | "ap" | "wall" | "measure" | "iso"; id?: string; sx: number; sy: number; startX: number; startY: number; startX2?: number; startY2?: number; startSnap?: { floors: WifiFloorDto[]; walls: WifiWallDto[]; aps: WifiApDto[] } } | null>(null);
   const wallStartRef = useRef<{ x: number; y: number } | null>(null);
   const measureStartRef = useRef<{ x: number; y: number } | null>(null);
   const wallFinalizedRef = useRef(false);
@@ -110,19 +120,23 @@ export default function WifiEditorPage() {
     return () => window.removeEventListener("mouseup", onWinUp);
   }, []);
   const floorplanImgRef = useRef<HTMLImageElement | null>(null);
-  const historyRef = useRef<{ walls: WifiWallDto[]; aps: WifiApDto[] }[]>([]);
+  const carpetCacheRef = useRef<Record<string, HTMLCanvasElement>>({});
+  const historyRef = useRef<{ floors: WifiFloorDto[]; walls: WifiWallDto[]; aps: WifiApDto[] }[]>([]);
+
+  const activeFloor = floors.find((f) => f.id === activeFloorId) ?? floors[0] ?? null;
 
   useEffect(() => {
-    if (project?.floorplanData) {
+    const fp = activeFloor?.floorplanData;
+    if (fp) {
       const img = new Image();
-      img.src = project.floorplanData;
+      img.src = fp;
       img.onload = () => {
         floorplanImgRef.current = img;
       };
     } else {
       floorplanImgRef.current = null;
     }
-  }, [project?.floorplanData]);
+  }, [activeFloor?.floorplanData]);
 
   /* ---------- hitung transform ---------- */
   const toScreen = useCallback((x: number, y: number): [number, number] => {
@@ -143,12 +157,16 @@ export default function WifiEditorPage() {
   const recomputeSim = useCallback(() => {
     const s = stateRef.current;
     const p = s.project;
-    if (!p) return;
+    if (!p || s.floors.length === 0) return;
     const onlyBand = s.bandFilter === "ALL" ? null : s.bandFilter;
     const cellWorld = Math.max(0.25, Math.max(p.widthM, p.heightM) / 180);
     const cols = Math.max(4, Math.ceil(p.widthM / cellWorld));
     const rows = Math.max(4, Math.ceil(p.heightM / cellWorld));
-    setSim(computeGrid(p, s.aps, s.walls, cols, rows, onlyBand));
+    const target = s.floors.find((f) => f.id === s.activeFloorId) ?? s.floors[0];
+    setSim(computeGrid(p, s.floors, s.aps, s.walls, cols, rows, target, onlyBand));
+    const byFloor: Record<string, SimResult> = {};
+    for (const f of s.floors) byFloor[f.id] = computeGrid(p, s.floors, s.aps, s.walls, cols, rows, f, onlyBand);
+    setSimsByFloor(byFloor);
   }, []);
 
   const debounceRef = useRef<number | null>(null);
@@ -167,10 +185,15 @@ export default function WifiEditorPage() {
         return;
       }
       setProject(d.data);
+      const fl = (d.data.floors ?? []).sort((a: WifiFloorDto, b: WifiFloorDto) => a.level - b.level);
+      setFloors(fl);
+      setActiveFloorId((cur) => (cur && fl.some((f: WifiFloorDto) => f.id === cur) ? cur : (fl[0]?.id ?? null)));
       setWalls(d.data.walls ?? []);
       setAps(d.data.accessPoints ?? []);
       setView({ x: 40, y: 20, scale: 1 });
       setSim(null);
+      setSimsByFloor({});
+      setPointInfo(null);
     } catch {
       setErr("Gagal memuat proyek");
     } finally {
@@ -197,20 +220,22 @@ export default function WifiEditorPage() {
   }, [project?.id]);
 
   useEffect(() => {
-    if (project) scheduleSim();
+    if (project && floors.length > 0) scheduleSim();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.widthM, project?.heightM, project?.pathLossExponent, project?.deadZoneDbm, walls, aps, bandFilter]);
+  }, [project?.widthM, project?.heightM, project?.pathLossExponent, project?.deadZoneDbm, walls, aps, bandFilter, floors, activeFloorId]);
 
   /* ---------- hit-test ---------- */
   function hitTest(sx: number, sy: number): { ap?: WifiApDto; wall?: WifiWallDto } {
     const s = stateRef.current;
     for (let i = s.aps.length - 1; i >= 0; i--) {
       const ap = s.aps[i];
+      if (ap.floorId !== s.activeFloorId) continue;
       const [px, py] = toScreen(ap.posX, ap.posY);
       if (Math.hypot(px - sx, py - sy) <= 14) return { ap };
     }
     for (let i = s.walls.length - 1; i >= 0; i--) {
       const w = s.walls[i];
+      if (w.floorId !== s.activeFloorId) continue;
       const [ax, ay] = toScreen(w.x1, w.y1);
       const [bx, by] = toScreen(w.x2, w.y2);
       const d = distToSeg(sx, sy, ax, ay, bx, by);
@@ -222,7 +247,7 @@ export default function WifiEditorPage() {
   /* ---------- undo ---------- */
   function pushHistory() {
     const s = stateRef.current;
-    historyRef.current.push({ walls: s.walls, aps: s.aps });
+    historyRef.current.push({ floors: s.floors, walls: s.walls, aps: s.aps });
     if (historyRef.current.length > 40) historyRef.current.shift();
   }
 
@@ -232,8 +257,17 @@ export default function WifiEditorPage() {
     const payload = {
       widthM: stateRef.current.project?.widthM,
       heightM: stateRef.current.project?.heightM,
-      walls: prev.walls.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, material: w.material })),
+      floors: prev.floors.map((f) => ({ name: f.name, level: f.level, heightM: f.heightM, material: f.material, floorplanData: f.floorplanData })),
+      walls: prev.walls.map((w) => ({
+        floorIndex: prev.floors.findIndex((f) => f.id === w.floorId),
+        x1: w.x1,
+        y1: w.y1,
+        x2: w.x2,
+        y2: w.y2,
+        material: w.material,
+      })),
       accessPoints: prev.aps.map((a) => ({
+        floorIndex: prev.floors.findIndex((f) => f.id === a.floorId),
         name: a.name,
         ssid: a.ssid,
         heightM: a.heightM,
@@ -264,6 +298,7 @@ export default function WifiEditorPage() {
       await load(); // muat ulang dengan id baru dari server
       setSelectedApId(null);
       setSelectedWallId(null);
+      setPointInfo(null);
     } finally {
       setSaving(false);
     }
@@ -275,7 +310,7 @@ export default function WifiEditorPage() {
     const res = await fetch(`/api/wifi/projects/${id}/walls`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ x1, y1, x2, y2, material }),
+      body: JSON.stringify({ floorId: stateRef.current.activeFloorId ?? stateRef.current.floors[0]?.id, x1, y1, x2, y2, material }),
     });
     const d = await res.json();
     if (d.ok && d.data) setWalls((w) => [...w, d.data]);
@@ -287,7 +322,7 @@ export default function WifiEditorPage() {
     const res = await fetch(`/api/wifi/projects/${id}/access-points`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "AP", posX: x, posY: y }),
+      body: JSON.stringify({ name: "AP", floorId: stateRef.current.activeFloorId ?? stateRef.current.floors[0]?.id, posX: x, posY: y }),
     });
     const d = await res.json();
     if (d.ok && d.data) {
@@ -313,6 +348,59 @@ export default function WifiEditorPage() {
     if (d.ok) {
       setWalls((w) => w.filter((x) => x.id !== wallId));
       setSelectedWallId((s) => (s === wallId ? null : s));
+    } else setMsg({ text: d.message ?? t("wif.deleteErr"), ok: false });
+  }
+
+  /* ---------- lantai ---------- */
+  async function addFloor() {
+    pushHistory();
+    const next = stateRef.current.floors.length + 1;
+    const res = await fetch(`/api/wifi/projects/${id}/floors`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: `Lantai ${next}`, level: next, heightM: 3, material: "CONCRETE" }),
+    });
+    const d = await res.json();
+    if (d.ok && d.data) {
+      setFloors((list) => [...list, d.data]);
+      setActiveFloorId(d.data.id);
+      setFloorPanelId(d.data.id);
+    } else setMsg({ text: d.message ?? t("wif.saveErr"), ok: false });
+  }
+
+  function updateFloorLocal(floorId: string, patch: Partial<WifiFloorDto>) {
+    setFloors((list) => list.map((f) => (f.id === floorId ? { ...f, ...patch } : f)));
+    fetch(`/api/wifi/projects/${id}/floors/${floorId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.ok) setMsg({ text: d.message ?? t("wif.saveErr"), ok: false });
+      })
+      .catch(() => setMsg({ text: t("wif.saveErr"), ok: false }));
+  }
+
+  async function deleteFloor(floorId: string) {
+    pushHistory();
+    const res = await fetch(`/api/wifi/projects/${id}/floors/${floorId}`, { method: "DELETE" });
+    const d = await res.json();
+    if (d.ok) {
+      setFloors((list) => {
+        const rest = list.filter((f) => f.id !== floorId);
+        setActiveFloorId((cur) => (cur === floorId ? (rest[0]?.id ?? null) : cur));
+        return rest;
+      });
+      setFloorPanelId((p) => (p === floorId ? null : p));
+      setSelectedApId((s) => {
+        const ap = aps.find((a) => a.id === s);
+        return ap?.floorId === floorId ? null : s;
+      });
+      setSelectedWallId((s) => {
+        const w = walls.find((x) => x.id === s);
+        return w?.floorId === floorId ? null : s;
+      });
     } else setMsg({ text: d.message ?? t("wif.deleteErr"), ok: false });
   }
 
@@ -441,6 +529,10 @@ export default function WifiEditorPage() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const s = stateRef.current;
+    if (s.view3d) {
+      render3D();
+      return;
+    }
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const dpr = window.devicePixelRatio || 1;
@@ -540,6 +632,7 @@ export default function WifiEditorPage() {
 
     // dinding
     for (const w of s.walls) {
+      if (w.floorId !== s.activeFloorId) continue;
       const [ax, ay] = toScreen(w.x1, w.y1);
       const [bx, by] = toScreen(w.x2, w.y2);
       ctx.strokeStyle = MATERIAL_DRAW[w.material];
@@ -579,6 +672,7 @@ export default function WifiEditorPage() {
     for (const ap of s.aps) {
       const [px, py] = toScreen(ap.posX, ap.posY);
       const isSel = ap.id === s.selectedApId;
+      ctx.globalAlpha = ap.floorId === s.activeFloorId ? 1 : 0.25;
       const bands = [...new Set(ap.radios.map((r) => r.band))];
       ctx.beginPath();
       ctx.arc(px, py, 11, 0, Math.PI * 2);
@@ -625,6 +719,7 @@ export default function WifiEditorPage() {
       ctx.fillStyle = "rgba(15,23,42,0.7)";
       ctx.fillText(chText, px, py + 22);
       ctx.textAlign = "left";
+      ctx.globalAlpha = 1;
     }
 
     // pengukur jarak
@@ -666,6 +761,219 @@ export default function WifiEditorPage() {
     }
   }
 
+  /* ---------- render 3D isometrik ---------- */
+  const FLOOR_DRAW: Record<WifiFloorMaterial, string> = { CONCRETE: "#94a3b8", WOOD: "#d9a066", GYPSUM: "#e2e8f0" };
+
+  function carpetCanvas(floor: WifiFloorDto, p: WifiProjectDto, mode: Mode, band: string, deadZone: number): HTMLCanvasElement | null {
+    const key = `${floor.id}|${mode}|${band}|${deadZone}|${p.deadZoneDbm}`;
+    const cached = carpetCacheRef.current[key];
+    if (cached) return cached;
+    const sim = stateRef.current.simsByFloor[floor.id];
+    if (!sim) return null;
+    const cellWorld = Math.max(0.25, Math.max(p.widthM, p.heightM) / 180);
+    const cols = Math.max(4, Math.ceil(p.widthM / cellWorld));
+    const rows = Math.max(4, Math.ceil(p.heightM / cellWorld));
+    const cv = document.createElement("canvas");
+    cv.width = cols;
+    cv.height = rows;
+    const gctx = cv.getContext("2d");
+    if (!gctx) return null;
+    const img = gctx.createImageData(cols, rows);
+    const data = img.data;
+    for (let i = 0; i < cols * rows; i++) {
+      const r = mode === "sinr" ? sim.sinr[i] : sim.rssi[i];
+      let col: string | null = null;
+      if (mode === "signal") col = rssiColor(r);
+      else if (mode === "sinr") col = sinrColor(r);
+      else if (mode === "dead") col = r < p.deadZoneDbm ? "rgba(239,68,68,0.6)" : null;
+      else col = r >= p.deadZoneDbm ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.45)";
+      if (col) {
+        const m = col.match(/rgba?\((\d+),(\d+),(\d+)(?:,([\d.]+))?\)/);
+        if (m) {
+          data[i * 4] = Number(m[1]);
+          data[i * 4 + 1] = Number(m[2]);
+          data[i * 4 + 2] = Number(m[3]);
+          data[i * 4 + 3] = Math.round((m[4] ? Number(m[4]) : 0.55) * 255);
+        }
+      } else {
+        data[i * 4 + 3] = 0;
+      }
+    }
+    gctx.putImageData(img, 0, 0);
+    carpetCacheRef.current = { ...carpetCacheRef.current, [key]: cv };
+    return cv;
+  }
+
+  function render3D() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const s = stateRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const p = s.project;
+    if (!p || s.floors.length === 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    const cw = canvas.clientWidth;
+    const ch = canvas.clientHeight;
+    if (canvas.width !== Math.round(cw * dpr) || canvas.height !== Math.round(ch * dpr)) {
+      canvas.width = Math.round(cw * dpr);
+      canvas.height = Math.round(ch * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.fillStyle = p.bgColor;
+    ctx.fillRect(0, 0, cw, ch);
+
+    const rot = (s.iso.rot % 4) * (Math.PI / 2);
+    const cosR = Math.cos(rot);
+    const sinR = Math.sin(rot);
+    const totalH = s.floors.reduce((a, f) => a + f.heightM, 0);
+    const unit = Math.min(cw / ((p.widthM + p.heightM) * 1.15), ch / ((p.widthM + p.heightM) * 0.75 + totalH * 0.95)) * s.iso.zoom;
+    const u = unit * 0.866;
+    const v = unit * 0.5;
+    const uz = unit * 0.85;
+    const cx = cw / 2 + s.iso.ox;
+    const cy = ch / 2 + s.iso.oy;
+
+    const proj = (x: number, y: number, z: number): [number, number] => {
+      const rx = x * cosR - y * sinR;
+      const ry = x * sinR + y * cosR;
+      return [cx + (rx - ry) * u, cy + (rx + ry) * v - z * uz];
+    };
+
+    // sisi-sisi yang menghadap kamera (normal +x/+y setelah rotasi)
+    const faceVisible = (nx: number, ny: number) => nx * cosR - ny * sinR + (nx * sinR + ny * cosR) > 0;
+
+    const slabThick = 0.25;
+    const floors = [...s.floors].sort((a, b) => a.level - b.level);
+
+    for (const f of floors) {
+      const base = floorBaseZ(floors, f);
+      const matColor = FLOOR_DRAW[f.material];
+      const topZ = base;
+
+      // slab (bawah topZ — sisi + alas)
+      const zBot = base - slabThick;
+      const slabFaces: { pts: [number, number, number][]; fill: string }[] = [];
+      if (faceVisible(1, 0)) slabFaces.push({ pts: [[p.widthM, 0, zBot], [p.widthM, p.heightM, zBot], [p.widthM, p.heightM, topZ], [p.widthM, 0, topZ]], fill: matColor });
+      if (faceVisible(-1, 0)) slabFaces.push({ pts: [[0, 0, zBot], [0, p.heightM, zBot], [0, p.heightM, topZ], [0, 0, topZ]], fill: matColor });
+      if (faceVisible(0, 1)) slabFaces.push({ pts: [[0, p.heightM, zBot], [p.widthM, p.heightM, zBot], [p.widthM, p.heightM, topZ], [0, p.heightM, topZ]], fill: matColor });
+      if (faceVisible(0, -1)) slabFaces.push({ pts: [[0, 0, zBot], [p.widthM, 0, zBot], [p.widthM, 0, topZ], [0, 0, topZ]], fill: matColor });
+      for (const face of slabFaces) {
+        ctx.beginPath();
+        const [a, b, c, dd] = face.pts.map(([wx, wy, wz]) => proj(wx, wy, wz));
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(b[0], b[1]);
+        ctx.lineTo(c[0], c[1]);
+        ctx.lineTo(dd[0], dd[1]);
+        ctx.closePath();
+        ctx.fillStyle = face.fill;
+        ctx.globalAlpha = 0.8;
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // karpet heatmap (transform affine per lantai)
+      const carpet = carpetCanvas(f, p, s.mode, s.bandFilter, p.deadZoneDbm);
+      if (carpet) {
+        const cols = carpet.width;
+        const rows = carpet.height;
+        const pxmX = p.widthM / cols;
+        const pxmY = p.heightM / rows;
+        const a = (u * cosR - u * sinR) * pxmX;
+        const b = (v * cosR + v * sinR) * pxmX;
+        const c = (-u * sinR - u * cosR) * pxmY;
+        const dd = (-v * sinR + v * cosR) * pxmY;
+        ctx.setTransform(dpr * a, dpr * b, dpr * c, dpr * dd, dpr * cx, dpr * (cy - topZ * uz));
+        ctx.globalAlpha = 0.65;
+        ctx.drawImage(carpet, 0, 0);
+        ctx.globalAlpha = 1;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      // dinding (ekstrusi vertikal dari lantai)
+      const wallTop = base + Math.min(1.6, f.heightM * 0.55);
+      for (const w of s.walls) {
+        if (w.floorId !== f.id) continue;
+        ctx.beginPath();
+        const a = proj(w.x1, w.y1, base);
+        const b = proj(w.x2, w.y2, base);
+        const c = proj(w.x2, w.y2, wallTop);
+        const dd = proj(w.x1, w.y1, wallTop);
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(b[0], b[1]);
+        ctx.lineTo(c[0], c[1]);
+        ctx.lineTo(dd[0], dd[1]);
+        ctx.closePath();
+        ctx.fillStyle = MATERIAL_DRAW[w.material];
+        ctx.globalAlpha = 0.9;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = "rgba(15,23,42,0.35)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      // AP
+      for (const ap of s.aps) {
+        if (ap.floorId !== f.id) continue;
+        const [px, py] = proj(ap.posX, ap.posY, base + ap.heightM);
+        ctx.globalAlpha = ap.enabled ? 1 : 0.3;
+        ctx.beginPath();
+        ctx.arc(px, py, 9, 0, Math.PI * 2);
+        ctx.fillStyle = "#fff";
+        ctx.fill();
+        ctx.strokeStyle = "#0f172a";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        const dots = [...new Set(ap.radios.map((r) => r.band))].filter((b) => ap.radios.some((r) => r.band === b && r.enabled));
+        if (dots.length > 0) {
+          const step = (Math.PI * 2) / dots.length;
+          dots.forEach((b, i) => {
+            const ang = -Math.PI / 2 + i * step;
+            ctx.beginPath();
+            ctx.arc(px + Math.cos(ang) * 5, py + Math.sin(ang) * 5, 2.6, 0, Math.PI * 2);
+            ctx.fillStyle = BAND_COLOR[b];
+            ctx.fill();
+          });
+        }
+        ctx.fillStyle = "#0f172a";
+        ctx.font = "10px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(ap.name, px, py - 13);
+        ctx.textAlign = "left";
+        ctx.globalAlpha = 1;
+      }
+
+      // label lantai
+      const [lx, ly] = proj(p.widthM / 2, p.heightM / 2, base + 0.1);
+      ctx.font = "bold 12px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(255,255,255,0.85)";
+      ctx.strokeText(`${f.name} · ${FLOOR_MATERIAL_LOSS[f.material]} dB`, lx, ly - 4);
+      ctx.fillStyle = "#334155";
+      ctx.fillText(`${f.name} · ${FLOOR_MATERIAL_LOSS[f.material]} dB`, lx, ly - 4);
+      ctx.textAlign = "left";
+    }
+
+    // marker simulasi user di 3D
+    if (s.pointInfo && s.pointInfo.info.floor) {
+      const [mx, my] = proj(s.pointInfo.x, s.pointInfo.y, floorBaseZ(floors, s.pointInfo.info.floor) + 1.5);
+      ctx.beginPath();
+      ctx.arc(mx, my, 10, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.fill();
+      ctx.strokeStyle = "#0f172a";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.font = "13px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("🧍", mx, my + 4);
+      ctx.textAlign = "left";
+    }
+  }
+
   /* ---------- interaksi ---------- */
   function canvasPos(e: React.MouseEvent): [number, number] {
     const rect = (e.target as HTMLElement).getBoundingClientRect();
@@ -675,6 +983,15 @@ export default function WifiEditorPage() {
   function onMouseDown(e: React.MouseEvent) {
     const [sx, sy] = canvasPos(e);
     const s = stateRef.current;
+    if (s.view3d) {
+      // 3D: klik = info titik (status/select), seret = pan, roda = zoom
+      if (s.tool === "status" || s.tool === "select") {
+        pick3dPoint(sx, sy);
+      } else {
+        dragRef.current = { kind: "iso", sx, sy, startX: s.iso.ox, startY: s.iso.oy };
+      }
+      return;
+    }
     if (e.button === 1) {
       dragRef.current = { kind: "pan", sx, sy, startX: s.view.x, startY: s.view.y };
       return;
@@ -684,11 +1001,11 @@ export default function WifiEditorPage() {
       if (hit.ap) {
         setSelectedApId(hit.ap.id);
         setSelectedWallId(null);
-        dragRef.current = { kind: "ap", id: hit.ap.id, sx, sy, startX: hit.ap.posX, startY: hit.ap.posY, startSnap: { walls: s.walls, aps: s.aps } };
+        dragRef.current = { kind: "ap", id: hit.ap.id, sx, sy, startX: hit.ap.posX, startY: hit.ap.posY, startSnap: { floors: s.floors, walls: s.walls, aps: s.aps } };
       } else if (hit.wall) {
         setSelectedWallId(hit.wall.id);
         setSelectedApId(null);
-        dragRef.current = { kind: "wall", id: hit.wall.id, sx, sy, startX: hit.wall.x1, startY: hit.wall.y1, startX2: hit.wall.x2, startY2: hit.wall.y2, startSnap: { walls: s.walls, aps: s.aps } };
+        dragRef.current = { kind: "wall", id: hit.wall.id, sx, sy, startX: hit.wall.x1, startY: hit.wall.y1, startX2: hit.wall.x2, startY2: hit.wall.y2, startSnap: { floors: s.floors, walls: s.walls, aps: s.aps } };
       } else {
         setSelectedApId(null);
         setSelectedWallId(null);
@@ -717,11 +1034,12 @@ export default function WifiEditorPage() {
     }
     if (s.tool === "status") {
       const [wx, wy] = toWorld(sx, sy);
-      if (!s.project) return;
+      if (!s.project || !s.activeFloorId) return;
+      const targetFloor = s.floors.find((f) => f.id === s.activeFloorId) ?? s.floors[0];
       const x = Math.min(Math.max(wx, 0), s.project.widthM);
       const y = Math.min(Math.max(wy, 0), s.project.heightM);
       const onlyBand = s.bandFilter === "ALL" ? null : s.bandFilter;
-      setPointInfo({ x, y, info: evaluatePoint(s.project, s.aps, s.walls, x, y, onlyBand) });
+      setPointInfo({ x, y, info: evaluatePoint(s.project, s.floors, s.aps, s.walls, x, y, targetFloor, onlyBand) });
       return;
     }
     if (s.tool === "delete") {
@@ -732,11 +1050,43 @@ export default function WifiEditorPage() {
     }
   }
 
+  /** Klik di 3D: tentukan lantai (world z = dasar lantai) → info titik. */
+  function pick3dPoint(sx: number, sy: number) {
+    const s = stateRef.current;
+    if (!s.project || s.floors.length === 0) return;
+    const rot = (s.iso.rot % 4) * (Math.PI / 2);
+    const cosR = Math.cos(rot);
+    const sinR = Math.sin(rot);
+    const totalH = s.floors.reduce((a, f) => a + f.heightM, 0);
+    const cw = canvasRef.current?.clientWidth ?? 800;
+    const ch = canvasRef.current?.clientHeight ?? 500;
+    const unit = Math.min(cw / ((s.project.widthM + s.project.heightM) * 1.15), ch / ((s.project.widthM + s.project.heightM) * 0.75 + totalH * 0.95)) * s.iso.zoom;
+    const u = unit * 0.866;
+    const v = unit * 0.5;
+    const uz = unit * 0.85;
+    const cx = cw / 2 + s.iso.ox;
+    const cy = ch / 2 + s.iso.oy;
+    const floors = [...s.floors].sort((a, b) => b.level - a.level); // atas dulu
+    for (const f of floors) {
+      const z = floorBaseZ(s.floors, f);
+      const rx = 0.5 * ((sx - cx) / u + (sy - cy + z * uz) / v);
+      const ry = 0.5 * (-(sx - cx) / u + (sy - cy + z * uz) / v);
+      const x = rx * cosR + ry * sinR;
+      const y = -rx * sinR + ry * cosR;
+      if (x >= -0.01 && x <= s.project.widthM + 0.01 && y >= -0.01 && y <= s.project.heightM + 0.01) {
+        const onlyBand = s.bandFilter === "ALL" ? null : s.bandFilter;
+        setPointInfo({ x: Math.min(Math.max(x, 0), s.project.widthM), y: Math.min(Math.max(y, 0), s.project.heightM), info: evaluatePoint(s.project, s.floors, s.aps, s.walls, x, y, f, onlyBand) });
+        return;
+      }
+    }
+  }
+
   function onMouseMove(e: React.MouseEvent) {
     const [sx, sy] = canvasPos(e);
     const drag = dragRef.current;
     const s = stateRef.current;
     if (!drag) {
+      if (s.view3d) return;
       if (s.tool === "wall" && wallStartRef.current) {
         const [wx, wy] = toWorld(sx, sy);
         setDraftWall({ ...(s.draftWall ?? { x1: wallStartRef.current.x, y1: wallStartRef.current.y }), x2: wx, y2: wy });
@@ -749,6 +1099,10 @@ export default function WifiEditorPage() {
     }
     if (drag.kind === "pan") {
       setView({ ...s.view, x: drag.startX + (sx - drag.sx), y: drag.startY + (sy - drag.sy) });
+      return;
+    }
+    if (drag.kind === "iso") {
+      setIso((i) => ({ ...i, ox: drag.startX + (sx - drag.sx), oy: drag.startY + (sy - drag.sy) }));
       return;
     }
     if (drag.kind === "measure" && measureStartRef.current) {
@@ -816,11 +1170,16 @@ export default function WifiEditorPage() {
   }
 
   function onWheel(e: React.WheelEvent) {
+    const s = stateRef.current;
+    if (!s.project) return;
+    if (s.view3d) {
+      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      setIso((i) => ({ ...i, zoom: Math.min(6, Math.max(0.2, i.zoom * factor)) }));
+      return;
+    }
     const rect = (e.target as HTMLElement).getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
-    const s = stateRef.current;
-    if (!s.project) return;
     const k = s.project.scalePxPerM * s.view.scale;
     const wx = (sx - s.view.x) / k;
     const wy = (sy - s.view.y) / k;
@@ -838,7 +1197,9 @@ export default function WifiEditorPage() {
       setPointInfo(null);
       setSelectedApId(null);
       setSelectedWallId(null);
-      setTool("select");
+      setFloorPanelId(null);
+      if (s.view3d) setView3d(false);
+      else setTool("select");
     }
     if (e.key === "Delete" || e.key === "Backspace") {
       if (s.selectedApId) removeAp(s.selectedApId);
@@ -861,7 +1222,30 @@ export default function WifiEditorPage() {
   }
 
   function exportJson() {
-    const payload = { project: { widthM: project?.widthM, heightM: project?.heightM, pathLossExponent: project?.pathLossExponent, deadZoneDbm: project?.deadZoneDbm }, walls, accessPoints: aps };
+    const payload = {
+      project: { widthM: project?.widthM, heightM: project?.heightM, pathLossExponent: project?.pathLossExponent, deadZoneDbm: project?.deadZoneDbm },
+      floors: floors.map((f) => ({ name: f.name, level: f.level, heightM: f.heightM, material: f.material })),
+      walls: walls.map((w) => ({ floorIndex: floors.findIndex((f) => f.id === w.floorId), x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, material: w.material })),
+      accessPoints: aps.map((a) => ({
+        floorIndex: floors.findIndex((f) => f.id === a.floorId),
+        name: a.name,
+        ssid: a.ssid,
+        heightM: a.heightM,
+        posX: a.posX,
+        posY: a.posY,
+        enabled: a.enabled,
+        radios: a.radios.map((r) => ({
+          band: r.band,
+          channel: r.channel,
+          channelWidth: r.channelWidth,
+          txPowerDbm: r.txPowerDbm,
+          antennaGainDbi: r.antennaGainDbi,
+          antennaType: r.antennaType,
+          azimuthDeg: r.azimuthDeg,
+          enabled: r.enabled,
+        })),
+      })),
+    };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -880,6 +1264,7 @@ export default function WifiEditorPage() {
         heightM: plan.project?.heightM,
         pathLossExponent: plan.project?.pathLossExponent,
         deadZoneDbm: plan.project?.deadZoneDbm,
+        floors: plan.floors ?? [],
         walls: plan.walls ?? [],
         accessPoints: plan.accessPoints ?? [],
       };
@@ -900,11 +1285,13 @@ export default function WifiEditorPage() {
     }
   }
 
-  async function uploadFloorplan(file: File) {
+  async function uploadFloorplan(file: File, floorId?: string) {
     try {
       const dataUrl = await downscaleImage(file, 1600);
       setSaving(true);
-      const res = await fetch(`/api/wifi/projects/${id}`, {
+      const fid = floorId ?? activeFloor?.id;
+      if (!fid) return;
+      const res = await fetch(`/api/wifi/projects/${id}/floors/${fid}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ floorplanData: dataUrl }),
@@ -913,7 +1300,7 @@ export default function WifiEditorPage() {
       if (!res.ok || d.ok === false) setMsg({ text: d.message ?? t("wif.saveErr"), ok: false });
       else {
         setMsg({ text: t("wif.floorplanSaved"), ok: true });
-        setProject((p) => (p ? { ...p, floorplanData: dataUrl } : p));
+        setFloors((list) => list.map((f) => (f.id === fid ? { ...f, floorplanData: dataUrl } : f)));
       }
     } catch {
       setMsg({ text: t("wif.saveErr"), ok: false });
@@ -958,6 +1345,37 @@ export default function WifiEditorPage() {
         </button>
         <span className="max-w-[180px] truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{project.name}</span>
         {saving && <span className="text-[11px] text-slate-400">{t("wif.saving")}</span>}
+
+        {/* tab lantai */}
+        <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/60">
+          {floors.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => {
+                setActiveFloorId(f.id);
+                setPointInfo(null);
+              }}
+              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+                activeFloor?.id === f.id ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+              }`}
+            >
+              {f.name}
+            </button>
+          ))}
+          {floors.length < 5 && (
+            <button onClick={addFloor} title={t("wif.addFloor")} className="rounded-lg px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/40">
+              + {t("wif.addFloor")}
+            </button>
+          )}
+          <button
+            onClick={() => activeFloor && setFloorPanelId((p) => (p === activeFloor.id ? null : activeFloor.id))}
+            title={t("wif.floorSettings")}
+            className={`rounded-lg px-2 py-1 text-xs ${floorPanelId ? "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400" : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"}`}
+          >
+            ⚙
+          </button>
+        </div>
+
         <span className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
         <div className="flex items-center gap-1">
           {TOOLS.map((tl) => (
@@ -1000,10 +1418,29 @@ export default function WifiEditorPage() {
           ↩ {t("wif.undo")}
         </button>
         <div className="ml-auto flex items-center gap-1.5">
-          <label className="cursor-pointer rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
-            🖼 {t("wif.floorplan")}
-            <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadFloorplan(e.target.files[0])} />
-          </label>
+          {view3d && (
+            <button onClick={() => setIso((i) => ({ ...i, rot: (i.rot + 1) % 4 }))} title={t("wif.rotate3d")} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+              ⟳ {t("wif.rotate3d")}
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setView3d(!view3d);
+              setPointInfo(null);
+            }}
+            title={t("wif.view3d")}
+            className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${
+              view3d ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            }`}
+          >
+            {view3d ? t("wif.view2d") : "🧊 " + t("wif.view3d")}
+          </button>
+          {!view3d && (
+            <label className="cursor-pointer rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+              🖼 {t("wif.floorplan")}
+              <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadFloorplan(e.target.files[0], activeFloor?.id)} />
+            </label>
+          )}
           <label className="cursor-pointer rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
             ⬆ {t("wif.import")}
             <input type="file" accept="application/json,.json" className="hidden" onChange={(e) => e.target.files?.[0] && importJson(e.target.files[0])} />
@@ -1057,7 +1494,7 @@ export default function WifiEditorPage() {
         </div>
         <div className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <span className="text-slate-500 dark:text-slate-400">
-            {t("wif.statCoverage")}: <b className="text-emerald-600">{sim ? sim.signalCoveragePct.toFixed(1) : "0"}%</b>
+            {t("wif.statCoverage")}{activeFloor ? ` (${activeFloor.name})` : ""}: <b className="text-emerald-600">{sim ? sim.signalCoveragePct.toFixed(1) : "0"}%</b>
           </span>
           <span className="text-slate-500 dark:text-slate-400">
             {t("wif.statDead")}: <b className="text-red-500">{sim ? sim.deadZonePct.toFixed(1) : "100"}%</b>
@@ -1101,7 +1538,9 @@ export default function WifiEditorPage() {
             onWheel={onWheel}
           />
           <div className="pointer-events-none absolute left-3 top-2 rounded-lg bg-slate-900/70 px-2 py-1 text-[10px] text-white">
-            {project.widthM}×{project.heightM} m · n={project.pathLossExponent} · {t("wif.disclaimer")}
+            {view3d
+              ? `${t("wif.hint3d")}`
+              : `${project.widthM}×${project.heightM} m · n=${project.pathLossExponent} · ${t("wif.disclaimer")}`}
           </div>
           {/* legenda mode aktif */}
           <div className="pointer-events-none absolute bottom-3 left-3 rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-[10px] text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-300">
@@ -1157,7 +1596,7 @@ export default function WifiEditorPage() {
           {pointInfo && (
             <div className="pointer-events-none absolute bottom-3 right-3 w-72 space-y-1.5 rounded-lg border border-slate-200 bg-white/95 px-3 py-2.5 text-[11px] text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-300">
               <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
-                🧍 {t("wif.statusTitle")} ({pointInfo.x.toFixed(1)}, {pointInfo.y.toFixed(1)}) m
+                🧍 {t("wif.statusTitle")} · {pointInfo.info.floor?.name ?? ""} ({pointInfo.x.toFixed(1)}, {pointInfo.y.toFixed(1)}) m
               </p>
               {pointInfo.info.bestAp && pointInfo.info.bestRssi !== null && pointInfo.info.sinrDb !== null ? (
                 <>
@@ -1208,7 +1647,69 @@ export default function WifiEditorPage() {
         {/* panel samping */}
         {showPanel && (
           <aside className="w-72 shrink-0 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            {selectedAp ? (
+            {floorPanelId ? (
+              (() => {
+                const fp = floors.find((f) => f.id === floorPanelId);
+                if (!fp) return null;
+                return (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">⚙ {t("wif.floorSettings")}</h3>
+                      <button onClick={() => setFloorPanelId(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">✕</button>
+                    </div>
+                    <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                      {t("wif.floorName")}
+                      <input
+                        value={fp.name}
+                        onChange={(e) => updateFloorLocal(fp.id, { name: e.target.value })}
+                        className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                    </label>
+                    <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                      {t("wif.floorHeight")}: <b>{fp.heightM} m</b>
+                      <input type="range" min={1} max={6} step={0.1} value={fp.heightM} onChange={(e) => updateFloorLocal(fp.id, { heightM: Number(e.target.value) })} className="mt-1 w-full accent-indigo-600" />
+                    </label>
+                    <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                      {t("wif.floorMaterial")}
+                      <select
+                        value={fp.material}
+                        onChange={(e) => updateFloorLocal(fp.id, { material: e.target.value as WifiFloorMaterial })}
+                        className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                      >
+                        {(["CONCRETE", "WOOD", "GYPSUM"] as WifiFloorMaterial[]).map((m) => (
+                          <option key={m} value={m}>
+                            {t(`wif.floorMat.${m}`)} ({FLOOR_MATERIAL_LOSS[m]} dB)
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500">{t("wif.floorLossHint")}</p>
+                    <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                      🖼 {t("wif.floorplan")}
+                      <div className="mt-1 flex gap-1.5">
+                        <label className="flex-1 cursor-pointer rounded-lg border border-slate-200 px-2 py-1.5 text-center text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+                          {t("wif.upload")}
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadFloorplan(e.target.files[0], fp.id)} />
+                        </label>
+                        {fp.floorplanData && (
+                          <button
+                            onClick={() => updateFloorLocal(fp.id, { floorplanData: null })}
+                            className="rounded-lg border border-red-200 px-2 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/50"
+                          >
+                            {t("wif.remove")}
+                          </button>
+                        )}
+                      </div>
+                    </label>
+                    {floors.length > 1 && (
+                      <button onClick={() => deleteFloor(fp.id)} className="w-full rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/50">
+                        {t("wif.deleteFloor")}
+                      </button>
+                    )}
+                  </>
+                );
+              })()
+            ) : selectedAp ? (
               <>
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("wif.apPanel")}</h3>
@@ -1225,6 +1726,20 @@ export default function WifiEditorPage() {
                 <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
                   SSID
                   <input value={selectedAp.ssid ?? ""} onChange={(e) => updateApLocal(selectedAp.id, { ssid: e.target.value || null })} className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
+                </label>
+                <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                  {t("wif.floor")}
+                  <select
+                    value={selectedAp.floorId}
+                    onChange={(e) => updateApLocal(selectedAp.id, { floorId: e.target.value })}
+                    className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  >
+                    {floors.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
 
                 <div>
@@ -1404,7 +1919,7 @@ export default function WifiEditorPage() {
                         </span>
                         <span className="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-200">{ap.name}</span>
                         <span className="text-[10px] text-slate-400">
-                          {ap.radios.map((r) => `${bandLabel(r.band)}:${r.channel}`).join(" ")}
+                          {floors.find((f) => f.id === ap.floorId)?.name ?? "?"} · {ap.radios.map((r) => `${bandLabel(r.band)}:${r.channel}`).join(" ")}
                         </span>
                         {coChannelWarn(ap) && <span className="text-[10px]">⚠️</span>}
                       </button>

@@ -635,22 +635,42 @@ model WifiProject {
   heightM          Float             @default(15) // tinggi denah (meter)
   scalePxPerM      Float             @default(20) // skala pixel per meter
   bgColor          String            @default("#f8fafc")
-  floorplanData    String? // upload denah sebagai data URL (downscale client ~1600px)
   pathLossExponent Float             @default(3.0) // n di COST-231
   deadZoneDbm      Float             @default(-70) // threshold dead zone
   walls            WifiWall[]
   accessPoints     WifiAccessPoint[]
+  floors           WifiFloor[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
   @@index([teamId])
 }
 
-/// Dinding penghalang sinyal (segment dari x1,y1 ke x2,y2 dalam meter).
+/// Satu lantai proyek — footprint sama dengan proyek, material menentukan redaman slab.
+model WifiFloor {
+  id             String            @id @default(cuid())
+  projectId      String
+  project        WifiProject       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name           String            @default("Lantai 1")
+  level          Int               @default(1) // urutan lantai (1 = terbawah)
+  heightM        Float             @default(3) // tinggi ruang lantai (m)
+  material       WifiFloorMaterial @default(CONCRETE)
+  floorplanData  String? // denah lantai ini (data URL, downscale client ~1600px)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  walls          WifiWall[]
+  accessPoints   WifiAccessPoint[]
+
+  @@index([projectId])
+}
+
+/// Dinding penghalang sinyal (segment dari x1,y1 ke x2,y2 dalam meter, per lantai).
 model WifiWall {
   id        String         @id @default(cuid())
   projectId String
   project   WifiProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  floorId   String
+  floor     WifiFloor      @relation(fields: [floorId], references: [id], onDelete: Cascade)
   x1        Float
   y1        Float
   x2        Float
@@ -659,6 +679,7 @@ model WifiWall {
   createdAt DateTime       @default(now())
 
   @@index([projectId])
+  @@index([floorId])
 }
 
 /// Access point pada denah. Bisa punya banyak radio (2.4/5/6 GHz sekaligus).
@@ -666,6 +687,8 @@ model WifiAccessPoint {
   id        String         @id @default(cuid())
   projectId String
   project   WifiProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  floorId   String
+  floor     WifiFloor      @relation(fields: [floorId], references: [id], onDelete: Cascade)
   name      String
   ssid      String?
   heightM   Float          @default(2.5)
@@ -677,6 +700,7 @@ model WifiAccessPoint {
   radios    WifiApRadio[]
 
   @@index([projectId])
+  @@index([floorId])
 }
 
 /// Satu radio/band pada access point — setting antena & channel lengkap.
@@ -727,4 +751,11 @@ enum WifiAntennaType {
   OMNIDIRECTIONAL
   PATCH
   PANEL
+}
+
+/// Material slab lantai — menentukan redaman sinyal antar lantai (dB per slab).
+enum WifiFloorMaterial {
+  CONCRETE // 20 dB — gedung/beton
+  WOOD // 12 dB — rumah kayu
+  GYPSUM // 8 dB — plafon/partisi ringan
 }

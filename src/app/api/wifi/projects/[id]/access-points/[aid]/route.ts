@@ -7,6 +7,7 @@ const apSchema = z.object({
   name: z.string().min(1).optional(),
   ssid: z.string().max(32).optional().nullable(),
   heightM: z.coerce.number().min(0.5).max(10).optional(),
+  floorId: z.string().min(1).optional(),
   posX: z.coerce.number().optional(),
   posY: z.coerce.number().optional(),
   enabled: z.boolean().optional(),
@@ -24,6 +25,10 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   }
   const ap = await prisma.wifiAccessPoint.findFirst({ where: { id: aid, projectId: id } });
   if (!ap) return NextResponse.json({ ok: false, message: "Access point tidak ditemukan" }, { status: 404 });
+  if (parsed.data.floorId && parsed.data.floorId !== ap.floorId) {
+    const floor = await prisma.wifiFloor.findFirst({ where: { id: parsed.data.floorId, projectId: id } });
+    if (!floor) return NextResponse.json({ ok: false, message: "Lantai tidak ditemukan" }, { status: 400 });
+  }
   const updated = await prisma.wifiAccessPoint.update({
     where: { id: aid },
     data: parsed.data,

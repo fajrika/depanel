@@ -1,13 +1,24 @@
-// Mesin simulasi WiFi (COST-231 Multi-Wall + log-distance). Pure TS, tanpa React —
-// dipakai dari editor canvas (client). Interferensi dihitung on-the-fly (tidak disimpan).
-// Satu access point bisa punya banyak radio (2.4/5/6 GHz sekaligus).
+// Mesin simulasi WiFi (COST-231 Multi-Wall + log-distance), pure TS tanpa React.
+// Mendukung multi-lantai: jarak 3D + redaman slab per material lantai (beton/kayu/gipsum).
+// Interferensi dihitung on-the-fly (tidak disimpan). 1 AP bisa punya banyak radio.
 
 export type WifiBand = "BAND_2_4" | "BAND_5" | "BAND_6";
 export type WifiAntennaType = "OMNIDIRECTIONAL" | "PATCH" | "PANEL";
 export type WifiWallMaterial = "DRYWALL" | "WOOD" | "GLASS" | "BRICK" | "CONCRETE";
+export type WifiFloorMaterial = "CONCRETE" | "WOOD" | "GYPSUM";
+
+export interface WifiFloorDto {
+  id: string;
+  name: string;
+  level: number;
+  heightM: number;
+  material: WifiFloorMaterial;
+  floorplanData?: string | null;
+}
 
 export interface WifiWallDto {
   id: string;
+  floorId: string;
   x1: number;
   y1: number;
   x2: number;
@@ -30,6 +41,7 @@ export interface WifiRadioDto {
 
 export interface WifiApDto {
   id: string;
+  floorId: string;
   name: string;
   ssid?: string | null;
   heightM: number;
@@ -47,7 +59,6 @@ export interface WifiProjectDto {
   heightM: number;
   scalePxPerM: number;
   bgColor: string;
-  floorplanData?: string | null;
   pathLossExponent: number;
   deadZoneDbm: number;
 }
@@ -59,6 +70,13 @@ export const MATERIAL_LOSS: Record<WifiWallMaterial, number> = {
   GLASS: 8,
   BRICK: 12,
   CONCRETE: 20,
+};
+
+/** Kerugian slab lantai (dB per lantai yang ditembus). */
+export const FLOOR_MATERIAL_LOSS: Record<WifiFloorMaterial, number> = {
+  CONCRETE: 20,
+  WOOD: 12,
+  GYPSUM: 8,
 };
 
 /** Path loss referensi pada 1 m per band (dB). */
@@ -121,18 +139,54 @@ export function antennaGain(radio: WifiRadioDto, dx: number, dy: number): number
   return radio.antennaGainDbi - 15;
 }
 
-/** RSSI di titik (x,y) dari satu radio AP, tanpa interferensi. */
-export function computeRssi(ap: WifiApDto, radio: WifiRadioDto, walls: WifiWallDto[], x: number, y: number, n: number): number {
+/** Tinggi dasar (z, meter) lantai = jumlah tinggi semua lantai di bawahnya. */
+export function floorBaseZ(floors: WifiFloorDto[], floor: WifiFloorDto): number {
+  return floors.filter((f) => f.level < floor.level).reduce((s, f) => s + f.heightM, 0);
+}
+
+/** Redaman total slab yang ditembus antara dua lantai (0 bila sama). Slab milik lantai bawah. */
+export function floorLossBetween(floors: WifiFloorDto[], a: WifiFloorDto, b: WifiFloorDto): number {
+  if (a.id === b.id) return 0;
+  const lo = Math.min(a.level, b.level);
+  const hi = Math.max(a.level, b.level);
+  let loss = 0;
+  for (const f of floors) {
+    if (f.level >= lo && f.level < hi) loss += FLOOR_MATERIAL_LOSS[f.material];
+  }
+  return loss;
+}
+
+function floorById(floors: WifiFloorDto[], id: string): WifiFloorDto | null {
+  return floors.find((f) => f.id === id) ?? null;
+}
+
+/** RSSI di titik (x,y) lantai target dari satu radio AP, tanpa interferensi. */
+export function computeRssi(
+  ap: WifiApDto,
+  radio: WifiRadioDto,
+  floors: WifiFloorDto[],
+  walls: WifiWallDto[],
+  targetFloor: WifiFloorDto,
+  x: number,
+  y: number,
+  n: number,
+): number {
+  const apFloor = floorById(floors, ap.floorId) ?? targetFloor;
   const dx = x - ap.posX;
   const dy = y - ap.posY;
-  let d = Math.sqrt(dx * dx + dy * dy);
+  const dz = (floorBaseZ(floors, targetFloor) + targetFloor.heightM / 2) - (floorBaseZ(floors, apFloor) + ap.heightM);
+  let d = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (d < 1) d = 1;
   const pl0 = BAND_PL0[radio.band];
   let wallLoss = 0;
-  for (const w of walls) {
-    if (segIntersect(ap.posX, ap.posY, x, y, w.x1, w.y1, w.x2, w.y2)) wallLoss += MATERIAL_LOSS[w.material];
+  if (apFloor.id === targetFloor.id) {
+    for (const w of walls) {
+      if (w.floorId !== targetFloor.id) continue;
+      if (segIntersect(ap.posX, ap.posY, x, y, w.x1, w.y1, w.x2, w.y2)) wallLoss += MATERIAL_LOSS[w.material];
+    }
   }
-  const pl = pl0 + 10 * n * Math.log10(d) + wallLoss;
+  const floorLoss = floorLossBetween(floors, apFloor, targetFloor);
+  const pl = pl0 + 10 * n * Math.log10(d) + wallLoss + floorLoss;
   return radio.txPowerDbm + antennaGain(radio, dx, dy) - pl;
 }
 
@@ -177,8 +231,17 @@ export interface SimResult {
   totalEnabled: number; // jumlah radio aktif (sesuai filter band)
 }
 
-/** Hitung grid RSSI + SINR. cols×rows = jumlah sel; sel = luasDenah/cols. */
-export function computeGrid(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiWallDto[], cols: number, rows: number, onlyBand?: WifiBand | null): SimResult {
+/** Hitung grid RSSI + SINR untuk SATU lantai. cols×rows = jumlah sel. */
+export function computeGrid(
+  proj: WifiProjectDto,
+  floors: WifiFloorDto[],
+  aps: WifiApDto[],
+  walls: WifiWallDto[],
+  cols: number,
+  rows: number,
+  targetFloor: WifiFloorDto,
+  onlyBand?: WifiBand | null,
+): SimResult {
   const n = cols * rows;
   const rssi = new Float32Array(n);
   const sinr = new Float32Array(n);
@@ -203,7 +266,7 @@ export function computeGrid(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiW
     let best = -Infinity;
     let bestIdx = -1;
     for (let k = 0; k < radios.length; k++) {
-      const r = computeRssi(radios[k].ap, radios[k].radio, walls, x, y, proj.pathLossExponent);
+      const r = computeRssi(radios[k].ap, radios[k].radio, floors, walls, targetFloor, x, y, proj.pathLossExponent);
       if (r > best) {
         best = r;
         bestIdx = k;
@@ -218,7 +281,7 @@ export function computeGrid(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiW
         if (k === bestIdx) continue;
         const f = adjacentFactor(radios[bestIdx].radio, radios[k].radio);
         if (f <= 0) continue;
-        const r = computeRssi(radios[k].ap, radios[k].radio, walls, x, y, proj.pathLossExponent);
+        const r = computeRssi(radios[k].ap, radios[k].radio, floors, walls, targetFloor, x, y, proj.pathLossExponent);
         iLin += f * Math.pow(10, r / 10);
       }
       const noiseLin = Math.pow(10, NOISE_FLOOR_DBM / 10);
@@ -245,6 +308,7 @@ export function computeGrid(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiW
 export interface PointInfo {
   x: number;
   y: number;
+  floor: WifiFloorDto;
   bestRssi: number | null; // sinyal terbaik (dBm)
   bestAp: WifiApDto | null; // AP yang memberi sinyal terbaik
   bestRadio: WifiRadioDto | null; // radio (band/channel) yang memberi sinyal terbaik
@@ -254,17 +318,26 @@ export interface PointInfo {
   interferers: { ap: WifiApDto; radio: WifiRadioDto; rssi: number; factor: number }[]; // radio lain yang mengganggu
 }
 
-/** Evaluasi satu titik denah — simulasi user berdiri di titik itu. */
-export function evaluatePoint(proj: WifiProjectDto, aps: WifiApDto[], walls: WifiWallDto[], x: number, y: number, onlyBand?: WifiBand | null): PointInfo {
+/** Evaluasi satu titik denah — simulasi user berdiri di lantai itu. */
+export function evaluatePoint(
+  proj: WifiProjectDto,
+  floors: WifiFloorDto[],
+  aps: WifiApDto[],
+  walls: WifiWallDto[],
+  x: number,
+  y: number,
+  targetFloor: WifiFloorDto,
+  onlyBand?: WifiBand | null,
+): PointInfo {
   const radios = activeRadios(aps, onlyBand);
   if (radios.length === 0) {
-    return { x, y, bestRssi: null, bestAp: null, bestRadio: null, sinrDb: null, isDead: true, coverageOk: false, interferers: [] };
+    return { x, y, floor: targetFloor, bestRssi: null, bestAp: null, bestRadio: null, sinrDb: null, isDead: true, coverageOk: false, interferers: [] };
   }
   let best = -Infinity;
   let bestIdx = -1;
   const rssis: { ap: WifiApDto; radio: WifiRadioDto; rssi: number }[] = [];
   for (const { ap, radio } of radios) {
-    const r = computeRssi(ap, radio, walls, x, y, proj.pathLossExponent);
+    const r = computeRssi(ap, radio, floors, walls, targetFloor, x, y, proj.pathLossExponent);
     rssis.push({ ap, radio, rssi: r });
     if (r > best) {
       best = r;
@@ -287,7 +360,7 @@ export function evaluatePoint(proj: WifiProjectDto, aps: WifiApDto[], walls: Wif
   const sinrDb = 10 * Math.log10(sLin / (noiseLin + iLin));
   const isDead = best < proj.deadZoneDbm;
   const coverageOk = !isDead && sinrDb >= 15;
-  return { x, y, bestRssi: best, bestAp, bestRadio, sinrDb, isDead, coverageOk, interferers };
+  return { x, y, floor: targetFloor, bestRssi: best, bestAp, bestRadio, sinrDb, isDead, coverageOk, interferers };
 }
 
 /** Warna heatmap RSSI: t 0..1 (merah → kuning → hijau), -95 dBm → -50 dBm. */

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { requireWifi, ownWifiProject } from "@/lib/wifi";
 
 const wallSchema = z.object({
+  floorId: z.string().min(1),
   x1: z.coerce.number(),
   y1: z.coerce.number(),
   x2: z.coerce.number(),
@@ -22,8 +23,10 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message ?? "Data tidak valid" }, { status: 400 });
   }
   const d = parsed.data;
+  const floor = await prisma.wifiFloor.findFirst({ where: { id: d.floorId, projectId: id } });
+  if (!floor) return NextResponse.json({ ok: false, message: "Lantai tidak ditemukan" }, { status: 400 });
   const wall = await prisma.wifiWall.create({
-    data: { projectId: id, x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2, material: d.material },
+    data: { projectId: id, floorId: d.floorId, x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2, material: d.material },
   });
   return NextResponse.json({ ok: true, data: wall });
 }

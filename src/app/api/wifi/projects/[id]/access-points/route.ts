@@ -15,6 +15,7 @@ const radioSchema = z.object({
 });
 
 const apSchema = z.object({
+  floorId: z.string().min(1),
   name: z.string().min(1, "Nama wajib diisi").default("Access Point"),
   ssid: z.string().max(32).optional().nullable(),
   heightM: z.coerce.number().min(0.5).max(10).default(2.5),
@@ -35,12 +36,15 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message ?? "Data tidak valid" }, { status: 400 });
   }
   const d = parsed.data;
+  const floor = await prisma.wifiFloor.findFirst({ where: { id: d.floorId, projectId: id } });
+  if (!floor) return NextResponse.json({ ok: false, message: "Lantai tidak ditemukan" }, { status: 400 });
   const radios = d.radios && d.radios.length > 0 ? d.radios : [{ band: "BAND_2_4" as const, channel: 1, channelWidth: 20, txPowerDbm: 20, antennaGainDbi: 3, antennaType: "OMNIDIRECTIONAL" as const, azimuthDeg: null, enabled: true }];
 
   const ap = await prisma.$transaction(async (tx) => {
     const created = await tx.wifiAccessPoint.create({
       data: {
         projectId: id,
+        floorId: d.floorId,
         name: d.name,
         ssid: d.ssid ?? null,
         heightM: d.heightM,

@@ -23,6 +23,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   const source = await prisma.wifiProject.findUnique({
     where: { id },
     include: {
+      floors: { orderBy: { level: "asc" } },
       walls: true,
       accessPoints: { include: { radios: true } },
     },
@@ -41,36 +42,52 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
         heightM: source.heightM,
         scalePxPerM: source.scalePxPerM,
         bgColor: source.bgColor,
-        floorplanData: source.floorplanData,
         pathLossExponent: source.pathLossExponent,
         deadZoneDbm: source.deadZoneDbm,
-        walls: {
-          create: source.walls.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, material: w.material })),
-        },
-        accessPoints: {
-          create: source.accessPoints.map((a) => ({
-            name: a.name,
-            ssid: a.ssid,
-            heightM: a.heightM,
-            posX: a.posX,
-            posY: a.posY,
-            enabled: a.enabled,
-            radios: {
-              create: a.radios.map((r) => ({
-                band: r.band,
-                channel: r.channel,
-                channelWidth: r.channelWidth,
-                txPowerDbm: r.txPowerDbm,
-                antennaGainDbi: r.antennaGainDbi,
-                antennaType: r.antennaType,
-                azimuthDeg: r.azimuthDeg,
-                enabled: r.enabled,
-              })),
-            },
-          })),
+        floors: {
+          create: source.floors.map((f) => ({ name: f.name, level: f.level, heightM: f.heightM, material: f.material, floorplanData: f.floorplanData })),
         },
       },
     });
+
+    // mapping floorId lama → baru (dari lantai clone)
+    const floorMap = new Map<string, string>();
+    const newFloors = await tx.wifiFloor.findMany({ where: { projectId: created.id }, orderBy: { level: "asc" } });
+    source.floors.forEach((f, i) => floorMap.set(f.id, newFloors[i]?.id ?? ""));
+
+    for (const w of source.walls) {
+      const fid = floorMap.get(w.floorId);
+      if (!fid) continue;
+      await tx.wifiWall.create({ data: { projectId: created.id, floorId: fid, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, material: w.material } });
+    }
+    for (const a of source.accessPoints) {
+      const fid = floorMap.get(a.floorId);
+      if (!fid) continue;
+      await tx.wifiAccessPoint.create({
+        data: {
+          projectId: created.id,
+          floorId: fid,
+          name: a.name,
+          ssid: a.ssid,
+          heightM: a.heightM,
+          posX: a.posX,
+          posY: a.posY,
+          enabled: a.enabled,
+          radios: {
+            create: a.radios.map((r) => ({
+              band: r.band,
+              channel: r.channel,
+              channelWidth: r.channelWidth,
+              txPowerDbm: r.txPowerDbm,
+              antennaGainDbi: r.antennaGainDbi,
+              antennaType: r.antennaType,
+              azimuthDeg: r.azimuthDeg,
+              enabled: r.enabled,
+            })),
+          },
+        },
+      });
+    }
     return created;
   });
 
