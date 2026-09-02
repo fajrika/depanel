@@ -1412,8 +1412,12 @@ export default function WifiEditorPage() {
             className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${view3d ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"}`}>
             {view3d ? t("wif.view2d") : "🧊 " + t("wif.view3d")}
           </button>
-          <button onClick={() => setToolbarCollapsed(false)} className="ml-auto rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" title={t("wif.expand")}>
-            ⛶ {t("wif.expand")}
+          <button
+            onClick={() => { setToolbarCollapsed(false); setSidebarCollapsed(false); }}
+            className="ml-auto rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+            title={t("wif.exitFocus")}
+          >
+            ⛶ {t("wif.exitFocus")}
           </button>
         </div>
       )}
@@ -1583,8 +1587,12 @@ export default function WifiEditorPage() {
           <button onClick={exportPng} className="rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-white dark:bg-slate-100 dark:text-slate-900">
             ⬇ PNG
           </button>
-          <button onClick={() => setToolbarCollapsed(true)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800" title={t("wif.minimize")}>
-            ⊟
+          <button
+            onClick={() => { setToolbarCollapsed(true); setSidebarCollapsed(true); }}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+            title={t("wif.focusMode")}
+          >
+            ⛶ {t("wif.focusMode")}
           </button>
         </div>
       </div>
@@ -1796,7 +1804,7 @@ export default function WifiEditorPage() {
         ) : (
           <aside className="w-72 shrink-0 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="flex justify-end">
-              <button onClick={() => setSidebarCollapsed(true)} title={t("wif.minimize")} className="rounded-lg px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+              <button onClick={() => setSidebarCollapsed(true)} title={t("wif.minimize")} className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200">
                 ▶ {t("wif.minimize")}
               </button>
             </div>
