@@ -138,6 +138,10 @@ export const dict: Record<"id" | "en", Record<string, string>> = {
     "wif.statusInterfered": "Terganggu",
     "wif.yes": "Ya",
     "wif.no": "Tidak",
+    "wif.minimize": "Perkecil",
+    "wif.expand": "Perbesar",
+    "wif.focusMode": "Mode Fokus",
+    "wif.exitFocus": "Keluar Fokus",
   },
   en: {
     "wif.title": "WiFi Simulator",
@@ -278,5 +282,9 @@ export const dict: Record<"id" | "en", Record<string, string>> = {
     "wif.statusInterfered": "Interfered",
     "wif.yes": "Yes",
     "wif.no": "No",
+    "wif.minimize": "Minimize",
+    "wif.expand": "Expand",
+    "wif.focusMode": "Focus Mode",
+    "wif.exitFocus": "Exit Focus",
   },
 };

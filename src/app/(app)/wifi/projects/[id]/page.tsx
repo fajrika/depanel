@@ -93,6 +93,8 @@ export default function WifiEditorPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [showPanel, setShowPanel] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
 
   // refs agar draw loop & event handler tidak stale-closure
   const stateRef = useRef({ project, floors, activeFloorId, walls, aps, view, view3d, iso, isoOpacity, otherApOpacity, tool, mode, bandFilter, selectedApId, selectedWallId, measure, draftWall, wallMaterial, sim, simsByFloor, pointInfo });
@@ -1368,7 +1370,56 @@ export default function WifiEditorPage() {
       onKeyDown={onKeyDown}
       tabIndex={0}
     >
-      {/* toolbar */}
+      {/* toolbar minimal — tampil saat toolbarCollapsed */}
+      {toolbarCollapsed && (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <button onClick={() => router.push("/wifi/projects")} className="rounded-lg px-2 py-1.5 text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" title={t("wif.back")}>←</button>
+          <span className="max-w-[140px] truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{project.name}</span>
+          <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/60">
+            {floors.map((f) => (
+              <button key={f.id} onClick={() => { setActiveFloorId(f.id); setPointInfo(null); }}
+                className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${activeFloor?.id === f.id ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"}`}>
+                {f.name}
+              </button>
+            ))}
+          </div>
+          <span className="mx-0.5 h-4 w-px bg-slate-200 dark:bg-slate-700" />
+          <div className="flex rounded-xl border border-slate-200 bg-white p-0.5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            {([
+              { id: "signal", label: t("wif.mode.signal") },
+              { id: "sinr", label: t("wif.mode.sinr") },
+              { id: "dead", label: t("wif.mode.dead") },
+              { id: "coverage", label: t("wif.mode.coverage") },
+            ] as { id: Mode; label: string }[]).map((m) => (
+              <button key={m.id} onClick={() => setMode(m.id)} className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${mode === m.id ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"}`}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex rounded-xl border border-slate-200 bg-white p-0.5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            {([
+              { id: "ALL", label: t("wif.bandAll") },
+              { id: "BAND_2_4", label: "2.4" },
+              { id: "BAND_5", label: "5" },
+              { id: "BAND_6", label: "6 GHz" },
+            ] as { id: "ALL" | WifiBand; label: string }[]).map((b) => (
+              <button key={b.id} onClick={() => setBandFilter(b.id)} className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${bandFilter === b.id ? "bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900" : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"}`}>
+                {b.label}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => { setView3d(!view3d); setPointInfo(null); }}
+            className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${view3d ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"}`}>
+            {view3d ? t("wif.view2d") : "🧊 " + t("wif.view3d")}
+          </button>
+          <button onClick={() => setToolbarCollapsed(false)} className="ml-auto rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" title={t("wif.expand")}>
+            ⛶ {t("wif.expand")}
+          </button>
+        </div>
+      )}
+
+      {/* toolbar penuh */}
+      {!toolbarCollapsed && (
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <button onClick={() => router.push("/wifi/projects")} className="rounded-lg px-2 py-1.5 text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" title={t("wif.back")}>
           ←
@@ -1532,10 +1583,15 @@ export default function WifiEditorPage() {
           <button onClick={exportPng} className="rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-white dark:bg-slate-100 dark:text-slate-900">
             ⬇ PNG
           </button>
+          <button onClick={() => setToolbarCollapsed(true)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800" title={t("wif.minimize")}>
+            ⊟
+          </button>
         </div>
       </div>
+      )}
 
       {/* bar status */}
+      {!toolbarCollapsed && (
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           {(
@@ -1602,6 +1658,7 @@ export default function WifiEditorPage() {
           </label>
         </div>
       </div>
+      )}
 
       <div className="flex min-h-0 flex-1 gap-2">
         {/* canvas */}
@@ -1726,8 +1783,23 @@ export default function WifiEditorPage() {
         </div>
 
         {/* panel samping */}
-        {showPanel && (
+        {sidebarCollapsed ? (
+          <button
+            onClick={() => setSidebarCollapsed(false)}
+            title={t("wif.expand")}
+            className="flex w-8 shrink-0 cursor-pointer flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+          >
+            <span className="[writing-mode:vertical-rl] rotate-180 select-none text-[11px] font-medium text-slate-500">
+              ◀ {t("wif.expand")}
+            </span>
+          </button>
+        ) : (
           <aside className="w-72 shrink-0 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex justify-end">
+              <button onClick={() => setSidebarCollapsed(true)} title={t("wif.minimize")} className="rounded-lg px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+                ▶ {t("wif.minimize")}
+              </button>
+            </div>
             {floorPanelId ? (
               (() => {
                 const fp = floors.find((f) => f.id === floorPanelId);
