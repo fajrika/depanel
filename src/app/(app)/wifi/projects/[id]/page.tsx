@@ -1205,6 +1205,25 @@ export default function WifiEditorPage() {
     setView({ x: sx - wx * nk, y: sy - wy * nk, scale: ns });
   }
 
+  function zoomBy(factor: number) {
+    const s = stateRef.current;
+    if (!s.project) return;
+    if (s.view3d) {
+      setIso((i) => ({ ...i, zoom: Math.min(6, Math.max(0.2, i.zoom * factor)) }));
+      return;
+    }
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const sx = canvas.width / 2;
+    const sy = canvas.height / 2;
+    const k = s.project.scalePxPerM * s.view.scale;
+    const wx = (sx - s.view.x) / k;
+    const wy = (sy - s.view.y) / k;
+    const ns = Math.min(8, Math.max(0.2, s.view.scale * factor));
+    const nk = s.project.scalePxPerM * ns;
+    setView({ x: sx - wx * nk, y: sy - wy * nk, scale: ns });
+  }
+
   function onKeyDown(e: React.KeyboardEvent) {
     const s = stateRef.current;
     if (e.key === "Escape") {
@@ -1408,6 +1427,10 @@ export default function WifiEditorPage() {
               </button>
             ))}
           </div>
+          <div className="flex items-center rounded-lg border border-slate-200 dark:border-slate-700">
+            <button onClick={() => zoomBy(1 / 1.25)} className="h-8 w-8 rounded-l-lg text-base font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" title="Zoom out">−</button>
+            <button onClick={() => zoomBy(1.25)} className="h-8 w-8 rounded-r-lg text-base font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" title="Zoom in">+</button>
+          </div>
           <button onClick={() => { setView3d(!view3d); setPointInfo(null); }}
             className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${view3d ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"}`}>
             {view3d ? t("wif.view2d") : "🧊 " + t("wif.view3d")}
@@ -1559,6 +1582,10 @@ export default function WifiEditorPage() {
               ⟳ {t("wif.rotate3d")}
             </button>
           )}
+          <div className="flex items-center rounded-lg border border-slate-200 dark:border-slate-700">
+            <button onClick={() => zoomBy(1 / 1.25)} className="h-8 w-8 rounded-l-lg text-base font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" title="Zoom out">−</button>
+            <button onClick={() => zoomBy(1.25)} className="h-8 w-8 rounded-r-lg text-base font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800" title="Zoom in">+</button>
+          </div>
           <button
             onClick={() => {
               setView3d(!view3d);
