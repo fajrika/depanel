@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import TimeField from "@/components/TimeField";
 import { useLang } from "@/lib/i18n";
 
-type CreditRow = { id: number; type: string; description: string; amount: string; balance_after: string; created_at: string };
+type CreditRow = { id: string | number; type: string; description: string; amount: number; balance_after: number; created_at: string };
 type DepositRow = {
   id: string;
   invoice_number?: string;
@@ -54,10 +54,6 @@ function rupiah(n?: number): string {
   return n.toLocaleString("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 }
 
-function parseAmount(str?: string): number {
-  if (!str) return 0;
-  return parseFloat(str.replace(/[Rp.,\s]/g, "").replace(",", ".")) || 0;
-}
 
 function fmtDate(d?: string): string {
   if (!d) return "—";
@@ -514,11 +510,11 @@ export default function FinancialReportPage() {
                     <td className={td}>{fmtDate(c.created_at)}</td>
                     <td className={td}>{c.account}</td>
                     <td className={td}>
-                      <span className={c.type === "Deduct" ? "text-red-600" : "text-emerald-600"}>{c.type}</span>
+                      <span className={c.type === "D" ? "text-red-600" : "text-emerald-600"}>{c.type === "D" ? "Deduct" : "Add"}</span>
                     </td>
                     <td className={td + " max-w-xs truncate"}>{c.description}</td>
-                    <td className={td + " text-right font-mono"}>{c.amount}</td>
-                    <td className={td + " text-right font-mono"}>{c.balance_after}</td>
+                    <td className={td + " text-right font-mono"}>{rupiah(c.amount)}</td>
+                    <td className={td + " text-right font-mono"}>{rupiah(c.balance_after)}</td>
                   </tr>
                 ))}
               </tbody>

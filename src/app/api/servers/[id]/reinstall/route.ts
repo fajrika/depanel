@@ -9,7 +9,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const c = await serverCtx(id, { staffOnly: true });
   if (c instanceof Response) return c;
   try {
-    const systems = await c.client.systems();
+    const systems = await c.client.systems(c.server.location);
     return NextResponse.json({ ok: true, data: { systems } });
   } catch (e) {
     return NextResponse.json({ ok: false, message: (e as Error).message }, { status: 400 });

@@ -136,7 +136,7 @@ automatically.
 | `DATABASE_URL` | SQLite location, e.g. `file:./dev.db` |
 | `APP_SECRET` | JWT session signing key |
 | `ENCRYPTION_KEY` | 64 hex chars (32 bytes) — encrypts depa API keys & DB passwords |
-| `DEPA_API_BASE` | depa API base, default `https://api.depa.id/v1` |
+| `DEPA_API_BASE` | depa API base, default `https://api.depa.id/api` |
 | `RECONCILE_CRON` | optional, worker reconcile cadence (default `*/5 * * * *`) |
 | `SEED_ADMIN_EMAIL` | optional, first-boot default admin email (default `admin@depanel.local`) |
 | `SEED_ADMIN_PASSWORD` | optional, first-boot default admin password (default `admin`) |

@@ -10,7 +10,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     const [rules, def, types] = await Promise.all([
       c.client.firewallRules(c.server.uuid),
-      c.client.firewallDefault(c.server.uuid).catch(() => null),
+      c.client.firewallOptions(c.server.uuid).catch(() => null),
       c.client.firewallRuleTypes().catch(() => null),
     ]);
     return NextResponse.json({ ok: true, data: { rules, default: def, types } });

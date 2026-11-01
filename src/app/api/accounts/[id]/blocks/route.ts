@@ -11,7 +11,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   try {
     const [blocks, options] = await Promise.all([
       c.client.blocks(loc ? { location_id: Number(loc), limit: 100 } : { limit: 100 }),
-      loc ? c.client.blockOptions(Number(loc)).catch(() => null) : Promise.resolve(null),
+      loc ? c.client.blockOptions().catch(() => null) : Promise.resolve(null),
     ]);
     return NextResponse.json({ ok: true, data: { blocks, options } });
   } catch (e) {

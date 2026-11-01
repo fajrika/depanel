@@ -10,7 +10,7 @@ void ({} as PowerAction); // keep type import tree-shakeable
 
 export type ServerCtx = {
   user: { id: string; name: string; email: string; role: string };
-  server: { id: string; uuid: string; hostname: string; accountId: string; teamId: string };
+  server: { id: string; uuid: string; hostname: string; accountId: string; teamId: string; location: string | null };
   client: DepaClient;
 };
 
@@ -28,7 +28,7 @@ export async function serverCtx(
 
   const s = await prisma.server.findUnique({
     where: { id: serverId },
-    select: { id: true, uuid: true, hostname: true, accountId: true, account: { select: { teamId: true } } },
+    select: { id: true, uuid: true, hostname: true, accountId: true, location: true, account: { select: { teamId: true } } },
   });
   if (!s?.account.teamId) return NextResponse.json({ ok: false, message: "Server tidak ditemukan" }, { status: 404 });
 
@@ -41,7 +41,7 @@ export async function serverCtx(
   }
 
   const client = await clientForAccount(s.accountId);
-  return { user, server: { id: s.id, uuid: s.uuid, hostname: s.hostname, accountId: s.accountId, teamId: s.account.teamId }, client };
+  return { user, server: { id: s.id, uuid: s.uuid, hostname: s.hostname, accountId: s.accountId, teamId: s.account.teamId, location: s.location }, client };
 }
 
 /**

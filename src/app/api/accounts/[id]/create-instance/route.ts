@@ -15,6 +15,13 @@ const schema = z.object({
   username: z.string().default("root"),
   password: z.string().min(6),
   use_dedicated_cpu: z.boolean().optional(),
+  // Kontrak V2 juga mewajibkan field berikut; diteruskan apa adanya bila dikirim.
+  is_cpu_shared: z.boolean().optional(),
+  include_backup: z.boolean().optional(),
+  use_public_ip: z.boolean().optional(),
+  public_network: z.string().optional(),
+  vswitch: z.string().nullable().optional(),
+  ssh_keys: z.array(z.number().int()).nullable().optional(),
 });
 
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {

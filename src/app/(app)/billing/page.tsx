@@ -23,7 +23,7 @@ type AccountEntry = {
 
 type Paged<T> = { data?: T[]; page?: { total?: number } } | null;
 
-type CreditRow = { id: number; type: string; description: string; amount: string; balance_after: string; created_at: string };
+type CreditRow = { id: string | number; type: string; description: string; amount: number; balance_after: number; created_at: string };
 type DepositRow = {
   id: string;
   invoice_number: string;
@@ -250,13 +250,13 @@ export default function BillingPage() {
                       rows<CreditRow>(detail.credit).map((r) => (
                         <tr key={r.id} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50">
                           <td className={td}>
-                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${r.type === "Add" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400" : "bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-400"}`}>
-                              {r.type === "Add" ? `+ ${t("bil.creditIn")}` : `− ${t("bil.creditOut")}`}
+                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${r.type === "A" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400" : "bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-400"}`}>
+                              {r.type === "A" ? `+ ${t("bil.creditIn")}` : `− ${t("bil.creditOut")}`}
                             </span>
                           </td>
                           <td className={`${td} max-w-md`}>{r.description}</td>
-                          <td className={`${td} text-right tabular-nums`}>{r.amount}</td>
-                          <td className={`${td} text-right tabular-nums`}>{r.balance_after}</td>
+                          <td className={`${td} text-right tabular-nums`}>{rupiah(r.amount)}</td>
+                          <td className={`${td} text-right tabular-nums`}>{rupiah(r.balance_after)}</td>
                           <td className={`${td} whitespace-nowrap text-xs`}>{r.created_at}</td>
                         </tr>
                       ))

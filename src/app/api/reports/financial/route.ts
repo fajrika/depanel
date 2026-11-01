@@ -70,9 +70,9 @@ export async function GET(req: Request) {
       // Fetch all data in parallel
       const [summaryRes, creditRes, depositRes, reportsRes] = await Promise.allSettled([
         client.billingSummary(),
-        client.creditHistory({ start: start ?? undefined, end: end ?? undefined }),
-        client.depositHistory({ start: start ?? undefined, end: end ?? undefined }),
-        client.billingReports(),
+        client.creditHistory({ all: true, start: start ?? undefined, end: end ?? undefined }),
+        client.depositHistory({ all: true, start: start ?? undefined, end: end ?? undefined }),
+        client.billingReports({ all: true }),
       ]);
 
       const summary = summaryRes.status === "fulfilled" ? summaryRes.value : null;
@@ -82,8 +82,8 @@ export async function GET(req: Request) {
 
       // Fetch report details for each report
       const reportDetails: ReportDetailService[] = [];
-      if (reports && typeof reports === "object") {
-        const reportList = (reports as { data?: ReportSummary[] }).data ?? [];
+      if (reports) {
+        const reportList = reports.data as unknown as ReportSummary[];
         for (const report of reportList) {
           // Filter reports within date range if specified
           if (start || end) {
@@ -106,25 +106,17 @@ export async function GET(req: Request) {
         }
       }
 
-      // Parse credit data — depa client returns body.data, so shape is { data: [...], page }
-      const creditRaw = credit && typeof credit === "object" ? credit as Record<string, unknown> : null;
-      const creditData = Array.isArray(creditRaw?.data) ? creditRaw!.data as Array<{ type: string; amount: string; description: string; created_at: string; balance_after: string }> : [];
-
-      // Parse deposit data
-      const depositRaw = deposits && typeof deposits === "object" ? deposits as Record<string, unknown> : null;
-      const depositData = Array.isArray(depositRaw?.data) ? depositRaw!.data as Array<{ id: string; description: string; detail?: { amount: number; vat: number; payment_fee: number }; method: string; status: string; created_at: string }> : [];
+      // credit/deposits sudah dinormalisasi klien: { data: [...], page }
+      const creditData = (credit?.data ?? []) as unknown as Array<{ type: string; amount: number; description: string; created_at: string; balance_after: number }>;
+      const depositData = (deposits?.data ?? []) as unknown as Array<{ id: string; description: string; invoice_number?: string; detail?: { amount: number; vat: number; payment_fee: number }; method: string; status: string; created_at: string }>;
 
       // Calculate totals
       const totalTopup = depositData
         .filter((d) => d.status === "SUCCESS")
         .reduce((sum, d) => sum + (d.detail?.amount ?? 0), 0);
       const totalDeduct = creditData
-        .filter((c) => c.type === "Deduct")
-        .reduce((sum, c) => {
-          // Parse "Rp3.483.790,40" format
-          const amount = parseFloat(c.amount.replace(/[Rp.,\s]/g, "").replace(",", ".")) || 0;
-          return sum + amount;
-        }, 0);
+        .filter((c) => c.type === "D") // V2: "A" = saldo bertambah, "D" = berkurang
+        .reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
 
       results.push({
         accountName: account.name,

@@ -10,8 +10,8 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   if (c instanceof Response) return c;
   const tierId = new URL(request.url).searchParams.get("tier_id");
   try {
-    const tiers = await c.client.tiers();
-    const price = tierId ? await c.client.changeTierPrice(c.server.uuid, Number(tierId)).catch(() => null) : null;
+    const tiers = await c.client.tiers(c.server.location);
+    const price = tierId ? await c.client.changeTierPrice(Number(tierId)).catch(() => null) : null;
     return NextResponse.json({ ok: true, data: { tiers, price } });
   } catch (e) {
     return NextResponse.json({ ok: false, message: (e as Error).message }, { status: 400 });
