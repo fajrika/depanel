@@ -97,7 +97,8 @@ export async function runDuePanelBackups(now: Date = new Date()): Promise<string
 }
 
 /** Ambil file run (download): untuk destinasi remote via fetchBackup. */
-export async function fetchRunFile(run: { location: string | null; panelBackup: { destType: string; destPath: string | null; destId: string | null } }, targetPath: string): Promise<string> {
+export async function fetchRunFile(run: { location: string | null; panelBackup: { destType: string; destPath: string | null; destId: string | null } }, _targetPath: string): Promise<string> {
   const cfg = await destCfgFrom(run.panelBackup);
-  return fetchBackup(run.panelBackup.destType, cfg, run.location ?? "", targetPath, run.panelBackup.destId ?? undefined);
+  // fetchBackup menentukan file sementaranya sendiri; pemanggil memakai path yang dikembalikan.
+  return fetchBackup(run.panelBackup.destType, cfg, run.location ?? "", run.panelBackup.destId ?? undefined);
 }

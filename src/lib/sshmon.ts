@@ -146,7 +146,14 @@ function parseUptime(out: string): number | undefined {
   return sec === undefined ? undefined : Math.round(sec);
 }
 
-function parseMeminfo(out: string): { memTotalMb?: number; memUsedMb?: number; memPct?: number } {
+function parseMeminfo(out: string): {
+  memTotalMb?: number;
+  memUsedMb?: number;
+  memPct?: number;
+  swapTotalMb?: number;
+  swapUsedMb?: number;
+  swapPct?: number;
+} {
   const kv: Record<string, number> = {};
   for (const line of out.split("\n")) {
     const m = line.match(/^(\w+):\s+(\d+)/);

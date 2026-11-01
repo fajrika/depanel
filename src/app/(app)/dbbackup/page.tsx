@@ -202,8 +202,8 @@ export default function DbBackupPage() {
     const params = new URLSearchParams(window.location.search);
     const ok = params.get("gdrive_ok");
     const err = params.get("gdrive_error");
-    const t = params.get("tab");
-    if (t === "tujuan") setTab("tujuan");
+    const tabParam = params.get("tab");
+    if (tabParam === "tujuan") setTab("tujuan");
     if (ok) {
       setMsg({ text: `✅ ${t("dbp.msgGdriveConnected")} ${ok}`, ok: true });
       window.history.replaceState({}, "", window.location.pathname);
