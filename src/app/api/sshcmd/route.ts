@@ -46,7 +46,7 @@ export async function GET() {
       ...JOB_SELECT,
       runs: {
         orderBy: { startedAt: "desc" },
-        take: 5,
+        take: 50,
         select: { id: true, status: true, exitCode: true, output: true, error: true, startedAt: true, endedAt: true },
       },
     },
