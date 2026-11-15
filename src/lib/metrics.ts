@@ -2,8 +2,6 @@
 import { prisma } from "./db";
 import { clientForAccount } from "./power";
 
-type RrdPoint = { cpu?: number; raw_max_memory?: number; raw_usage_memory?: number };
-
 /** Take one sample per server (status always; cpu/mem best-effort for running ones). */
 export async function sampleAllMetrics(): Promise<number> {
   const servers = await prisma.server.findMany({
@@ -19,17 +17,14 @@ export async function sampleAllMetrics(): Promise<number> {
     if (s.status === "running") {
       try {
         const client = await clientForAccount(s.accountId);
-        const rrd = (await client.metrics(s.uuid, "hour")) as {
-          cpu?: RrdPoint[];
-          memory?: RrdPoint[];
-        };
-        const cpuArr = rrd.cpu ?? [];
-        const memArr = rrd.memory ?? [];
+        const rrd = await client.metrics(s.uuid, "hour");
+        const cpuArr = rrd.cpu;
+        const memArr = rrd.memory;
         // second-to-last point (last is the in-progress zero bucket)
         const cp = cpuArr.length >= 2 ? cpuArr[cpuArr.length - 2] : cpuArr.at(-1);
         const mp = memArr.length >= 2 ? memArr[memArr.length - 2] : memArr.at(-1);
         if (typeof cp?.cpu === "number") cpu = Math.round(cp.cpu * 10) / 10;
-        if (mp && mp.raw_max_memory) memPct = Math.round(((mp.raw_usage_memory ?? 0) / mp.raw_max_memory) * 1000) / 10;
+        if (mp && mp.maxGb) memPct = Math.round((mp.usedGb / mp.maxGb) * 1000) / 10;
       } catch {
         /* rate-limit / transient — record status only */
       }

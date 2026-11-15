@@ -10,12 +10,7 @@ import ManagePanel from "@/components/ManagePanel";
 import ConsolePanel from "@/components/ConsolePanel";
 import { useLang } from "@/lib/i18n";
 
-type Rrd = {
-  cpu?: { time: string; cpu: number }[];
-  memory?: { time: string; raw_max_memory: number; raw_usage_memory: number }[];
-  network?: { time: string; raw_netin: number; raw_netout: number }[];
-  disk?: { time: string; raw_diskwrite: number; raw_diskread: number }[];
-};
+import type { RrdNorm as Rrd } from "@/lib/depa";
 
 type Detail = Record<string, unknown> & {
   hostname?: string;
@@ -52,10 +47,12 @@ function rupiah(n?: number): string {
   return n.toLocaleString("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 }
 
-function fmtMb(v: number): string {
-  if (v >= 1024) return `${(v / 1024).toFixed(2)} Gb`;
-  if (v >= 1) return `${v.toFixed(2)} Mb`;
-  return `${Math.round(v * 1000)} Kb`;
+/** Byte per detik → teks ringkas (B/s, KB/s, MB/s, GB/s). */
+function fmtBps(v: number): string {
+  const u = ["B/s", "KB/s", "MB/s", "GB/s"];
+  let i = 0;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(i === 0 ? 0 : v < 10 ? 2 : 1)} ${u[i]}`;
 }
 
 /** Buang sampel RRD terakhir (bucket menit berjalan, selalu 0). */
@@ -309,10 +306,10 @@ export default function ServerMonitor({
                 <MetricChart
                   title={t("sm.chartMem")}
                   subtitle={t("sm.chartMemSub")}
-                  yMax={rrd.memory?.length ? Math.max(...rrd.memory.map((p) => p.raw_max_memory)) : undefined}
+                  yMax={rrd.memory.length ? Math.max(...rrd.memory.map((p) => p.maxGb)) : undefined}
                   format={(v) => `${v.toFixed(2)} GB`}
                   series={[
-                    { label: t("sm.used"), color: "#10b981", fill: "rgba(16,185,129,0.12)", points: trim(rrd.memory).map((p) => ({ t: p.time, v: p.raw_usage_memory })) },
+                    { label: t("sm.used"), color: "#10b981", fill: "rgba(16,185,129,0.12)", points: trim(rrd.memory).map((p) => ({ t: p.time, v: p.usedGb })) },
                   ]}
                 />
               </div>
@@ -320,10 +317,10 @@ export default function ServerMonitor({
                 <MetricChart
                   title={t("sm.chartNet")}
                   subtitle={t("sm.chartNetSub")}
-                  format={fmtMb}
+                  format={fmtBps}
                   series={[
-                    { label: t("sm.in"), color: "#0ea5e9", fill: "rgba(14,165,233,0.10)", points: trim(rrd.network).map((p) => ({ t: p.time, v: p.raw_netin })) },
-                    { label: t("sm.out"), color: "#f59e0b", points: trim(rrd.network).map((p) => ({ t: p.time, v: p.raw_netout })) },
+                    { label: t("sm.in"), color: "#0ea5e9", fill: "rgba(14,165,233,0.10)", points: trim(rrd.network).map((p) => ({ t: p.time, v: p.inBps })) },
+                    { label: t("sm.out"), color: "#f59e0b", points: trim(rrd.network).map((p) => ({ t: p.time, v: p.outBps })) },
                   ]}
                 />
               </div>
@@ -331,10 +328,10 @@ export default function ServerMonitor({
                 <MetricChart
                   title={t("sm.chartDisk")}
                   subtitle={t("sm.chartDiskSub")}
-                  format={fmtMb}
+                  format={fmtBps}
                   series={[
-                    { label: t("sm.write"), color: "#8b5cf6", fill: "rgba(139,92,246,0.10)", points: trim(rrd.disk).map((p) => ({ t: p.time, v: p.raw_diskwrite })) },
-                    { label: t("sm.read"), color: "#ec4899", points: trim(rrd.disk).map((p) => ({ t: p.time, v: p.raw_diskread })) },
+                    { label: t("sm.write"), color: "#8b5cf6", fill: "rgba(139,92,246,0.10)", points: trim(rrd.disk).map((p) => ({ t: p.time, v: p.writeBps })) },
+                    { label: t("sm.read"), color: "#ec4899", points: trim(rrd.disk).map((p) => ({ t: p.time, v: p.readBps })) },
                   ]}
                 />
               </div>

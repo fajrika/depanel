@@ -131,6 +131,34 @@ export function normalizeDetail(raw: Record<string, unknown>): Record<string, un
 }
 
 type Row = Record<string, unknown>;
+
+/**
+ * RRD V2 (Proxmox) → satuan tampilan yang konsisten.
+ * Mentah dari depa: `cpu` pecahan 0–1, `raw_*_memory` byte, `raw_net*`/`raw_disk*` byte per detik.
+ * Hasil: cpu persen (0–100), memory GB, network & disk byte/detik.
+ */
+export type RrdNorm = {
+  cpu: { time: string; cpu: number }[];
+  memory: { time: string; usedGb: number; maxGb: number }[];
+  network: { time: string; inBps: number; outBps: number }[];
+  disk: { time: string; readBps: number; writeBps: number }[];
+};
+export function normalizeRrd(raw: unknown): RrdNorm {
+  const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const arr = (k: string) => (Array.isArray(o[k]) ? (o[k] as Record<string, unknown>[]) : []);
+  const num = (v: unknown) => (typeof v === "number" ? v : Number(v)) || 0;
+  const GB = 1024 ** 3;
+  const cpuRaw = arr("cpu");
+  // Proxmox selalu pecahan; bila suatu saat depa sudah kirim persen (>1.5), jangan dikali lagi.
+  const pecahan = cpuRaw.every((p) => num(p.cpu) <= 1.5);
+  return {
+    cpu: cpuRaw.map((p) => ({ time: String(p.time), cpu: Math.min(100, num(p.cpu) * (pecahan ? 100 : 1)) })),
+    memory: arr("memory").map((p) => ({ time: String(p.time), usedGb: num(p.raw_usage_memory) / GB, maxGb: num(p.raw_max_memory) / GB })),
+    network: arr("network").map((p) => ({ time: String(p.time), inBps: num(p.raw_netin), outBps: num(p.raw_netout) })),
+    disk: arr("disk").map((p) => ({ time: String(p.time), readBps: num(p.raw_diskread), writeBps: num(p.raw_diskwrite) })),
+  };
+}
+
 type PageMeta = { total?: number; count?: number; per_page?: number; current_page?: number; total_pages?: number };
 export interface PagedRows {
   data: Row[];
@@ -337,8 +365,9 @@ export function depaClient(apiKey: string) {
       return call(`${vm(uuid)}/restart`, { method: "PATCH" });
     },
 
+    /** Metrik RRD (sudah dinormalkan satuannya, lihat `normalizeRrd`). */
     async metrics(uuid: string, periode: string = "day") {
-      return call(`${vm(uuid)}/rrd`, { query: { periode } });
+      return normalizeRrd(await call<Row>(`${vm(uuid)}/rrd`, { query: { periode } }));
     },
 
     /** Detail instance dari depa (price, cost, os, ips, timestamps, ...), kunci tampilan dilengkapi. */
