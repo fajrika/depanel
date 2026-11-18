@@ -17,6 +17,6 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   }
 
   const offset = Math.max(0, Number(new URL(request.url).searchParams.get("offset") ?? 0) || 0);
-  const data = await getHealthStats(id, { offsetDays: offset });
+  const data = await getHealthStats(id, { offsetDays: offset, window: hc });
   return NextResponse.json({ ok: true, data: { ...data, offset } });
 }

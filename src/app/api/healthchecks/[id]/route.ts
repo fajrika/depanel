@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { canUseFeature } from "@/lib/team";
 import { logActivity } from "@/lib/power";
+import { isValidTimezone, parseHHMM } from "@/lib/healthcheck-window";
 
 const patchSchema = z.object({
   name: z.string().min(1).optional(),
@@ -14,6 +15,10 @@ const patchSchema = z.object({
   intervalMin: z.coerce.number().int().min(1).max(1440).optional(),
   timeoutSec: z.coerce.number().int().min(1).max(120).optional(),
   enabled: z.boolean().optional(),
+  scheduleMode: z.enum(["always", "only", "skip"]).optional(),
+  windowStart: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/, "Format jam harus HH:MM").nullable().optional(),
+  windowEnd: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/, "Format jam harus HH:MM").nullable().optional(),
+  timezone: z.string().refine(isValidTimezone, "Zona waktu tidak valid").optional(),
 });
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -40,6 +45,21 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       }
     } else {
       d.groupId = null;
+    }
+  }
+
+  // validasi jendela waktu terhadap nilai gabungan (lama + perubahan)
+  const mode = d.scheduleMode ?? hc.scheduleMode;
+  if (mode === "always") {
+    if (d.scheduleMode !== undefined) {
+      d.windowStart = null;
+      d.windowEnd = null;
+    }
+  } else {
+    const ws = d.windowStart !== undefined ? d.windowStart : hc.windowStart;
+    const we = d.windowEnd !== undefined ? d.windowEnd : hc.windowEnd;
+    if (parseHHMM(ws) === null || parseHHMM(we) === null || parseHHMM(ws) === parseHHMM(we)) {
+      return NextResponse.json({ ok: false, message: "Jam mulai & selesai jadwal wajib diisi dan tidak boleh sama" }, { status: 400 });
     }
   }
 

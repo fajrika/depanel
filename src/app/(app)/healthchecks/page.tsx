@@ -18,7 +18,47 @@ type Hc = {
   lastCheckAt: string | null;
   lastUpAt: string | null;
   uptimePct: number | null;
+  scheduleMode?: string;
+  windowStart?: string | null;
+  windowEnd?: string | null;
+  timezone?: string;
+  inWindow?: boolean;
+  windowLabel?: string;
 };
+
+const TIMEZONES = ["Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura", "UTC"];
+
+/** Unduh file dari endpoint; kembalikan pesan error bila gagal. */
+async function downloadFile(url: string): Promise<string | null> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const d = await res.json().catch(() => null);
+    return d?.message ?? `HTTP ${res.status}`;
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get("Content-Disposition") ?? "";
+  const name = cd.match(/filename="([^"]+)"/)?.[1] ?? "laporan.pdf";
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 10_000);
+  return null;
+}
+
+/** Penanda kecil "di luar jam aktif". */
+function OffWindowTag({ c }: { c: Hc }) {
+  const { t } = useLang();
+  if (c.inWindow !== false) return null;
+  return (
+    <span title={c.windowLabel} className="shrink-0 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 ring-1 ring-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:ring-indigo-900">
+      🌙 {t("hc.offWindow")}
+    </span>
+  );
+}
 
 type Sample = {
   t: string;
@@ -138,6 +178,7 @@ function HealthDetail({
   onToggleExpand,
   onOffset,
   onClose,
+  onPdf,
 }: {
   c: Hc;
   stats?: HcStats;
@@ -147,6 +188,7 @@ function HealthDetail({
   onToggleExpand: (id: string, which: "h24" | "d30") => void;
   onOffset: (id: string, offset: number) => void;
   onClose: () => void;
+  onPdf?: (c: Hc) => void;
 }) {
   const { t } = useLang();
   const up = c.lastStatus === "up";
@@ -161,7 +203,7 @@ function HealthDetail({
         <div className="flex min-w-0 items-center gap-4">
           <StatusBadge status={c.lastStatus} />
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold text-slate-900 dark:text-slate-100">{c.name}</h2>
+            <h2 className="flex items-center gap-2 truncate text-lg font-semibold text-slate-900 dark:text-slate-100">{c.name} <OffWindowTag c={c} /></h2>
             <p className="truncate text-xs text-slate-500 dark:text-slate-400">{c.method} {c.url}</p>
             <p className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
               <span>{t("hc.intervalLabel").replace("{n}", String(c.intervalMin))}</span>
@@ -169,12 +211,25 @@ function HealthDetail({
               <span>{t("hc.expStatus").replace("{n}", String(c.expectedStatus))}</span>
               <span>·</span>
               <span>{t("hc.timeout")}: {c.timeoutSec}s</span>
+              {c.windowLabel && (
+                <>
+                  <span>·</span>
+                  <span>{t("hc.activeHours")}: {c.windowLabel}</span>
+                </>
+              )}
             </p>
           </div>
         </div>
-        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
-          {t("hc.close")}
-        </button>
+        <div className="flex items-center gap-2">
+          {onPdf && (
+            <button onClick={() => onPdf(c)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
+              📄 PDF
+            </button>
+          )}
+          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
+            {t("hc.close")}
+          </button>
+        </div>
       </div>
 
       <div className={`${card} p-5`}>
@@ -301,6 +356,17 @@ export default function HealthChecksPage() {
   const [fStatus, setFStatus] = useState("200");
   const [fInterval, setFInterval] = useState("1");
   const [fTimeout, setFTimeout] = useState("10");
+  const [fMode, setFMode] = useState("always");
+  const [fStart, setFStart] = useState("05:00");
+  const [fEnd, setFEnd] = useState("21:00");
+  const [fTz, setFTz] = useState("Asia/Jakarta");
+  const [showExport, setShowExport] = useState(false);
+  const [exDays, setExDays] = useState("30");
+  const [exFrom, setExFrom] = useState("");
+  const [exTo, setExTo] = useState("");
+  const [exGroup, setExGroup] = useState("");
+  const [exIds, setExIds] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
   const [groups, setGroups] = useState<HcGroup[]>([]);
   const [showGroupPanel, setShowGroupPanel] = useState(false);
   const [gName, setGName] = useState("");
@@ -376,6 +442,40 @@ export default function HealthChecksPage() {
     setFStatus("200");
     setFInterval("1");
     setFTimeout("10");
+    setFMode("always");
+    setFStart("05:00");
+    setFEnd("21:00");
+    setFTz("Asia/Jakarta");
+  }
+
+  async function exportPdf(params: URLSearchParams) {
+    setExporting(true);
+    setMsg(null);
+    const err = await downloadFile(`/api/healthchecks/report?${params.toString()}`);
+    setExporting(false);
+    if (err) setMsg({ text: `${t("hc.exportErr")}: ${err}`, ok: false });
+  }
+
+  function exportFromPanel(e: React.FormEvent) {
+    e.preventDefault();
+    const p = new URLSearchParams();
+    if (exDays === "custom") {
+      if (!exFrom || !exTo) {
+        setMsg({ text: t("hc.exportPickDates"), ok: false });
+        return;
+      }
+      p.set("from", exFrom);
+      p.set("to", exTo);
+    } else {
+      p.set("days", exDays);
+    }
+    if (exIds.size) p.set("ids", [...exIds].join(","));
+    else if (exGroup) p.set("groupId", exGroup);
+    void exportPdf(p);
+  }
+
+  function exportOne(c: Hc) {
+    void exportPdf(new URLSearchParams({ ids: c.id, days: "30" }));
   }
 
   function startEdit(c: Hc) {
@@ -387,6 +487,10 @@ export default function HealthChecksPage() {
     setFStatus(String(c.expectedStatus));
     setFInterval(String(c.intervalMin));
     setFTimeout(String(c.timeoutSec));
+    setFMode(c.scheduleMode ?? "always");
+    setFStart(c.windowStart ?? "05:00");
+    setFEnd(c.windowEnd ?? "21:00");
+    setFTz(c.timezone ?? "Asia/Jakarta");
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -403,6 +507,10 @@ export default function HealthChecksPage() {
       expectedStatus: Number(fStatus) || 200,
       intervalMin: Number(fInterval) || 1,
       timeoutSec: Number(fTimeout) || 10,
+      scheduleMode: fMode,
+      windowStart: fMode === "always" ? null : fStart,
+      windowEnd: fMode === "always" ? null : fEnd,
+      timezone: fTz,
     };
     const res = await fetch(editId ? `/api/healthchecks/${editId}` : "/api/healthchecks", {
       method: editId ? "PATCH" : "POST",
@@ -520,6 +628,9 @@ export default function HealthChecksPage() {
               ▦ {t("hc.viewGrid")}
             </button>
           </div>
+          <button onClick={() => setShowExport((s) => !s)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800">
+            📄 {t("hc.exportPdf")}
+          </button>
           <button onClick={() => { setShowForm(!showForm); setEditId(null); if (!showForm) resetForm(); }} className={btnPrimary}>
             {showForm ? t("hc.close") : t("hc.add")}
           </button>
@@ -531,6 +642,63 @@ export default function HealthChecksPage() {
           <span className="flex-1">{msg.text}</span>
           <button onClick={() => setMsg(null)} className="opacity-50 hover:opacity-100">✕</button>
         </div>
+      )}
+
+      {showExport && (
+        <form onSubmit={exportFromPanel} className={`${card} animate-fade-up space-y-4 p-5`}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">📄 {t("hc.exportTitle")}</h2>
+            <button type="button" onClick={() => setShowExport(false)} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">✕</button>
+          </div>
+          <div className="flex flex-wrap items-end gap-4">
+            <div>
+              <label className={label}>{t("hc.exportPeriod")}</label>
+              <select value={exDays} onChange={(e) => setExDays(e.target.value)} className={`${input} mt-1`}>
+                <option value="1">{t("hc.exportLast").replace("{n}", "1")}</option>
+                <option value="7">{t("hc.exportLast").replace("{n}", "7")}</option>
+                <option value="30">{t("hc.exportLast").replace("{n}", "30")}</option>
+                <option value="custom">{t("hc.exportCustom")}</option>
+              </select>
+            </div>
+            {exDays === "custom" && (
+              <>
+                <div><label className={label}>{t("hc.exportFrom")}</label><input type="date" value={exFrom} onChange={(e) => setExFrom(e.target.value)} className={`${input} mt-1`} /></div>
+                <div><label className={label}>{t("hc.exportTo")}</label><input type="date" value={exTo} onChange={(e) => setExTo(e.target.value)} className={`${input} mt-1`} /></div>
+              </>
+            )}
+            <div>
+              <label className={label}>{t("hc.group")}</label>
+              <select value={exGroup} onChange={(e) => { setExGroup(e.target.value); setExIds(new Set()); }} className={`${input} mt-1 w-44`}>
+                <option value="">{t("hc.exportAllGroups")}</option>
+                {groups.map((g) => (<option key={g.id} value={g.id}>{g.name}</option>))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <p className={label}>{t("hc.exportChecks")}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {checks
+                .filter((c) => !exGroup || c.group?.id === exGroup)
+                .map((c) => {
+                  const on = exIds.has(c.id);
+                  return (
+                    <button
+                      type="button"
+                      key={c.id}
+                      onClick={() => setExIds((prev) => { const n = new Set(prev); if (n.has(c.id)) n.delete(c.id); else n.add(c.id); return n; })}
+                      className={`rounded-full px-3 py-1 text-xs font-medium ring-1 transition ${on ? "bg-indigo-600 text-white ring-indigo-600" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700"}`}
+                    >
+                      {on ? "✓ " : ""}{c.name}
+                    </button>
+                  );
+                })}
+            </div>
+            <p className="mt-2 text-[11px] text-slate-400">{t("hc.exportHint")}</p>
+          </div>
+          <div className="flex justify-end">
+            <button disabled={exporting} className={btnPrimary}>{exporting ? t("hc.exporting") : t("hc.exportDownload")}</button>
+          </div>
+        </form>
       )}
 
       {showForm && (
@@ -562,6 +730,38 @@ export default function HealthChecksPage() {
             <div><label className={label}>{t("hc.expectedStatus")}</label><input type="number" min="100" max="599" value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={`${input} mt-1 w-20`} /></div>
             <div><label className={label}>{t("hc.interval")}</label><input type="number" min="1" max="1440" value={fInterval} onChange={(e) => setFInterval(e.target.value)} className={`${input} mt-1 w-20`} /></div>
             <div><label className={label}>{t("hc.timeout")}</label><input type="number" min="1" max="120" value={fTimeout} onChange={(e) => setFTimeout(e.target.value)} className={`${input} mt-1 w-20`} /></div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+            <div className="flex flex-wrap items-end gap-4">
+              <div>
+                <label className={label}>{t("hc.activeHours")}</label>
+                <select value={fMode} onChange={(e) => setFMode(e.target.value)} className={`${input} mt-1`}>
+                  <option value="always">{t("hc.modeAlways")}</option>
+                  <option value="only">{t("hc.modeOnly")}</option>
+                  <option value="skip">{t("hc.modeSkip")}</option>
+                </select>
+              </div>
+              {fMode !== "always" && (
+                <>
+                  <div><label className={label}>{t("hc.windowFrom")}</label><input type="time" required value={fStart} onChange={(e) => setFStart(e.target.value)} className={`${input} mt-1`} /></div>
+                  <div><label className={label}>{t("hc.windowTo")}</label><input type="time" required value={fEnd} onChange={(e) => setFEnd(e.target.value)} className={`${input} mt-1`} /></div>
+                  <div>
+                    <label className={label}>{t("hc.tz")}</label>
+                    <select value={fTz} onChange={(e) => setFTz(e.target.value)} className={`${input} mt-1`}>
+                      {(TIMEZONES.includes(fTz) ? TIMEZONES : [fTz, ...TIMEZONES]).map((z) => (<option key={z}>{z}</option>))}
+                    </select>
+                  </div>
+                </>
+              )}
+            </div>
+            <p className="mt-2 text-[11px] text-slate-400">
+              {fMode === "only"
+                ? t("hc.modeOnlyHint").replace("{a}", fStart).replace("{b}", fEnd)
+                : fMode === "skip"
+                  ? t("hc.modeSkipHint").replace("{a}", fStart).replace("{b}", fEnd)
+                  : t("hc.modeAlwaysHint")}
+            </p>
           </div>
 
           <div className="flex justify-end">
@@ -651,7 +851,7 @@ export default function HealthChecksPage() {
                           <div className="flex items-center gap-3">
                             <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${up ? "bg-emerald-500" : c.lastStatus === "down" ? "bg-red-500" : "bg-slate-300 dark:bg-slate-600"}`} />
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{c.name}</p>
+                              <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{c.name} <OffWindowTag c={c} /></p>
                               <p className="truncate text-xs text-slate-400">{c.url}</p>
                             </div>
                             <span className="shrink-0 text-[11px] tabular-nums text-slate-400">
@@ -687,6 +887,7 @@ export default function HealthChecksPage() {
                 onToggleExpand={onToggleExpand}
                 onOffset={onOffset}
                 onClose={() => setSelectedId(null)}
+                onPdf={exportOne}
               />
             ) : (
               <div className="flex min-h-[300px] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white/50 p-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
@@ -712,7 +913,7 @@ export default function HealthChecksPage() {
                         <div className="flex items-center gap-3 p-4 pb-2">
                           <StatusBadge status={c.lastStatus} />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{c.name}</p>
+                            <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{c.name} <OffWindowTag c={c} /></p>
                             <p className="truncate text-xs text-slate-400">{c.method} {c.url}</p>
                           </div>
                           {c.lastLatencyMs !== null && (
@@ -764,6 +965,7 @@ export default function HealthChecksPage() {
               onToggleExpand={onToggleExpand}
               onOffset={onOffset}
               onClose={() => setModalId(null)}
+              onPdf={exportOne}
             />
           </div>
         </div>
