@@ -2,19 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TimeField from "@/components/TimeField";
+import SshCmdHistory from "@/components/SshCmdHistory";
 import { useLang } from "@/lib/i18n";
 
 type SshOpt = { id: string; name: string; host: string; port: number; username: string };
-
-type Run = {
-  id: string;
-  status: string;
-  exitCode: number | null;
-  output: string | null;
-  error: string | null;
-  startedAt: string;
-  endedAt: string | null;
-};
 
 type Job = {
   id: string;
@@ -31,13 +22,12 @@ type Job = {
   lastStatus: string | null;
   lastRunAt: string | null;
   ssh: { id: string; name: string; host: string } | null;
-  runs: Run[];
+  _count?: { runs: number };
 };
 
 const DAY_NAMES = ["sshcmd.day.0", "sshcmd.day.1", "sshcmd.day.2", "sshcmd.day.3", "sshcmd.day.4", "sshcmd.day.5", "sshcmd.day.6"];
 
-function schedLabel(j: Job): string {
-  const { t } = useLang();
+function schedLabel(j: Job, t: (k: string) => string): string {
   if (j.scheduleType === "manual") return t("sshcmd.schedManual");
   if (j.scheduleType === "daily") return `${t("sshcmd.optDaily")} ${j.timeAt}`;
   if (j.scheduleType === "weekly") return `${t("sshcmd.optWeekly")}, ${t(DAY_NAMES[j.dayOn ?? 0])} ${j.timeAt}`;
@@ -265,7 +255,7 @@ export default function SshCmdPage() {
                     {j.ssh?.name ?? "?"} → {j.command}
                   </p>
                   <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                    {t("sshcmd.lastRun")} {fmtTime(j.lastRunAt)} · {schedLabel(j)} · {t("sshcmd.timeoutShort")} {j.timeoutSec}s
+                    {t("sshcmd.lastRun")} {fmtTime(j.lastRunAt)} · {schedLabel(j, t)} · {t("sshcmd.timeoutShort")} {j.timeoutSec}s
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs">
@@ -278,36 +268,12 @@ export default function SshCmdPage() {
                   <button onClick={() => remove(j)} disabled={busy} className="rounded-lg px-2.5 py-1.5 font-medium text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950">{t("sshcmd.delete")}</button>
                   <button onClick={() => setExpanded(expanded === j.id ? null : j.id)} className="rounded-lg px-2.5 py-1.5 font-medium text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
                     {expanded === j.id ? t("sshcmd.historyOpen") : t("sshcmd.historyClosed")}
+                    {j._count && j._count.runs > 0 && <span className="ml-1 tabular-nums text-slate-400">({j._count.runs})</span>}
                   </button>
                 </div>
               </div>
 
-              {expanded === j.id && (
-                <div className="border-t border-slate-100 dark:border-slate-800">
-                  {j.runs.length === 0 ? (
-                    <p className="px-4 py-3 text-xs text-slate-400">{t("sshcmd.noRuns")}</p>
-                  ) : (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {j.runs.map((r) => (
-                        <div key={r.id} className="space-y-1.5 px-4 py-2.5 text-xs">
-                          <div className="flex flex-wrap items-center gap-3">
-                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${r.status === "success" ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:ring-emerald-900" : r.status === "failed" ? "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/60 dark:text-red-400 dark:ring-red-900" : "bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/60 dark:text-sky-400 dark:ring-sky-900"}`}>{r.status}</span>
-                            <span className="text-slate-500 dark:text-slate-400">{fmtTime(r.startedAt)}</span>
-                            {r.exitCode != null && <span className="tabular-nums text-slate-500 dark:text-slate-400">{t("sshcmd.runExit")} {r.exitCode}</span>}
-                          </div>
-                          {r.output && (
-                            <>
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t("sshcmd.outputLabel")}</p>
-                              <pre className="max-h-48 overflow-auto rounded-lg bg-slate-50 p-2 font-mono text-[11px] leading-relaxed text-slate-700 dark:bg-slate-800/60 dark:text-slate-300">{r.output}</pre>
-                            </>
-                          )}
-                          {r.error && <p className="text-red-500">{r.error}</p>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              {expanded === j.id && <SshCmdHistory jobId={j.id} refreshKey={`${j.lastRunAt ?? ""}|${j.lastStatus ?? ""}`} />}
             </div>
           ))}
         </div>

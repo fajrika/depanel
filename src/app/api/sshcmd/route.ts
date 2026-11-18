@@ -44,11 +44,8 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
     select: {
       ...JOB_SELECT,
-      runs: {
-        orderBy: { startedAt: "desc" },
-        take: 50,
-        select: { id: true, status: true, exitCode: true, output: true, error: true, startedAt: true, endedAt: true },
-      },
+      // Riwayat eksekusi dimuat terpisah & dipaginasi lewat /api/sshcmd/[id]/runs.
+      _count: { select: { runs: true } },
     },
   });
   return NextResponse.json({ ok: true, data: jobs });
