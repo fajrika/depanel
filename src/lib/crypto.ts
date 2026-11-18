@@ -28,6 +28,15 @@ export function decryptSecret(payload: string): string {
   return Buffer.concat([decipher.update(Buffer.from(dataB64, "base64")), decipher.final()]).toString("utf8");
 }
 
+/**
+ * Decrypt a secret column that may legitimately be empty.
+ * Example: SshConnection.passwordEnc is stored as "" when authType = "key",
+ * so decrypting it unconditionally would throw "Format secret terenkripsi tidak valid.".
+ */
+export function decryptOptional(payload: string | null | undefined): string {
+  return payload ? decryptSecret(payload) : "";
+}
+
 /** Mask an API key for display, e.g. "ad87…u7pQ" */
 export function maskKey(plain: string): string {
   if (plain.length <= 8) return "••••";

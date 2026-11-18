@@ -15,7 +15,7 @@ import { Client as FtpClient } from "basic-ftp";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { CronExpressionParser } from "cron-parser";
 import { prisma } from "./db";
-import { decryptSecret } from "./crypto";
+import { decryptSecret, decryptOptional } from "./crypto";
 import { notifyTeam } from "./notify";
 import { getGDriveOAuthToken, gdriveOAuthUpload, gdriveOAuthDownload } from "./gdrive-oauth";
 import { xzCompress, xzDecompress } from "./xz";
@@ -271,7 +271,7 @@ export function connCfgFrom(c: ConnRow): ConnCfg {
           port: c.ssh.port,
           username: c.ssh.username,
           authType: c.ssh.authType === "key" ? "key" : "password",
-          password: decryptSecret(c.ssh.passwordEnc),
+          password: decryptOptional(c.ssh.passwordEnc),
           privateKey: c.ssh.privateKeyEnc ? decryptSecret(c.ssh.privateKeyEnc) : undefined,
           keyPassphrase: c.ssh.keyPassphraseEnc ? decryptSecret(c.ssh.keyPassphraseEnc) : undefined,
         }
