@@ -2,7 +2,7 @@
 // Worker-safe: no "server-only", no Next.js imports.
 import { Client as SshClient } from "ssh2";
 import { prisma } from "./db";
-import { decryptSecret } from "./crypto";
+import { decryptSecret, decryptOptional } from "./crypto";
 
 export type SshAuthCfg = {
   host: string;
@@ -59,7 +59,7 @@ export function sshCfgFrom(r: SshRow): SshAuthCfg {
     port: r.port,
     username: r.username,
     authType: r.authType === "key" ? "key" : "password",
-    password: decryptSecret(r.passwordEnc),
+    password: decryptOptional(r.passwordEnc),
     privateKey: r.privateKeyEnc ? decryptSecret(r.privateKeyEnc) : undefined,
     keyPassphrase: r.keyPassphraseEnc ? decryptSecret(r.keyPassphraseEnc) : undefined,
   };

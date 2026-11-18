@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { canUseFeature } from "@/lib/team";
-import { encryptSecret, decryptSecret } from "@/lib/crypto";
+import { encryptSecret, decryptSecret, decryptOptional } from "@/lib/crypto";
 import { testConnection } from "@/lib/dbbackup";
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -50,7 +50,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
               port: sshRow.port,
               username: sshRow.username,
               authType: sshRow.authType === "key" ? "key" : "password",
-              password: decryptSecret(sshRow.passwordEnc),
+              password: decryptOptional(sshRow.passwordEnc),
               privateKey: sshRow.privateKeyEnc ? decryptSecret(sshRow.privateKeyEnc) : undefined,
               keyPassphrase: sshRow.keyPassphraseEnc ? decryptSecret(sshRow.keyPassphraseEnc) : undefined,
             }

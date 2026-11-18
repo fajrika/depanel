@@ -1,6 +1,6 @@
 import { Client as SshClient, ClientChannel, ConnectConfig } from "ssh2";
 import { prisma } from "./db";
-import { decryptSecret } from "./crypto";
+import { decryptSecret, decryptOptional } from "./crypto";
 
 type SshRow = {
   host: string;
@@ -22,7 +22,7 @@ function sshCfgFrom(r: SshRow): ConnectConfig {
           privateKey: r.privateKeyEnc ? decryptSecret(r.privateKeyEnc) : "",
           ...(r.keyPassphraseEnc ? { passphrase: decryptSecret(r.keyPassphraseEnc) } : {}),
         }
-      : { password: decryptSecret(r.passwordEnc) }),
+      : { password: decryptOptional(r.passwordEnc) }),
     readyTimeout: 15_000,
     keepaliveInterval: 30_000,
     keepaliveCountMax: 5,
