@@ -4,8 +4,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useLang } from "@/lib/i18n";
+import { applyNavHidden, buildNavGroups, OTHER_GROUP_KEY, type NavItem } from "@/lib/nav";
 
-type Me = { id: string; name: string; email: string; role: string; uiLayout: string };
+type Me = { id: string; name: string; email: string; role: string; uiLayout: string; navHidden?: string[] };
 type TeamInfo = {
   id: string;
   name: string;
@@ -106,8 +107,6 @@ function TeamSwitcher({
   );
 }
 
-type NavItem = { href: string; label: string; icon: string };
-
 /* ---------- bell notifikasi in-app ---------- */
 type NotifItem = { id: string; type: string; title: string; message: string | null; read: boolean; createdAt: string };
 
@@ -203,7 +202,19 @@ function BellNotif({ dropUp, left }: { dropUp?: boolean; left?: boolean }) {
 }
 
 /* ---------- dropdown grup menu (dipakai topbar) ---------- */
-function NavDropdown({ label, icon, items, pathname }: { label: string; icon: string; items: NavItem[]; pathname: string }) {
+function NavDropdown({
+  label,
+  icon,
+  items,
+  pathname,
+  footer,
+}: {
+  label: string;
+  icon: string;
+  items: NavItem[];
+  pathname: string;
+  footer?: { href: string; label: string };
+}) {
   const [open, setOpen] = useState(false);
   const active = items.some((i) => i.href === pathname);
   return (
@@ -238,6 +249,17 @@ function NavDropdown({ label, icon, items, pathname }: { label: string; icon: st
                 <span className="text-base">{i.icon}</span> {i.label}
               </Link>
             ))}
+            {footer && (
+              <div className="mt-1 border-t border-slate-100 pt-1 dark:border-slate-800">
+                <Link
+                  href={footer.href}
+                  onClick={() => setOpen(false)}
+                  className="block rounded-lg px-2.5 py-2 text-xs text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/40"
+                >
+                  {footer.label}
+                </Link>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -258,13 +280,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [dark, setDark] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [navGroupCollapsed, setNavGroupCollapsed] = useState<Set<string>>(new Set()); // grup menu yang di-ciutkan (default semua expand)
+  const [navGroupCollapsed, setNavGroupCollapsed] = useState<Set<string>>(new Set([OTHER_GROUP_KEY])); // grup menu yang di-ciutkan (default semua expand, kecuali "Lainnya")
 
-  function toggleNavGroup(label: string) {
+  function toggleNavGroup(key: string) {
     setNavGroupCollapsed((s) => {
       const n = new Set(s);
-      if (n.has(label)) n.delete(label);
-      else n.add(label);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
       return n;
     });
   }
@@ -327,54 +349,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const at = activeTeam;
 
   const t_ = t;
-  const navGroups: { label: string | null; icon: string; items: (NavItem & { show: boolean })[] }[] = [
-    {
-      label: null,
-      icon: "",
-      items: [
-        { href: "/", label: t_("nav.server"), icon: "🖥️", show: true },
-        { href: "/reports", label: t_("nav.laporan"), icon: "📑", show: true },
-      ],
-    },
-    {
-      label: t_("group.kelola"),
-      icon: "🧰",
-      items: [
-        { href: "/infra", label: t_("nav.infra"), icon: "🧱", show: at?.canInfra ?? false },
-        { href: "/accounts", label: t_("nav.accounts"), icon: "🔑", show: at?.canAccounts ?? false },
-        { href: "/dbbackup", label: t_("nav.dbbackup"), icon: "💾", show: at?.canBackupDb ?? false },
-        { href: "/dirclone", label: t_("nav.dirclone"), icon: "📦", show: at?.canBackupDb ?? false },
-        { href: "/ssh", label: t_("nav.ssh"), icon: "🔐", show: at?.canSsh ?? false },
-        { href: "/sshhealth", label: t_("nav.sshhealth"), icon: "🧪", show: at?.canSsh ?? false },
-        { href: "/approvals", label: t_("nav.approvals"), icon: "🛡️", show: at?.canManage ?? false },
-        { href: "/sshcmd", label: t_("nav.sshcmd"), icon: "⌨️", show: at?.canSsh ?? false },
-        { href: "/wifi/projects", label: t_("nav.wifi"), icon: "📶", show: at?.canWifi ?? false },
-      ],
-    },
-    {
-      label: t_("group.keuangan"),
-      icon: "💰",
-      items: [
-        { href: "/billing", label: t_("nav.billing"), icon: "💰", show: at?.canViewBilling ?? false },
-        { href: "/cost", label: t_("nav.cost"), icon: "📉", show: at?.canViewCost ?? false },
-        { href: "/reports/financial", label: t_("nav.reportsFinancial"), icon: "📊", show: at?.canViewReports ?? false },
-      ],
-    },
-    {
-      label: t_("group.sistem"),
-      icon: "⚙️",
-      items: [
-        { href: "/notifications", label: t_("nav.notifications"), icon: "🔔", show: at?.canNotify ?? false },
-        { href: "/healthchecks", label: t_("nav.health"), icon: "🩺", show: at?.canInfra ?? false },
-        { href: "/logs", label: t_("nav.logs"), icon: "📜", show: true },
-        { href: "/panelbackup", label: t_("nav.panelbackup"), icon: "🗄️", show: true },
-        { href: "/teams", label: t_("nav.teams"), icon: "👥", show: true },
-        { href: "/superadmin", label: t_("nav.superadmin"), icon: "⚡", show: superAdmin },
-      ],
-    },
-  ]
-    .map((g) => ({ ...g, items: g.items.filter((i) => i.show) }))
-    .filter((g) => g.items.length > 0);
+  // menu yang disembunyikan pengguna (Profil → Menu utama) dikumpulkan di grup "Lainnya"
+  const navGroups = applyNavHidden(buildNavGroups(t_, at, superAdmin), me?.navHidden ?? [], t_("group.lainnya"));
+  const menuSettings = { href: "/profile#menu", label: t_("nav.menuSettings") };
 
   const sidebar = me?.uiLayout === "sidebar";
 
@@ -466,7 +443,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     >
       <nav className="flex flex-col gap-1 px-3 py-3">
         {navGroups.map((g) => (
-          <div key={g.label ?? "utama"} className="mb-1">
+          <div key={g.key} className="mb-1">
             {g.label && (
               <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{g.label}</p>
             )}
@@ -515,30 +492,39 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             {/* nav bisa di-scroll; grup bawah selalu terlihat */}
             <nav className={`mt-6 min-h-0 flex-1 flex-col gap-1 overflow-y-auto ${collapsed ? "flex items-center" : "flex"}`}>
               {navGroups.map((g) => (
-                <div key={g.label ?? "utama"} className="mb-1 w-full">
+                <div key={g.key} className="mb-1 w-full">
                   {g.label ? (
-                    !collapsed && (
-                      <>
-                        <button
-                          onClick={() => toggleNavGroup(g.label!)}
-                          title={navGroupCollapsed.has(g.label!) ? g.label : undefined}
-                          className="flex w-full items-center gap-1 px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 transition hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
-                        >
-                          <span className={`text-[9px] transition-transform duration-200 ${navGroupCollapsed.has(g.label!) ? "-rotate-90" : ""}`}>▾</span>
-                          <span className="flex-1 text-left">{g.label}</span>
-                        </button>
-                        {!navGroupCollapsed.has(g.label!) &&
-                          g.items.map((l) => (
+                    !collapsed && (() => {
+                      // grup "Lainnya" tetap terbuka bila halaman aktif ada di dalamnya
+                      const shut = navGroupCollapsed.has(g.key) && !(g.key === OTHER_GROUP_KEY && g.items.some((l) => l.href === pathname));
+                      return (
+                        <>
+                          <button
+                            onClick={() => toggleNavGroup(g.key)}
+                            title={shut ? g.label! : undefined}
+                            className="flex w-full items-center gap-1 px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 transition hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+                          >
+                            <span className={`text-[9px] transition-transform duration-200 ${shut ? "-rotate-90" : ""}`}>▾</span>
+                            <span className="flex-1 text-left">{g.label}</span>
+                            {g.key === OTHER_GROUP_KEY && shut && <span className="font-normal normal-case tracking-normal">{g.items.length}</span>}
+                          </button>
+                          {!shut &&
+                            g.items.map((l) => (
+                              <Link key={l.href} href={l.href} className={`${linkCls(pathname === l.href, true)}`}>
+                                <span className="text-base">{l.icon}</span> {l.label}
+                              </Link>
+                            ))}
+                          {!shut && g.key === OTHER_GROUP_KEY && (
                             <Link
-                              key={l.href}
-                              href={l.href}
-                              className={`${linkCls(pathname === l.href, true)}`}
+                              href={menuSettings.href}
+                              className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-xs text-indigo-600 transition hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/40"
                             >
-                              <span className="text-base">{l.icon}</span> {l.label}
+                              {menuSettings.label}
                             </Link>
-                          ))}
-                      </>
-                    )
+                          )}
+                        </>
+                      );
+                    })()
                   ) : (
                     g.items.map((l) => (
                       <Link
@@ -623,7 +609,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   </Link>
                 ))
               ) : (
-                <NavDropdown key={g.label} label={g.label} icon={g.icon} items={g.items} pathname={pathname} />
+                <NavDropdown
+                  key={g.key}
+                  label={g.label}
+                  icon={g.icon}
+                  items={g.items}
+                  pathname={pathname}
+                  footer={g.key === OTHER_GROUP_KEY ? menuSettings : undefined}
+                />
               ),
             )}
           </nav>
