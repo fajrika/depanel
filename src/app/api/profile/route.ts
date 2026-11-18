@@ -3,12 +3,14 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hashPassword, verifyPassword } from "@/lib/auth";
 import { logActivity } from "@/lib/power";
+import { parseNavHidden, PINNED_NAV } from "@/lib/nav";
 
 const schema = z
   .object({
     name: z.string().min(1, "Nama wajib diisi").optional(),
     email: z.string().email("Format email tidak valid").optional(),
     uiLayout: z.enum(["topbar", "sidebar"]).optional(),
+    navHidden: z.array(z.string().startsWith("/").max(100)).max(100).optional(),
     currentPassword: z.string().optional(),
     newPassword: z.string().min(8, "Password baru minimal 8 karakter").optional(),
   })
@@ -24,12 +26,16 @@ export async function PATCH(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message ?? "Data tidak valid" }, { status: 400 });
   }
-  const { name, email, uiLayout, currentPassword, newPassword } = parsed.data;
+  const { name, email, uiLayout, navHidden, currentPassword, newPassword } = parsed.data;
 
-  const data: { name?: string; email?: string; passwordHash?: string; uiLayout?: string } = {};
+  const data: { name?: string; email?: string; passwordHash?: string; uiLayout?: string; navHidden?: string } = {};
 
   if (name && name !== user.name) data.name = name;
   if (uiLayout && uiLayout !== user.uiLayout) data.uiLayout = uiLayout;
+  if (navHidden) {
+    const clean = JSON.stringify([...new Set(navHidden)].filter((h) => !PINNED_NAV.has(h)).sort());
+    if (clean !== JSON.stringify([...parseNavHidden(user.navHidden)].sort())) data.navHidden = clean;
+  }
 
   if (email && email !== user.email) {
     const exists = await prisma.user.findUnique({ where: { email } });
@@ -56,6 +62,6 @@ export async function PATCH(request: Request) {
   });
   return NextResponse.json({
     ok: true,
-    data: { name: updated.name, email: updated.email, uiLayout: updated.uiLayout },
+    data: { name: updated.name, email: updated.email, uiLayout: updated.uiLayout, navHidden: parseNavHidden(updated.navHidden) },
   });
 }

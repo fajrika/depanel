@@ -18,6 +18,7 @@ model User {
   passwordHash String
   role         String        @default("member") // "admin" | "member"
   uiLayout     String        @default("topbar") // "topbar" | "sidebar"
+  navHidden    String        @default("[]") // JSON array href menu yang dipindah ke grup "Lainnya"
   lastTeamId   String? // tim terakhir yang dipakai — dipulihkan saat login berikutnya
   active       Boolean       @default(true)
   totpSecret   String? // base32 TOTP secret (2FA) — null = belum diaktifkan

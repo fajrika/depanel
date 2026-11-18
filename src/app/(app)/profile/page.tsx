@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useLang } from "@/lib/i18n";
 import TwoFactorSection from "@/components/TwoFactorSection";
+import { buildNavGroups, PINNED_NAV, type NavGroup, type NavPerms } from "@/lib/nav";
 
 const input =
   "mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300";
@@ -22,6 +23,16 @@ export default function ProfilePage() {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [navPerms, setNavPerms] = useState<{ team: NavPerms | null; superAdmin: boolean } | null>(null);
+  const [navHidden, setNavHidden] = useState<Set<string>>(new Set());
+  const [navSaved, setNavSaved] = useState<string[]>([]);
+
+  // lompat ke kartu menu bila dibuka dari tautan "Atur menu utama"
+  useEffect(() => {
+    if (navPerms && window.location.hash === "#menu") {
+      document.getElementById("menu")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [navPerms]);
 
   useEffect(() => {
     fetch("/api/me")
@@ -32,12 +43,16 @@ export default function ProfilePage() {
           setName(d.user.name);
           setEmail(d.user.email);
           setUiLayout(d.user.uiLayout ?? "topbar");
+          const hidden: string[] = Array.isArray(d.user.navHidden) ? d.user.navHidden : [];
+          setNavHidden(new Set(hidden));
+          setNavSaved(hidden);
         }
+        setNavPerms({ team: d?.activeTeam ?? null, superAdmin: d?.superAdmin ?? false });
       })
       .catch(() => {});
   }, []);
 
-  async function patch(body: Record<string, string>, which: string) {
+  async function patch(body: Record<string, unknown>, which: string) {
     setBusy(which);
     setMsg(null);
     const res = await fetch("/api/profile", {
@@ -57,6 +72,39 @@ export default function ProfilePage() {
       window.dispatchEvent(new Event("profile-updated"));
     }
     return true;
+  }
+
+  const navGroups: NavGroup[] = navPerms ? buildNavGroups(t, navPerms.team, navPerms.superAdmin) : [];
+  const navAll = navGroups.flatMap((g) => g.items).filter((i) => !PINNED_NAV.has(i.href));
+  const navDirty = [...navHidden].sort().join("|") !== [...navSaved].sort().join("|");
+  const navHiddenCount = navAll.filter((i) => navHidden.has(i.href)).length;
+
+  function toggleNav(href: string) {
+    setNavHidden((s) => {
+      const n = new Set(s);
+      if (n.has(href)) n.delete(href);
+      else n.add(href);
+      return n;
+    });
+  }
+
+  function setAllNav(hide: boolean) {
+    setNavHidden((s) => {
+      const n = new Set(s);
+      for (const i of navAll) {
+        if (hide) n.add(i.href);
+        else n.delete(i.href);
+      }
+      return n;
+    });
+  }
+
+  async function saveNav() {
+    const list = [...navHidden];
+    if (await patch({ navHidden: list }, "menu")) {
+      setNavSaved(list);
+      setMsg({ text: t("prof.menuSaved"), ok: true });
+    }
   }
 
   async function saveInfo(e: React.FormEvent) {
@@ -173,6 +221,79 @@ export default function ProfilePage() {
               <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{o.d}</p>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Menu utama: pilih menu yang tampil, sisanya ke grup "Lainnya" */}
+      <div id="menu" className={`${card} mt-5 scroll-mt-20`}>
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("prof.menuTitle")}</h2>
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{t("prof.menuSubtitle")}</p>
+          </div>
+          {navHiddenCount > 0 && (
+            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              {navHiddenCount} {t("prof.menuMoved")}
+            </span>
+          )}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          <button type="button" onClick={() => setAllNav(false)} className="rounded-md border border-slate-200 px-2.5 py-1 text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+            {t("prof.menuShowAll")}
+          </button>
+          <button type="button" onClick={() => setAllNav(true)} className="rounded-md border border-slate-200 px-2.5 py-1 text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+            {t("prof.menuHideAll")}
+          </button>
+        </div>
+        <div className="mt-4 space-y-4">
+          {navGroups.map((g) => (
+            <div key={g.key}>
+              {g.label && <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{g.label}</p>}
+              <div className="grid gap-1.5 sm:grid-cols-2">
+                {g.items.map((i) => {
+                  const pinned = PINNED_NAV.has(i.href);
+                  const shown = pinned || !navHidden.has(i.href);
+                  return (
+                    <label
+                      key={i.href}
+                      className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm transition ${
+                        shown
+                          ? "border-slate-200 text-slate-800 dark:border-slate-700 dark:text-slate-100"
+                          : "border-dashed border-slate-200 text-slate-400 dark:border-slate-700 dark:text-slate-500"
+                      } ${pinned ? "cursor-default" : "cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60"}`}
+                    >
+                      <input type="checkbox" checked={shown} disabled={pinned} onChange={() => toggleNav(i.href)} className="h-4 w-4 accent-indigo-600" />
+                      <span>{i.icon}</span>
+                      <span className="min-w-0 flex-1 truncate">{i.label}</span>
+                      {pinned && <span className="text-[10px] text-slate-400">{t("prof.menuPinned")}</span>}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="mt-4 text-[11px] text-slate-400 dark:text-slate-500">{t("prof.menuTeamNote")}</p>
+        <div className="mt-4 flex items-center justify-end gap-2">
+          {navSaved.length > 0 && (
+            <button
+              type="button"
+              disabled={busy === "menu"}
+              onClick={async () => {
+                setNavHidden(new Set());
+                if (await patch({ navHidden: [] }, "menu")) {
+                  setNavSaved([]);
+                  setMsg({ text: t("prof.menuSaved"), ok: true });
+                }
+              }}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              {t("prof.menuReset")}
+            </button>
+          )}
+          <button type="button" disabled={busy === "menu" || !navDirty} onClick={saveNav} className={btn}>
+            {busy === "menu" ? t("prof.saving") : t("prof.menuSave")}
+          </button>
         </div>
       </div>
 

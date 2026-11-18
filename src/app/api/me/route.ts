@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser, getSession, isSuperAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getActiveTeam, getMyTeams } from "@/lib/team";
+import { parseNavHidden } from "@/lib/nav";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -23,7 +24,7 @@ export async function GET() {
 
   return NextResponse.json({
     ok: true,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role, uiLayout: user.uiLayout },
+    user: { id: user.id, name: user.name, email: user.email, role: user.role, uiLayout: user.uiLayout, navHidden: parseNavHidden(user.navHidden) },
     activeTeam,
     teams,
     superAdmin,
