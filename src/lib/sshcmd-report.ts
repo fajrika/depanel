@@ -73,6 +73,8 @@ export type SshCmdReportOptions = RunFilter & {
   /** Batas baris output per run di PDF (default 40). */
   maxOutputLines?: number;
   timezone?: string;
+  /** Level heading per job (default 2). "Detail output" memakai level berikutnya (maks 3). */
+  headingLevel?: 1 | 2 | 3;
 };
 
 export async function loadSshCmdReportData(opts: SshCmdReportOptions): Promise<SshCmdReportJob[]> {
@@ -165,8 +167,10 @@ function firstLine(s: string | null | undefined, max = 90): string {
 const STATUS_LABEL: Record<string, string> = { success: "Sukses", failed: "Gagal", running: "Berjalan" };
 
 /** Blok laporan untuk sekumpulan job (sudah dimuat). */
-export function sshCmdJobsToBlocks(jobs: SshCmdReportJob[], opts: Pick<SshCmdReportOptions, "includeOutput" | "maxOutputLines" | "timezone" | "status" | "from" | "to">): ReportBlock[] {
+export function sshCmdJobsToBlocks(jobs: SshCmdReportJob[], opts: Pick<SshCmdReportOptions, "includeOutput" | "maxOutputLines" | "timezone" | "status" | "from" | "to" | "headingLevel">): ReportBlock[] {
   const tz = opts.timezone ?? "Asia/Jakarta";
+  const hJob = opts.headingLevel ?? 2;
+  const hSub = (hJob >= 3 ? 3 : hJob + 1) as 1 | 2 | 3;
   const blocks: ReportBlock[] = [];
   if (jobs.length === 0) {
     blocks.push({ type: "text", text: "Tidak ada job SSH command yang dipilih.", muted: true });
@@ -176,7 +180,7 @@ export function sshCmdJobsToBlocks(jobs: SshCmdReportJob[], opts: Pick<SshCmdRep
   jobs.forEach((j, idx) => {
     if (idx > 0) blocks.push({ type: "spacer" });
     const rate = j.stats.success + j.stats.failed > 0 ? `${((j.stats.success / (j.stats.success + j.stats.failed)) * 100).toFixed(1)}%` : "—";
-    blocks.push({ type: "heading", text: `SSH Command: ${j.name}`, level: 2 });
+    blocks.push({ type: "heading", text: `SSH Command: ${j.name}`, level: hJob });
     blocks.push({
       type: "kv",
       rows: [
@@ -222,7 +226,7 @@ export function sshCmdJobsToBlocks(jobs: SshCmdReportJob[], opts: Pick<SshCmdRep
 
     if (opts.includeOutput !== false) {
       const withDetail = j.runs.filter((r) => r.output || r.error);
-      if (withDetail.length > 0) blocks.push({ type: "heading", text: "Detail output", level: 3 });
+      if (withDetail.length > 0) blocks.push({ type: "heading", text: "Detail output", level: hSub });
       withDetail.forEach((r) => {
         const i = j.runs.indexOf(r) + 1;
         blocks.push({ type: "text", text: `#${i} · ${fmtDateTime(r.startedAt, tz)} · ${STATUS_LABEL[r.status] ?? r.status}${r.exitCode != null ? ` · exit ${r.exitCode}` : ""}` });
