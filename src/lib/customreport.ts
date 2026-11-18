@@ -11,6 +11,7 @@ import { isStaff, membershipOf, featureAllowed } from "./team";
 import type { ReportBlock, ReportSpec } from "./pdf/report";
 import { buildHealthCheckReportBlocks, summarizeHealthCheck } from "./healthcheck-report";
 import { loadSshCmdReportData, sshCmdJobsToBlocks } from "./sshcmd-report";
+import { fmtMbps, loadSpeedReportData, speedCompareBlocks, speedJobBlocks, summarize as summarizeSpeed } from "./speedtest-report";
 
 /* ------------------------------------------------------------------ */
 /* Definisi item                                                        */
@@ -24,6 +25,7 @@ export const ITEM_KINDS = [
   "dirCloneJobs",
   "healthChecks",
   "sshHealthChecks",
+  "speedtests",
 ] as const;
 export type ItemKind = (typeof ITEM_KINDS)[number];
 export type ReportItems = Record<ItemKind, string[]>;
@@ -36,6 +38,7 @@ export const KIND_TITLE: Record<ItemKind, string> = {
   dirCloneJobs: "Backup File",
   healthChecks: "Health Check",
   sshHealthChecks: "Health App",
+  speedtests: "Speedtest",
 };
 
 /** Parse kolom JSON `items` dengan aman (data lama/rusak → kosong). */
@@ -90,6 +93,7 @@ function kindAllowed(a: Access, kind: ItemKind): boolean {
     case "sshConns":
     case "sshCmdJobs":
     case "sshHealthChecks":
+    case "speedtests":
       return a.ssh;
     case "dbJobs":
     case "dirCloneJobs":
@@ -107,7 +111,7 @@ function serverWhere(teamId: string, a: Access) {
 
 /** Pilihan item yang boleh dipakai user di tim aktif (untuk form builder). */
 export async function listOptions(teamId: string, a: Access) {
-  const [servers, sshConns, sshCmdJobs, dbJobs, dirCloneJobs, healthChecks, sshHealthChecks] = await Promise.all([
+  const [servers, sshConns, sshCmdJobs, dbJobs, dirCloneJobs, healthChecks, sshHealthChecks, speedtests] = await Promise.all([
     prisma.server.findMany({
       where: serverWhere(teamId, a),
       orderBy: [{ accountId: "asc" }, { sortOrder: "asc" }, { hostname: "asc" }],
@@ -155,6 +159,13 @@ export async function listOptions(teamId: string, a: Access) {
           select: { id: true, name: true, lastStatus: true, ssh: { select: { name: true } } },
         })
       : [],
+    a.ssh
+      ? prisma.speedtestJob.findMany({
+          where: { teamId },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, lastStatus: true, ssh: { select: { name: true } } },
+        })
+      : [],
   ]);
 
   type Opt = { id: string; label: string; sub?: string | null; status?: string | null; group?: string | null };
@@ -166,6 +177,7 @@ export async function listOptions(teamId: string, a: Access) {
     dirCloneJobs: dirCloneJobs.map((j) => ({ id: j.id, label: j.name, sub: `${j.sourceSsh.name}:${j.sourcePath}`, status: j.lastStatus })),
     healthChecks: healthChecks.map((h) => ({ id: h.id, label: h.name, sub: h.url, status: h.lastStatus, group: h.group?.name ?? null })),
     sshHealthChecks: sshHealthChecks.map((h) => ({ id: h.id, label: h.name, sub: h.ssh.name, status: h.lastStatus })),
+    speedtests: speedtests.map((j) => ({ id: j.id, label: j.name, sub: j.ssh.name, status: j.lastStatus })),
   };
   return out;
 }
@@ -316,6 +328,33 @@ function dailyStrip(
   return out;
 }
 
+/** Grafik rata-rata harian CPU & RAM (%), untuk server Depa & SSH. */
+function cpuRamChart(samples: { at: Date; cpu: number | null; memPct: number | null }[], tz: string): ReportBlock | null {
+  const by = new Map<string, { cpu: number[]; mem: number[] }>();
+  for (const x of samples) {
+    const k = dayKey(x.at, tz);
+    const b = by.get(k) ?? { cpu: [], mem: [] };
+    if (x.cpu != null) b.cpu.push(x.cpu);
+    if (x.memPct != null) b.mem.push(x.memPct);
+    by.set(k, b);
+  }
+  const days = [...by.keys()].sort();
+  if (days.length < 2) return null;
+  const many = days.length > 45;
+  return {
+    type: "chart",
+    chart: many ? "line" : "bar",
+    title: "Rata-rata CPU & RAM harian",
+    unit: "%",
+    labels: days.map((d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`),
+    series: [
+      { name: "CPU", color: "#2a78d6", values: days.map((d) => avg(by.get(d)!.cpu)) },
+      { name: "RAM", color: "#eb6834", values: days.map((d) => avg(by.get(d)!.mem)) },
+    ],
+    height: 110,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Bagian-bagian laporan                                                */
 /* ------------------------------------------------------------------ */
@@ -367,6 +406,8 @@ async function serverSection(ctx: Ctx, ids: string[], summary: SummaryRow[]): Pr
     });
     if (samples.length) {
       blocks.push({ type: "statusStrip", items: dailyStrip(samples.map((x) => ({ at: x.at, ok: x.status === "running" })), from, to, tz) });
+      const ch = cpuRamChart(samples, tz);
+      if (ch) blocks.push(ch);
     }
     if (logs.length) {
       blocks.push({ type: "text", text: "Aktivitas dalam periode (maks 30 terbaru):", muted: true });
@@ -429,7 +470,11 @@ async function sshConnSection(ctx: Ctx, ids: string[], summary: SummaryRow[]): P
       );
     }
     blocks.push({ type: "kv", rows });
-    if (samples.length) blocks.push({ type: "statusStrip", items: dailyStrip(samples, from, to, tz) });
+    if (samples.length) {
+      blocks.push({ type: "statusStrip", items: dailyStrip(samples, from, to, tz) });
+      const ch = cpuRamChart(samples, tz);
+      if (ch) blocks.push(ch);
+    }
 
     if (latest?.disk) {
       try {
@@ -679,6 +724,21 @@ export async function buildCustomReport(input: BuildInput): Promise<ReportSpec> 
       case "sshHealthChecks":
         blocks = await sshHealthSection(ctx, ids, summary);
         break;
+      case "speedtests": {
+        // filter ke tim aktif dulu: builder bersama tidak mengecek izin
+        const own = await prisma.speedtestJob.findMany({ where: { id: { in: ids }, teamId: input.teamId }, select: { id: true } });
+        const okIds = ids.filter((id) => own.some((j) => j.id === id));
+        if (!okIds.length) break;
+        const jobs = await loadSpeedReportData(okIds, input.from, input.to);
+        for (const j of jobs) {
+          const s = summarizeSpeed(j.rows);
+          const last = j.rows.length ? j.rows[j.rows.length - 1].status : null;
+          summary.push([KIND_TITLE.speedtests, safe(j.name), statusText(last), `DL ${fmtMbps(s.downAvg)} / UL ${fmtMbps(s.upAvg)}`]);
+        }
+        blocks = [...speedCompareBlocks(jobs)];
+        for (const j of jobs) blocks.push(...speedJobBlocks(j, { timezone: tz, from: input.from, to: input.to, headingLevel: 3, maxRecent: 30 }));
+        break;
+      }
     }
     if (blocks.length) sections.push({ title: KIND_TITLE[kind], blocks });
   }

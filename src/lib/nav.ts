@@ -47,6 +47,7 @@ export function buildNavGroups(t: (k: string) => string, at: NavPerms | null | u
         { href: "/sshhealth", label: t("nav.sshhealth"), icon: "🧪", show: at?.canSsh ?? false },
         { href: "/approvals", label: t("nav.approvals"), icon: "🛡️", show: at?.canManage ?? false },
         { href: "/sshcmd", label: t("nav.sshcmd"), icon: "⌨️", show: at?.canSsh ?? false },
+        { href: "/speedtest", label: t("nav.speedtest"), icon: "🚀", show: at?.canSsh ?? false },
         { href: "/wifi/projects", label: t("nav.wifi"), icon: "📶", show: at?.canWifi ?? false },
       ],
     },

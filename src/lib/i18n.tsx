@@ -14,6 +14,7 @@ import { dict as sshhealthPages } from "./i18n-pages-sshhealth";
 import { dict as panelbackupPages } from "./i18n-pages-panelbackup";
 import { dict as wifiPages } from "./i18n-pages-wifi";
 import { dict as laporanPages } from "./i18n-pages-laporan";
+import { dict as speedtestPages } from "./i18n-pages-speedtest";
 
 export type Lang = "id" | "en";
 
@@ -144,7 +145,7 @@ const dict: Record<Lang, Record<string, string>> = {
 };
 
 // gabungkan kamus per-modul halaman
-for (const mod of [serverPages, sshPages, backupPages, miscPages, healthPages, secPages, sshcmdPages, reportPages, approvalsPages, sshhealthPages, panelbackupPages, wifiPages, laporanPages]) {
+for (const mod of [serverPages, sshPages, backupPages, miscPages, healthPages, secPages, sshcmdPages, reportPages, approvalsPages, sshhealthPages, panelbackupPages, wifiPages, laporanPages, speedtestPages]) {
   dict.id = { ...dict.id, ...mod.id };
   dict.en = { ...dict.en, ...mod.en };
 }

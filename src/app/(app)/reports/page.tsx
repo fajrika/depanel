@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLang } from "@/lib/i18n";
+import ReportChart, { StatTiles, type ChartSeries, type StatItem } from "@/components/ReportChart";
 
-const KINDS = ["servers", "sshConns", "sshCmdJobs", "dbJobs", "dirCloneJobs", "healthChecks", "sshHealthChecks"] as const;
+const KINDS = ["servers", "sshConns", "sshCmdJobs", "dbJobs", "dirCloneJobs", "healthChecks", "sshHealthChecks", "speedtests"] as const;
 type Kind = (typeof KINDS)[number];
 type Items = Record<Kind, string[]>;
 type Opt = { id: string; label: string; sub?: string | null; status?: string | null; group?: string | null };
@@ -29,6 +30,8 @@ type Block =
   | { type: "table"; columns: { label: string; width?: number; align?: "left" | "right" | "center" }[]; rows: Cell[][]; rowStates?: (State | null | undefined)[] }
   | { type: "statusStrip"; items: { label?: string; state: State }[]; caption?: string }
   | { type: "code"; text: string; maxLines?: number }
+  | { type: "chart"; chart: "line" | "bar"; title?: string; labels: string[]; series: ChartSeries[]; unit?: string; height?: number; caption?: string; zeroBased?: boolean }
+  | { type: "stats"; items: StatItem[] }
   | { type: "spacer"; size?: number }
   | { type: "pageBreak" };
 type Spec = { title: string; subtitle?: string; generatedAt?: string; blocks: Block[]; from: string; to: string };
@@ -41,6 +44,7 @@ const KIND_ICON: Record<Kind, string> = {
   dirCloneJobs: "📦",
   healthChecks: "🩺",
   sshHealthChecks: "🧪",
+  speedtests: "🚀",
 };
 
 const input =
@@ -52,7 +56,7 @@ const btnPrimary =
 const btnGhost =
   "rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800";
 
-const emptyItems = (): Items => ({ servers: [], sshConns: [], sshCmdJobs: [], dbJobs: [], dirCloneJobs: [], healthChecks: [], sshHealthChecks: [] });
+const emptyItems = (): Items => ({ servers: [], sshConns: [], sshCmdJobs: [], dbJobs: [], dirCloneJobs: [], healthChecks: [], sshHealthChecks: [], speedtests: [] });
 
 /** YYYY-MM-DD di zona Asia/Jakarta. */
 function ymd(d: Date): string {
@@ -135,6 +139,14 @@ function BlockView({ b }: { b: Block }) {
           {b.maxLines ? b.text.split("\n").slice(0, b.maxLines).join("\n") : b.text}
         </pre>
       );
+    case "chart":
+      return (
+        <div className="max-w-3xl">
+          <ReportChart spec={b} compact />
+        </div>
+      );
+    case "stats":
+      return <StatTiles items={b.items} />;
     case "spacer":
       return <div className="h-2" />;
     case "pageBreak":
