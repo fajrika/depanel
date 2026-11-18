@@ -47,6 +47,7 @@ export const dict: Record<"id" | "en", Record<string, string>> = {
     "lap.kind.dirCloneJobs": "Backup File",
     "lap.kind.healthChecks": "Health Check",
     "lap.kind.sshHealthChecks": "Health App",
+    "lap.kind.speedtests": "Speedtest",
   },
   en: {
     "nav.laporan": "Reports",
@@ -95,5 +96,6 @@ export const dict: Record<"id" | "en", Record<string, string>> = {
     "lap.kind.dirCloneJobs": "File Backups",
     "lap.kind.healthChecks": "Health Checks",
     "lap.kind.sshHealthChecks": "App Health",
+    "lap.kind.speedtests": "Speedtest",
   },
 };

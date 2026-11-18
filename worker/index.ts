@@ -19,6 +19,7 @@ import { runDuePanelBackups } from "../src/lib/panelbackup";
 import { runAlertChecks } from "../src/lib/alerts";
 import { sampleAllMetrics } from "../src/lib/metrics";
 import { sampleAllSshMetrics } from "../src/lib/sshmon";
+import { runDueSpeedtests, cleanupStaleSpeedtests } from "../src/lib/speedtest";
 
 const CRON = process.env.RECONCILE_CRON || "*/5 * * * *"; // every 5 minutes
 
@@ -121,6 +122,26 @@ async function checkPanelBackups() {
   }
 }
 
+async function checkSpeedtests() {
+  try {
+    const started = await runDueSpeedtests();
+    if (started.length) {
+      console.log(`[${new Date().toISOString()}] speedtest dimulai: ${started.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[${new Date().toISOString()}] speedtest error:`, (e as Error).message);
+  }
+}
+
+async function cleanupSpeedtests() {
+  try {
+    const n = await cleanupStaleSpeedtests();
+    if (n) console.log(`[${new Date().toISOString()}] speedtest macet ditandai gagal: ${n}`);
+  } catch (e) {
+    console.error(`[${new Date().toISOString()}] speedtest cleanup error:`, (e as Error).message);
+  }
+}
+
 async function checkAlerts() {
   try {
     await runAlertChecks();
@@ -147,7 +168,7 @@ async function sampleSsh() {
   }
 }
 
-console.log(`🕒 Depa scheduler worker aktif. Reconcile: "${CRON}" · Backup DB/clone/health/SSH script/app health/laporan: tiap menit · Alert & metrik: tiap 15 menit.`);
+console.log(`🕒 Depa scheduler worker aktif. Reconcile: "${CRON}" · Backup DB/clone/health/SSH script/app health/speedtest/laporan: tiap menit · Alert & metrik: tiap 15 menit.`);
 runOnce("startup");
 cron.schedule(CRON, () => runOnce("tick"));
 cron.schedule("* * * * *", () => checkDbBackups());
@@ -157,6 +178,9 @@ cron.schedule("* * * * *", () => checkSshCmds());
 cron.schedule("* * * * *", () => checkSshHealthAll());
 cron.schedule("* * * * *", () => checkReports());
 cron.schedule("* * * * *", () => checkPanelBackups());
+cron.schedule("* * * * *", () => checkSpeedtests());
+cron.schedule("7 * * * *", () => cleanupSpeedtests());
+cleanupSpeedtests();
 // di-offset agar alert, metrik depa, dan metrik SSH tidak menulis DB di menit yang sama
 cron.schedule("1-59/15 * * * *", () => checkAlerts());
 cron.schedule("2-59/15 * * * *", () => sampleMetrics());

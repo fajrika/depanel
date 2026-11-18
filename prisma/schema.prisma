@@ -60,6 +60,7 @@ model Team {
   panelBackups  PanelBackup[]
   wifiProjects  WifiProject[]
   customReports CustomReport[]
+  speedtestJobs SpeedtestJob[]
 }
 
 /// Pengaturan backup database Depanel (SQLite) itu sendiri — snapshot + kirim ke destinasi.
@@ -285,6 +286,7 @@ model SshConnection {
   cloneDestJobs     DirCloneJob[] @relation("DirCloneDest")
   cmdJobs           SshCommandJob[] @relation("SshCmdJobs")
   sshHealthChecks   SshHealthCheck[]
+  speedtestJobs     SpeedtestJob[]
 }
 
 /// Grouping container for SSH connections. Team-scoped, 1 level only.
@@ -785,4 +787,59 @@ enum WifiFloorMaterial {
   CONCRETE // 20 dB — gedung/beton
   WOOD // 12 dB — rumah kayu
   GYPSUM // 8 dB — plafon/partisi ringan
+}
+
+/// Job speedtest jaringan di server SSH (manual atau terjadwal). Hasil tiap
+/// pengujian disimpan di SpeedtestResult untuk riwayat & grafik.
+model SpeedtestJob {
+  id              String            @id @default(cuid())
+  teamId          String?
+  team            Team?             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name            String
+  sshId           String
+  ssh             SshConnection     @relation(fields: [sshId], references: [id], onDelete: Cascade)
+  tool            String            @default("auto") // auto | ookla | speedtest-cli | curl
+  serverId        String? // ID server speedtest tertentu (Ookla / speedtest-cli), opsional
+  scheduleType    String            @default("manual") // manual | hourly | daily | weekly | monthly | cron
+  timeAt          String?
+  dayOn           Int?
+  cronExpr        String?
+  timezone        String            @default("Asia/Jakarta")
+  timeoutSec      Int               @default(180)
+  minDownloadMbps Float? // kirim notifikasi bila download terjadwal di bawah angka ini
+  enabled         Boolean           @default(true)
+  lastStatus      String?
+  lastRunAt       DateTime?
+  createdAt       DateTime          @default(now())
+  results         SpeedtestResult[]
+
+  @@index([teamId])
+}
+
+/// Satu hasil pengujian speedtest.
+model SpeedtestResult {
+  id             String       @id @default(cuid())
+  jobId          String
+  job            SpeedtestJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  status         String       @default("running") // running | success | failed
+  trigger        String       @default("manual") // manual | scheduler
+  tool           String? // ookla | speedtest-cli | curl
+  downloadMbps   Float?
+  uploadMbps     Float?
+  pingMs         Float?
+  jitterMs       Float?
+  packetLoss     Float? // persen (hanya Ookla)
+  bytesDown      Int?
+  bytesUp        Int?
+  serverName     String? // nama/sponsor server uji
+  serverLocation String?
+  serverHost     String?
+  isp            String?
+  externalIp     String?
+  resultUrl      String?
+  error          String?
+  startedAt      DateTime     @default(now())
+  endedAt        DateTime?
+
+  @@index([jobId, startedAt])
 }
