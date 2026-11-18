@@ -80,7 +80,6 @@ export function sanitizePdfText(input: unknown): string {
     .replace(/✗|✘/g, "x")
     .replace(/[   ]/g, " ")
     .replace(/[─-╿]/g, (ch) => ("│┃║".includes(ch) ? "|" : "─━═".includes(ch) ? "-" : "+"))
-    // eslint-disable-next-line no-control-regex
     .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "") // ANSI escape codes
     .replace(/[^\n\x20-\x7E¡-ÿ€]/g, "");
 }
