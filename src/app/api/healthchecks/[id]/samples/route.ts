@@ -16,6 +16,6 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   }
 
   const hours = Math.min(Number(new URL(request.url).searchParams.get("hours") ?? 24), 720);
-  const data = await getHealthHistory(id, hours);
+  const data = await getHealthHistory(id, hours, hc);
   return NextResponse.json({ ok: true, data });
 }

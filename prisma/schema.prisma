@@ -464,6 +464,12 @@ model HealthCheck {
   intervalMin   Int      @default(1) // jarak antar cek (menit)
   timeoutSec    Int      @default(10)
   enabled       Boolean  @default(true)
+  // Jendela waktu aktif: "always" | "only" (hanya cek di [start,end)) | "skip"
+  // (jeda di [start,end)). Di luar jendela tidak dicek & tidak dihitung uptime.
+  scheduleMode  String   @default("always")
+  windowStart   String? // "HH:MM"
+  windowEnd     String? // "HH:MM" (boleh lewat tengah malam)
+  timezone      String   @default("Asia/Jakarta")
   lastStatus    String? // "up" | "down"
   lastLatencyMs Int?
   lastCheckAt   DateTime?
