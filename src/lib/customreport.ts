@@ -9,8 +9,8 @@ import "server-only";
 import { prisma } from "./db";
 import { isStaff, membershipOf, featureAllowed } from "./team";
 import type { ReportBlock, ReportSpec } from "./pdf/report";
-import { buildHealthCheckReportBlocks } from "./healthcheck-report";
-import { buildSshCmdReportBlocks } from "./sshcmd-report";
+import { buildHealthCheckReportBlocks, summarizeHealthCheck } from "./healthcheck-report";
+import { loadSshCmdReportData, sshCmdJobsToBlocks } from "./sshcmd-report";
 
 /* ------------------------------------------------------------------ */
 /* Definisi item                                                        */
@@ -646,14 +646,16 @@ export async function buildCustomReport(input: BuildInput): Promise<ReportSpec> 
         break;
       case "sshCmdJobs": {
         // filter ke tim aktif dulu: builder bersama tidak mengecek izin
-        const own = await prisma.sshCommandJob.findMany({
-          where: { id: { in: ids }, teamId: input.teamId },
-          select: { id: true, name: true, lastStatus: true },
-        });
+        const own = await prisma.sshCommandJob.findMany({ where: { id: { in: ids }, teamId: input.teamId }, select: { id: true } });
         if (!own.length) break;
         const okIds = ids.filter((id) => own.some((j) => j.id === id));
-        for (const j of own) summary.push([KIND_TITLE.sshCmdJobs, safe(j.name), statusText(j.lastStatus), "-"]);
-        blocks = await buildSshCmdReportBlocks({ jobIds: okIds, from: input.from, to: input.to, timezone: tz, includeOutput: false });
+        const opts = { jobIds: okIds, from: input.from, to: input.to, timezone: tz, includeOutput: false, maxRunsPerJob: 100, headingLevel: 3 as const };
+        const jobs = await loadSshCmdReportData(opts);
+        for (const j of jobs) {
+          const last = j.runs[0]?.status ?? null;
+          summary.push([KIND_TITLE.sshCmdJobs, safe(j.name), statusText(last), `Sukses ${j.stats.success}/${j.stats.total}`]);
+        }
+        blocks = sshCmdJobsToBlocks(jobs, opts);
         break;
       }
       case "dbJobs":
@@ -661,14 +663,17 @@ export async function buildCustomReport(input: BuildInput): Promise<ReportSpec> 
         blocks = await runJobSection(ctx, kind, ids, summary);
         break;
       case "healthChecks": {
-        const own = await prisma.healthCheck.findMany({
-          where: { id: { in: ids }, teamId: input.teamId },
-          select: { id: true, name: true, lastStatus: true, lastLatencyMs: true },
-        });
+        const own = await prisma.healthCheck.findMany({ where: { id: { in: ids }, teamId: input.teamId }, select: { id: true, lastStatus: true } });
         if (!own.length) break;
         const okIds = ids.filter((id) => own.some((h) => h.id === id));
-        for (const h of own) summary.push([KIND_TITLE.healthChecks, safe(h.name), statusText(h.lastStatus), h.lastLatencyMs != null ? `${h.lastLatencyMs} ms` : "-"]);
-        blocks = await buildHealthCheckReportBlocks(okIds, { from: input.from, to: input.to }, { timezone: tz });
+        const range = { from: input.from, to: input.to };
+        for (const id of okIds) {
+          const sum = await summarizeHealthCheck(id, range);
+          if (!sum) continue;
+          const last = own.find((h) => h.id === id)?.lastStatus;
+          summary.push([KIND_TITLE.healthChecks, safe(sum.name), statusText(last), `Uptime ${pct(sum.uptimePct)}`]);
+        }
+        blocks = await buildHealthCheckReportBlocks(okIds, range, { timezone: tz, sectionHeading: false, itemHeadingLevel: 3 });
         break;
       }
       case "sshHealthChecks":
