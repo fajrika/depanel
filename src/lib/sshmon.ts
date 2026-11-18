@@ -65,10 +65,15 @@ export function sshCfgFrom(r: SshRow): SshAuthCfg {
   };
 }
 
-const CONNECT_TIMEOUT_MS = 10_000;
+const CONNECT_TIMEOUT_MS = 15_000;
 const EXEC_TIMEOUT_MS = 8_000;
+// The main batch starts a remote shell once; on a busy or slow host (heavy
+// ~/.bashrc, slow PAM/logind session setup, I/O-bound backup box) that alone
+// can take several seconds, so give it a generous budget.
+const BATCH_TIMEOUT_MS = 30_000;
 const SAMPLE_GAP_MS = 1_000;
-const TOTAL_DEADLINE_MS = 20_000;
+const TOTAL_DEADLINE_MS = 45_000;
+const SEP = "__DEPANEL_SEP__";
 
 function openClient(cfg: SshAuthCfg): Promise<SshClient> {
   const client = new SshClient();
@@ -97,17 +102,34 @@ function closeSsh(client: SshClient) {
 
 function exec(client: SshClient, command: string, timeoutMs = EXEC_TIMEOUT_MS): Promise<string> {
   return new Promise((resolve, reject) => {
+    let out = "";
+    let errOut = "";
+    let settled = false;
+    let channel: { close: () => void } | undefined;
     const timer = setTimeout(() => {
-      reject(new Error(`waktu habis mengeksekusi: ${command.slice(0, 48)}`));
+      settled = true;
+      try {
+        channel?.close();
+      } catch {
+        /* ignore */
+      }
+      const hint = out || errOut
+        ? ""
+        : " (server tidak membalas sama sekali — cek beban server atau skrip login seperti ~/.bashrc yang lambat/menunggu input)";
+      reject(new Error(`waktu habis mengeksekusi (${Math.round(timeoutMs / 1000)} dtk): ${command.slice(0, 48)}${hint}`));
     }, timeoutMs);
     client.exec(command, (err, stream) => {
       if (err) {
         clearTimeout(timer);
-        reject(err);
+        if (!settled) reject(err);
+        settled = true;
         return;
       }
-      let out = "";
-      let errOut = "";
+      channel = stream;
+      // Close stdin right away: anything on the remote side that reads stdin
+      // (a prompt in a shell rc file, a forced command) gets EOF instead of
+      // waiting forever.
+      stream.end();
       stream.on("data", (d: Buffer) => {
         out += d.toString();
       });
@@ -116,6 +138,8 @@ function exec(client: SshClient, command: string, timeoutMs = EXEC_TIMEOUT_MS): 
       });
       stream.on("close", (code: number) => {
         clearTimeout(timer);
+        if (settled) return;
+        settled = true;
         // nonzero exit is tolerated if we still got output (some utils print to stdout + exit 1)
         if (code !== 0 && !out.trim()) {
           reject(new Error(`${command.slice(0, 48)} (exit ${code}): ${errOut.trim().slice(0, 200)}`));
@@ -125,6 +149,8 @@ function exec(client: SshClient, command: string, timeoutMs = EXEC_TIMEOUT_MS): 
       });
       stream.on("error", (e: Error) => {
         clearTimeout(timer);
+        if (settled) return;
+        settled = true;
         reject(e);
       });
     });
@@ -307,21 +333,36 @@ export async function collectSshMetrics(cfg: SshAuthCfg): Promise<LiveSample> {
     closeSsh(client);
   }, TOTAL_DEADLINE_MS);
   try {
-    const [osOut, kernelOut, hostnameOut, loadOut, upOut, memOut, coresOut] = await Promise.all([
-      exec(client, "cat /etc/os-release"),
-      exec(client, "uname -sr"),
-      exec(client, "cat /etc/hostname"),
-      exec(client, "cat /proc/loadavg"),
-      exec(client, "cat /proc/uptime"),
-      exec(client, "cat /proc/meminfo"),
-      exec(client, "nproc"),
-    ]);
+    // One remote shell for all reads (instead of ~12 parallel/sequential
+    // channels): far less load on the target, and only one shell startup.
+    const parts = [
+      "cat /etc/os-release",
+      "uname -sr",
+      "cat /etc/hostname",
+      "cat /proc/loadavg",
+      "cat /proc/uptime",
+      "cat /proc/meminfo",
+      "nproc",
+      "cat /proc/stat",
+      "cat /proc/net/dev",
+      `sleep ${SAMPLE_GAP_MS / 1000}`,
+      "cat /proc/stat",
+      "cat /proc/net/dev",
+      "df -kP",
+      "ps -eo pid:12,user:20,pcpu:6,pmem:6,comm --sort=-pcpu --no-headers | head -n 11",
+      "ss -tlnH 2>/dev/null || netstat -tln",
+    ];
+    const batch = parts.map((c) => `${c} 2>/dev/null`).join(`; echo ${SEP}; `);
+    const sections = (await exec(client, batch, BATCH_TIMEOUT_MS)).split(new RegExp(`\\n?${SEP}\\n`));
+    const [osOut, kernelOut, hostnameOut, loadOut, upOut, memOut, coresOut, stat1, net1, , stat2, net2, dfOut, psOut, portsOut] =
+      parts.map((_, i) => sections[i] ?? "");
+    if (!stat1.trim() || !stat2.trim()) {
+      throw new Error("output server tidak lengkap (gagal membaca /proc/stat)");
+    }
 
-    const stat1 = await exec(client, "cat /proc/stat");
-    const net1 = await exec(client, "cat /proc/net/dev");
-    await new Promise((r) => setTimeout(r, SAMPLE_GAP_MS));
-    const stat2 = await exec(client, "cat /proc/stat");
-    const net2 = await exec(client, "cat /proc/net/dev");
+    const failedSvcs = await exec(client, "systemctl list-units --type=service --state=failed --no-legend --no-pager", 6_000)
+      .then(parseFailedSvcs)
+      .catch(() => []);
 
     const osName = /^PRETTY_NAME="?(.*?)"?$/m.exec(osOut)?.[1]?.trim() ?? undefined;
     const cpu = cpuPctFromStat(stat1, stat2);
@@ -330,12 +371,9 @@ export async function collectSshMetrics(cfg: SshAuthCfg): Promise<LiveSample> {
     const load = parseLoadavg(loadOut);
     const mem = parseMeminfo(memOut);
 
-    const disk = parseDf(await exec(client, "df -kP"));
-    const topProcs = await exec(client, "ps -eo pid:12,user:20,pcpu:6,pmem:6,comm --sort=-pcpu --no-headers | head -n 11").then(parsePs).catch(() => []);
-    const ports = await exec(client, "ss -tlnH").catch(() => exec(client, "netstat -tln")).then(parseListenPorts).catch(() => []);
-    const failedSvcs = await exec(client, "systemctl list-units --type=service --state=failed --no-legend --no-pager", 6_000)
-      .then(parseFailedSvcs)
-      .catch(() => []);
+    const disk = parseDf(dfOut);
+    const topProcs = parsePs(psOut);
+    const ports = parseListenPorts(portsOut);
 
     return {
       hostname: hostnameOut.trim() || undefined,

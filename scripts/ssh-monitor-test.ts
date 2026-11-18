@@ -51,6 +51,30 @@ const NETSTAT = [
 ].join("\n") + "\n";
 const SYSTEMD = "nginx.service          loaded failed     failed    nginx.service\n";
 
+const SEP = "__DEPANEL_SEP__";
+const execCount = { n: 0 };
+
+// The collector sends one batched command: `a 2>/dev/null; echo SEP; b 2>/dev/null; ...`.
+// Emulate a shell: answer each part, honour `x || y` fallbacks, echo separators.
+function respondBatch(cmd: string): { out: string; code: number } {
+  if (!cmd.includes(SEP)) return respond(cmd);
+  const parts = cmd.split(`; echo ${SEP}; `);
+  let out = "";
+  let code = 0;
+  parts.forEach((part, i) => {
+    let res = { out: "", code: 0 };
+    for (const alt of part.split(" || ")) {
+      const c = alt.replace(/ 2>\/dev\/null/g, "").trim();
+      res = c.startsWith("sleep ") ? { out: "", code: 0 } : respond(c);
+      if (res.code === 0) break;
+    }
+    out += res.out;
+    code = res.code;
+    if (i < parts.length - 1) out += `${SEP}\n`;
+  });
+  return { out, code };
+}
+
 const counters = new Map<string, number>();
 function respond(cmd: string): { out: string; code: number } {
   const n = (counters.get(cmd) ?? 0) + 1;
@@ -61,6 +85,7 @@ function respond(cmd: string): { out: string; code: number } {
   if (cmd.startsWith("cat /proc/loadavg")) return { out: "1.42 1.10 0.95 3/452 12870\n", code: 0 };
   if (cmd.startsWith("cat /proc/uptime")) return { out: "3600.12 18000.50\n", code: 0 };
   if (cmd.startsWith("cat /etc/os-release")) return { out: OS_RELEASE, code: 0 };
+  if (cmd.startsWith("nproc")) return { out: "4\n", code: 0 };
   if (cmd.startsWith("uname -sr")) return { out: "6.2.0-1017-azure\n", code: 0 };
   if (cmd.startsWith("cat /etc/hostname")) return { out: "web-01\n", code: 0 };
   if (cmd.startsWith("df -kP")) return { out: DF, code: 0 };
@@ -86,7 +111,8 @@ async function main() {
         const session = accept();
         session.on("exec", (acceptExec, _reject, info) => {
           const stream = acceptExec();
-          const res = respond(info.command);
+          execCount.n++;
+          const res = respondBatch(info.command);
           if (res.out) stream.write(res.out);
           stream.exit(res.code);
           stream.end();
@@ -109,6 +135,7 @@ async function main() {
     check(s.hostname === "web-01", "hostname", s.hostname);
     check(s.load1 === 1.42 && s.load5 === 1.1 && s.load15 === 0.95, "load", [s.load1, s.load5, s.load15]);
     check(s.uptimeSec === 3600, "uptimeSec", s.uptimeSec);
+    check(s.cpuCores === 4, "cpuCores", s.cpuCores);
     check(s.cpu === 25, "cpu%", s.cpu);
     check(s.memPct === 62.5, "memPct", s.memPct);
     check(s.memTotalMb === 7813, "memTotalMb", s.memTotalMb);
@@ -121,6 +148,7 @@ async function main() {
     check(s.topProcs[0]?.cpu === 12.5 && s.topProcs[0]?.comm?.startsWith("nginx"), "topProcs[0]", s.topProcs[0]);
     check(JSON.stringify(s.ports) === JSON.stringify(["22", "3306", "443"]), "ports (netstat fallback)", s.ports);
     check(JSON.stringify(s.failedSvcs) === JSON.stringify(["nginx.service"]), "failedSvcs", s.failedSvcs);
+    check(execCount.n === 2, "only 2 exec channels per sample (batch + systemctl)", execCount.n);
     step("collectSshMetrics OK");
 
     step("sampleSshConnection persistence…");
