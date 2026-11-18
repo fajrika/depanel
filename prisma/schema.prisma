@@ -58,6 +58,7 @@ model Team {
   healthGroups  HealthGroup[]
   panelBackups  PanelBackup[]
   wifiProjects  WifiProject[]
+  customReports CustomReport[]
 }
 
 /// Pengaturan backup database Depanel (SQLite) itu sendiri — snapshot + kirim ke destinasi.
@@ -590,6 +591,25 @@ model ScheduledReport {
   enabled      Boolean  @default(true)
   lastRunAt    DateTime?
   createdAt    DateTime @default(now())
+}
+
+/// Laporan gabungan (menu Laporan): definisi tersimpan berisi item pilihan dari
+/// menu lain (server depa, koneksi SSH, SSH script, backup DB/file, health check).
+/// Isi laporan dihitung saat dibuat (preview/PDF) dari data terbaru.
+model CustomReport {
+  id          String   @id @default(cuid())
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  items       String   @default("{}") // JSON: {servers,sshConns,sshCmdJobs,dbJobs,dirCloneJobs,healthChecks,sshHealthChecks: string[]}
+  rangeDays   Int      @default(7) // periode default saat laporan dibuat
+  timezone    String   @default("Asia/Jakarta")
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([teamId])
 }
 
 /// Persetujuan dua orang untuk aksi destruktif (hapus instance / reinstall).

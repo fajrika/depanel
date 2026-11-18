@@ -328,7 +328,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const t_ = t;
   const navGroups: { label: string | null; icon: string; items: (NavItem & { show: boolean })[] }[] = [
-    { label: null, icon: "", items: [{ href: "/", label: t_("nav.server"), icon: "🖥️", show: true }] },
+    {
+      label: null,
+      icon: "",
+      items: [
+        { href: "/", label: t_("nav.server"), icon: "🖥️", show: true },
+        { href: "/reports", label: t_("nav.laporan"), icon: "📑", show: true },
+      ],
+    },
     {
       label: t_("group.kelola"),
       icon: "🧰",
@@ -350,7 +357,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       items: [
         { href: "/billing", label: t_("nav.billing"), icon: "💰", show: at?.canViewBilling ?? false },
         { href: "/cost", label: t_("nav.cost"), icon: "📉", show: at?.canViewCost ?? false },
-        { href: "/reports/financial", label: t_("nav.reports"), icon: "📊", show: at?.canViewReports ?? false },
+        { href: "/reports/financial", label: t_("nav.reportsFinancial"), icon: "📊", show: at?.canViewReports ?? false },
       ],
     },
     {
