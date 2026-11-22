@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { buildCustomReport, parseItems, resolveRange } from "@/lib/customreport";
+import { buildCustomReport, parseItems, parseMode, resolveRange } from "@/lib/customreport";
 import { loadOwnReport } from "../../_shared";
 
-/** Isi laporan (ReportSpec JSON) untuk preview di halaman. ?from=&to= opsional. */
+/** Isi laporan (ReportSpec JSON) untuk preview di halaman. ?from=&to= dan ?mode=summary opsional. */
 export async function GET(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
@@ -11,7 +11,9 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   const own = await loadOwnReport(user, id);
   if (!own) return NextResponse.json({ ok: false, message: "Laporan tidak ditemukan" }, { status: 404 });
   const { report, team } = own;
-  const { from, to } = resolveRange(new URL(request.url).searchParams, report.rangeDays);
+  const sp = new URL(request.url).searchParams;
+  const { from, to } = resolveRange(sp, report.rangeDays);
+  const mode = parseMode(sp);
   const spec = await buildCustomReport({
     teamId: team.id,
     teamName: team.name,
@@ -22,6 +24,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     from,
     to,
     timezone: report.timezone,
+    mode,
   });
   return NextResponse.json({ ok: true, data: { ...spec, from: from.toISOString(), to: to.toISOString() } });
 }

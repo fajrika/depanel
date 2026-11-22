@@ -360,7 +360,67 @@ function cpuRamChart(samples: { at: Date; cpu: number | null; memPct: number | n
 /* ------------------------------------------------------------------ */
 
 type Ctx = { teamId: string; access: Access; from: Date; to: Date; tz: string };
-type SummaryRow = [string, string, string, string];
+
+/** Penilaian kondisi satu item untuk laporan ringkas (manajer). */
+export type Verdict = "ok" | "warn" | "bad" | "none";
+type SummaryRow = {
+  kind: ItemKind;
+  name: string;
+  status: string;
+  indicator: string;
+  verdict: Verdict;
+  /** Alasan singkat bila verdict warn/bad (atau keterangan bila none). */
+  notes: string[];
+};
+
+// Ambang batas penilaian laporan ringkas.
+const UPTIME_WARN = 99; // < 99% → perlu perhatian
+const UPTIME_BAD = 95; // < 95% → masalah
+const CPU_WARN = 85; // rata-rata CPU periode
+const RAM_WARN = 90; // rata-rata RAM periode
+const DISK_WARN = 85;
+const DISK_BAD = 95;
+
+/** Kumpulkan temuan lalu tentukan verdict terburuk. */
+class Judge {
+  notes: string[] = [];
+  level: Verdict = "ok";
+  bad(note: string) {
+    this.notes.push(note);
+    this.level = "bad";
+  }
+  warn(note: string) {
+    this.notes.push(note);
+    if (this.level !== "bad") this.level = "warn";
+  }
+  /** Tidak ada data: hanya berlaku bila belum ada temuan lain. */
+  none(note: string) {
+    if (this.level === "ok") {
+      this.level = "none";
+      this.notes.push(note);
+    }
+  }
+  uptime(label: string, v: number | null) {
+    if (v == null) return;
+    if (v < UPTIME_BAD) this.bad(`${label} hanya ${pct(v)}`);
+    else if (v < UPTIME_WARN) this.warn(`${label} ${pct(v)}`);
+  }
+  load(cpu: number | null, ram: number | null) {
+    if (cpu != null && cpu >= CPU_WARN) this.warn(`CPU rata-rata tinggi (${pct(cpu)})`);
+    if (ram != null && ram >= RAM_WARN) this.warn(`RAM rata-rata tinggi (${pct(ram)})`);
+  }
+  row(kind: ItemKind, name: string, status: string, indicator: string): SummaryRow {
+    return { kind, name, status, indicator, verdict: this.level, notes: this.notes };
+  }
+}
+
+function runFailures(j: Judge, what: string, lastFailed: boolean, failed: number, total: number) {
+  if (lastFailed) j.bad(`${what} terakhir gagal`);
+  if (failed > 0) {
+    if (lastFailed) j.notes.push(`${failed} dari ${total} gagal dalam periode`);
+    else j.warn(`${failed} dari ${total} ${what.toLowerCase()} gagal dalam periode`);
+  }
+}
 
 async function serverSection(ctx: Ctx, ids: string[], summary: SummaryRow[]): Promise<ReportBlock[]> {
   const { teamId, access, from, to, tz } = ctx;
@@ -387,7 +447,16 @@ async function serverSection(ctx: Ctx, ids: string[], summary: SummaryRow[]): Pr
     ]);
     const up = samples.filter((x) => x.status === "running").length;
     const uptime = samples.length ? (up / samples.length) * 100 : null;
-    summary.push([KIND_TITLE.servers, safe(s.hostname), statusText(s.status), `Uptime ${pct(uptime)}`]);
+    const jd = new Judge();
+    if (s.status !== "running") {
+      const note = `Server tidak berjalan (status: ${statusText(s.status)})`;
+      if (s.isProduction) jd.bad(note);
+      else jd.warn(note);
+    }
+    jd.uptime("Uptime", uptime);
+    jd.load(avg(samples.map((x) => x.cpu)), avg(samples.map((x) => x.memPct)));
+    if (!samples.length) jd.none("Belum ada data monitoring di periode ini");
+    summary.push(jd.row("servers", safe(s.hostname), statusText(s.status), `Uptime ${pct(uptime)}`));
 
     blocks.push({ type: "heading", text: safe(s.hostname), level: 3 });
     blocks.push({
@@ -448,7 +517,11 @@ async function sshConnSection(ctx: Ctx, ids: string[], summary: SummaryRow[]): P
     ]);
     const up = samples.filter((x) => x.ok).length;
     const avail = samples.length ? (up / samples.length) * 100 : null;
-    summary.push([KIND_TITLE.sshConns, safe(c.name), samples.length ? (samples[samples.length - 1].ok ? "Up" : "Down") : "-", `Tersedia ${pct(avail)}`]);
+    const lastOk = samples.length ? samples[samples.length - 1].ok : null;
+    const jd = new Judge();
+    if (lastOk === false) jd.bad("Tidak bisa diakses saat cek terakhir");
+    jd.uptime("Ketersediaan", avail);
+    jd.load(avg(samples.map((x) => x.cpu)), avg(samples.map((x) => x.memPct)));
 
     blocks.push({ type: "heading", text: `${safe(c.name)} (${safe(c.host)})`, level: 3 });
     const rows: [string, string][] = [
@@ -485,6 +558,11 @@ async function sshConnSection(ctx: Ctx, ids: string[], summary: SummaryRow[]): P
             columns: [{ label: "Mount", width: 3 }, { label: "Terpakai", align: "right", width: 1.3 }, { label: "Ukuran", align: "right", width: 1.3 }, { label: "%", align: "right", width: 0.8 }],
             rows: disks.slice(0, 15).map((d) => [safe(d.mount, 50), fmtBytes(d.usedMb * 1024 * 1024), fmtBytes(d.sizeMb * 1024 * 1024), pct(d.pct)]),
           });
+          for (const d of disks) {
+            if (typeof d.pct !== "number") continue;
+            if (d.pct >= DISK_BAD) jd.bad(`Disk ${safe(d.mount, 30)} hampir penuh (${pct(d.pct)})`);
+            else if (d.pct >= DISK_WARN) jd.warn(`Disk ${safe(d.mount, 30)} terpakai ${pct(d.pct)}`);
+          }
         }
       } catch {
         /* abaikan */
@@ -493,11 +571,16 @@ async function sshConnSection(ctx: Ctx, ids: string[], summary: SummaryRow[]): P
     if (latest?.failedSvcs) {
       try {
         const f = JSON.parse(latest.failedSvcs) as string[];
-        if (Array.isArray(f) && f.length) blocks.push({ type: "text", text: `Service gagal: ${f.map((x) => safe(x)).join(", ")}` });
+        if (Array.isArray(f) && f.length) {
+          blocks.push({ type: "text", text: `Service gagal: ${f.map((x) => safe(x)).join(", ")}` });
+          jd.warn(`Service gagal: ${safe(f.slice(0, 5).join(", "), 80)}`);
+        }
       } catch {
         /* abaikan */
       }
     }
+    if (!samples.length) jd.none("Belum ada data monitoring di periode ini");
+    summary.push(jd.row("sshConns", safe(c.name), lastOk == null ? "-" : lastOk ? "Up" : "Down", `Tersedia ${pct(avail)}`));
     blocks.push({ type: "spacer" });
   }
   return blocks;
@@ -510,7 +593,7 @@ async function runJobSection(
   summary: SummaryRow[],
 ): Promise<ReportBlock[]> {
   const { teamId, from, to, tz } = ctx;
-  type JobInfo = { id: string; name: string; kv: [string, string][]; lastStatus: string | null };
+  type JobInfo = { id: string; name: string; kv: [string, string][]; lastStatus: string | null; scheduled: boolean };
   type RunInfo = { status: string; sizeBytes: number | null; message: string | null; location: string | null; startedAt: Date; endedAt: Date | null };
   const jobs: JobInfo[] = [];
   if (kind === "dbJobs") {
@@ -529,6 +612,7 @@ async function runJobSection(
         id: j.id,
         name: j.name,
         lastStatus: j.lastStatus,
+        scheduled: j.enabled && j.scheduleType !== "manual",
         kv: [
           ["Koneksi", `${safe(j.connection.name)} (${safe(j.connection.host)})`],
           ["Database", Array.isArray(dbs) && dbs.length ? safe(dbs.join(", "), 200) : "-"],
@@ -548,6 +632,7 @@ async function runJobSection(
         id: j.id,
         name: j.name,
         lastStatus: j.lastStatus,
+        scheduled: j.enabled && j.scheduleType !== "manual",
         kv: [
           ["Sumber", `${safe(j.sourceSsh.name)}:${safe(j.sourcePath, 80)}`],
           ["Tujuan", `${safe(j.destType).toUpperCase()}${j.destSsh ? ` - ${safe(j.destSsh.name)}` : ""}${j.destPath ? ` : ${safe(j.destPath, 80)}` : ""}`],
@@ -581,7 +666,13 @@ async function runJobSection(
           ]);
     const rate = total ? (ok / total) * 100 : null;
     const lastOk = runs.find((r) => r.status === "success");
-    summary.push([KIND_TITLE[kind], safe(j.name), statusText(j.lastStatus), `Sukses ${ok}/${total}`]);
+    const jd = new Judge();
+    runFailures(jd, "Backup", j.lastStatus === "failed", failed, total);
+    if (!total) {
+      if (j.scheduled) jd.warn("Tidak ada backup berjalan di periode ini padahal terjadwal");
+      else jd.none("Tidak ada backup di periode ini");
+    }
+    summary.push(jd.row(kind, safe(j.name), statusText(j.lastStatus), `Sukses ${ok}/${total}`));
 
     blocks.push({ type: "heading", text: safe(j.name), level: 3 });
     blocks.push({
@@ -629,7 +720,12 @@ async function sshHealthSection(ctx: Ctx, ids: string[], summary: SummaryRow[]):
     orderBy: { name: "asc" },
   });
   if (!rows.length) return [];
-  for (const h of rows) summary.push([KIND_TITLE.sshHealthChecks, safe(h.name), statusText(h.lastStatus), `Cek ${fmtDate(h.lastRunAt, tz)}`]);
+  for (const h of rows) {
+    const jd = new Judge();
+    if (h.lastStatus === "down" || h.lastStatus === "failed") jd.bad(`Cek terakhir gagal${h.lastOutput ? `: ${firstLine(h.lastOutput, 60)}` : ""}`);
+    else if (!h.lastStatus || !h.lastRunAt) jd.none("Belum pernah dicek");
+    summary.push(jd.row("sshHealthChecks", safe(h.name), statusText(h.lastStatus), `Cek ${fmtDate(h.lastRunAt, tz)}`));
+  }
   return [
     { type: "text", text: "Health App hanya menyimpan status terakhir (tanpa riwayat).", muted: true },
     {
@@ -661,13 +757,23 @@ export type BuildInput = {
   from: Date;
   to: Date;
   timezone: string;
+  /** "detail" (default) = laporan lengkap; "summary" = ringkas untuk manajer. */
+  mode?: ReportMode;
 };
+
+export type ReportMode = "detail" | "summary";
+
+/** Baca ?mode= dari query; selain "summary" dianggap detail. */
+export function parseMode(searchParams: URLSearchParams): ReportMode {
+  return searchParams.get("mode") === "summary" ? "summary" : "detail";
+}
 
 /** Susun ReportSpec laporan gabungan. Item tanpa izin/terhapus dilewati diam-diam. */
 export async function buildCustomReport(input: BuildInput): Promise<ReportSpec> {
   const access = await accessFor(input.userId, input.teamId);
   if (!access) throw new Error("Bukan anggota tim");
   const tz = input.timezone || "Asia/Jakarta";
+  const mode: ReportMode = input.mode ?? "detail";
   const ctx: Ctx = { teamId: input.teamId, access, from: input.from, to: input.to, tz };
   const items = input.items;
   const summary: SummaryRow[] = [];
@@ -698,7 +804,10 @@ export async function buildCustomReport(input: BuildInput): Promise<ReportSpec> 
         const jobs = await loadSshCmdReportData(opts);
         for (const j of jobs) {
           const last = j.runs[0]?.status ?? null;
-          summary.push([KIND_TITLE.sshCmdJobs, safe(j.name), statusText(last), `Sukses ${j.stats.success}/${j.stats.total}`]);
+          const jd = new Judge();
+          runFailures(jd, "Eksekusi", last === "failed", j.stats.failed, j.stats.total);
+          if (!j.stats.total) jd.none("Tidak ada eksekusi di periode ini");
+          summary.push(jd.row("sshCmdJobs", safe(j.name), statusText(last), `Sukses ${j.stats.success}/${j.stats.total}`));
         }
         blocks = sshCmdJobsToBlocks(jobs, opts);
         break;
@@ -716,9 +825,19 @@ export async function buildCustomReport(input: BuildInput): Promise<ReportSpec> 
           const sum = await summarizeHealthCheck(id, range);
           if (!sum) continue;
           const last = own.find((h) => h.id === id)?.lastStatus;
-          summary.push([KIND_TITLE.healthChecks, safe(sum.name), statusText(last), `Uptime ${pct(sum.uptimePct)}`]);
+          const jd = new Judge();
+          if (last === "down") jd.bad("Sedang down saat cek terakhir");
+          jd.uptime("Uptime", sum.uptimePct);
+          if (sum.incidents.length) {
+            const n = `${sum.incidents.length} insiden down dalam periode`;
+            if (jd.level === "ok") jd.warn(n);
+            else jd.notes.push(n);
+          }
+          if (!sum.total) jd.none("Belum ada data cek di periode ini");
+          summary.push(jd.row("healthChecks", safe(sum.name), statusText(last), `Uptime ${pct(sum.uptimePct)}`));
         }
-        blocks = await buildHealthCheckReportBlocks(okIds, range, { timezone: tz, sectionHeading: false, itemHeadingLevel: 3 });
+        // laporan ringkas tidak memakai blok detail — lewati query berat
+        if (mode === "detail") blocks = await buildHealthCheckReportBlocks(okIds, range, { timezone: tz, sectionHeading: false, itemHeadingLevel: 3 });
         break;
       }
       case "sshHealthChecks":
@@ -733,7 +852,13 @@ export async function buildCustomReport(input: BuildInput): Promise<ReportSpec> 
         for (const j of jobs) {
           const s = summarizeSpeed(j.rows);
           const last = j.rows.length ? j.rows[j.rows.length - 1].status : null;
-          summary.push([KIND_TITLE.speedtests, safe(j.name), statusText(last), `DL ${fmtMbps(s.downAvg)} / UL ${fmtMbps(s.upAvg)}`]);
+          const jd = new Judge();
+          runFailures(jd, "Speedtest", last === "failed", s.failed, s.total);
+          if (j.minDownloadMbps && s.downAvg != null && s.downAvg < j.minDownloadMbps) {
+            jd.warn(`Download rata-rata ${fmtMbps(s.downAvg)} di bawah batas ${fmtMbps(j.minDownloadMbps)}`);
+          }
+          if (!s.total) jd.none("Tidak ada speedtest di periode ini");
+          summary.push(jd.row("speedtests", safe(j.name), statusText(last), `DL ${fmtMbps(s.downAvg)} / UL ${fmtMbps(s.upAvg)}`));
         }
         blocks = [...speedCompareBlocks(jobs)];
         for (const j of jobs) blocks.push(...speedJobBlocks(j, { timezone: tz, from: input.from, to: input.to, headingLevel: 3, maxRecent: 30 }));
@@ -742,6 +867,8 @@ export async function buildCustomReport(input: BuildInput): Promise<ReportSpec> 
     }
     if (blocks.length) sections.push({ title: KIND_TITLE[kind], blocks });
   }
+
+  if (mode === "summary") return managerSummarySpec(input, tz, summary, skipped);
 
   const head: ReportBlock[] = [
     {
@@ -759,8 +886,8 @@ export async function buildCustomReport(input: BuildInput): Promise<ReportSpec> 
     head.push({
       type: "table",
       columns: [{ label: "Kategori", width: 1.6 }, { label: "Item", width: 3.2 }, { label: "Status", width: 1 }, { label: "Indikator", width: 1.8 }],
-      rows: summary,
-      rowStates: summary.map((r) => (r[2] === "Down" || r[2] === "Gagal" ? "down" : null)),
+      rows: summary.map((r) => [KIND_TITLE[r.kind], r.name, r.status, r.indicator]),
+      rowStates: summary.map((r) => (r.status === "Down" || r.status === "Gagal" ? "down" : null)),
     });
   } else {
     head.push({ type: "text", text: "Tidak ada item yang bisa ditampilkan (item terhapus atau Anda tidak punya izin).", muted: true });
@@ -779,6 +906,110 @@ export async function buildCustomReport(input: BuildInput): Promise<ReportSpec> 
   return {
     title: safe(input.name),
     subtitle: `Laporan gabungan - ${safe(input.teamName)}`,
+    timezone: tz,
+    generatedAt: new Date(),
+    blocks,
+  };
+}
+
+const VERDICT_TEXT: Record<Verdict, string> = {
+  ok: "Normal",
+  warn: "Perlu perhatian",
+  bad: "Bermasalah",
+  none: "Tanpa data",
+};
+const VERDICT_STATE: Record<Verdict, "down" | "partial" | null> = { ok: null, warn: "partial", bad: "down", none: null };
+
+/**
+ * Laporan ringkas untuk manajer: kesimpulan ada/tidaknya masalah, daftar item
+ * yang perlu ditindaklanjuti beserta alasannya, lalu status singkat semua item.
+ */
+function managerSummarySpec(input: BuildInput, tz: string, summary: SummaryRow[], skipped: string[]): ReportSpec {
+  const count = (v: Verdict) => summary.filter((r) => r.verdict === v).length;
+  const nOk = count("ok");
+  const nWarn = count("warn");
+  const nBad = count("bad");
+  const nNone = count("none");
+
+  let headline: string;
+  let detail: string;
+  if (!summary.length) {
+    headline = "TIDAK ADA DATA";
+    detail = "Tidak ada item yang bisa dinilai (item terhapus atau Anda tidak punya izin).";
+  } else if (nBad) {
+    headline = "ADA MASALAH";
+    detail = `${nBad} item bermasalah${nWarn ? ` dan ${nWarn} item perlu perhatian` : ""} dari ${summary.length} item yang dipantau. Rincian ada di tabel "Perlu ditindaklanjuti".`;
+  } else if (nWarn) {
+    headline = "PERLU PERHATIAN";
+    detail = `Tidak ada gangguan besar, namun ${nWarn} dari ${summary.length} item perlu dicek. Rincian ada di tabel "Perlu ditindaklanjuti".`;
+  } else if (nOk) {
+    headline = "SEMUA NORMAL";
+    detail = `Semua ${nOk} item yang punya data berjalan normal di periode ini${nNone ? ` (${nNone} item tanpa data)` : ""}.`;
+  } else {
+    headline = "TANPA DATA";
+    detail = "Belum ada data monitoring untuk item yang dipilih di periode ini.";
+  }
+
+  const blocks: ReportBlock[] = [
+    {
+      type: "kv",
+      rows: [
+        ["Tim", safe(input.teamName)],
+        ["Periode", `${fmtDate(input.from, tz)} s/d ${fmtDate(input.to, tz)} (${safe(tz)})`],
+        ...(input.description ? ([["Keterangan", safe(input.description, 300)]] as [string, string][]) : []),
+      ],
+    },
+    { type: "heading", text: "Kesimpulan", level: 2 },
+    { type: "text", text: headline, bold: true, size: 14 },
+    { type: "text", text: detail },
+    {
+      type: "stats",
+      items: [
+        { label: "Item dipantau", value: String(summary.length), tone: "neutral" },
+        { label: "Normal", value: String(nOk), tone: "good" },
+        { label: "Perlu perhatian", value: String(nWarn), tone: nWarn ? "warn" : "neutral" },
+        { label: "Bermasalah", value: String(nBad), tone: nBad ? "bad" : "neutral" },
+        ...(nNone ? [{ label: "Tanpa data", value: String(nNone), tone: "neutral" as const }] : []),
+      ],
+    },
+  ];
+
+  const issues = summary.filter((r) => r.verdict === "bad" || r.verdict === "warn").sort((a, b) => (a.verdict === b.verdict ? 0 : a.verdict === "bad" ? -1 : 1));
+  if (issues.length) {
+    blocks.push({ type: "heading", text: "Perlu ditindaklanjuti", level: 2 });
+    blocks.push({
+      type: "table",
+      columns: [{ label: "Kategori", width: 1.5 }, { label: "Item", width: 2.4 }, { label: "Kondisi", width: 1.4 }, { label: "Temuan", width: 4.5 }],
+      rows: issues.map((r) => [KIND_TITLE[r.kind], r.name, VERDICT_TEXT[r.verdict], safe(r.notes.join("; "), 220)]),
+      rowStates: issues.map((r) => VERDICT_STATE[r.verdict]),
+    });
+  }
+
+  if (summary.length) {
+    blocks.push({ type: "heading", text: "Status semua item", level: 2 });
+    blocks.push({
+      type: "table",
+      columns: [{ label: "Kategori", width: 1.5 }, { label: "Item", width: 3 }, { label: "Kondisi", width: 1.4 }, { label: "Indikator", width: 2 }],
+      rows: summary.map((r) => [KIND_TITLE[r.kind], r.name, VERDICT_TEXT[r.verdict], r.indicator]),
+      rowStates: summary.map((r) => VERDICT_STATE[r.verdict]),
+    });
+  }
+
+  blocks.push({ type: "spacer" });
+  blocks.push({
+    type: "text",
+    muted: true,
+    text:
+      `Kriteria: "Bermasalah" bila server/layanan sedang mati atau tidak bisa diakses, eksekusi/backup terakhir gagal, ` +
+      `uptime di bawah ${UPTIME_BAD}%, atau disk terpakai >= ${DISK_BAD}%. "Perlu perhatian" bila uptime di bawah ${UPTIME_WARN}%, ` +
+      `ada run gagal dalam periode, CPU rata-rata >= ${CPU_WARN}% / RAM >= ${RAM_WARN}%, disk >= ${DISK_WARN}%, ` +
+      `atau backup terjadwal tidak berjalan. Detail lengkap tersedia di laporan detail.`,
+  });
+  if (skipped.length) blocks.push({ type: "text", text: `Bagian dilewati karena izin Anda: ${skipped.join(", ")}.`, muted: true });
+
+  return {
+    title: safe(input.name),
+    subtitle: `Laporan ringkas (manajer) - ${safe(input.teamName)}`,
     timezone: tz,
     generatedAt: new Date(),
     blocks,
