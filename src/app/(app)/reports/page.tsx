@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLang } from "@/lib/i18n";
 import ReportChart, { StatTiles, type ChartSeries, type StatItem } from "@/components/ReportChart";
 
@@ -25,7 +25,7 @@ type State = "up" | "down" | "partial" | "none";
 type Cell = string | number | null | undefined;
 type Block =
   | { type: "heading"; text: string; level?: 1 | 2 | 3 }
-  | { type: "text"; text: string; muted?: boolean; bold?: boolean }
+  | { type: "text"; text: string; muted?: boolean; bold?: boolean; size?: number }
   | { type: "kv"; rows: [string, Cell][] }
   | { type: "table"; columns: { label: string; width?: number; align?: "left" | "right" | "center" }[]; rows: Cell[][]; rowStates?: (State | null | undefined)[] }
   | { type: "statusStrip"; items: { label?: string; state: State }[]; caption?: string }
@@ -34,6 +34,7 @@ type Block =
   | { type: "stats"; items: StatItem[] }
   | { type: "spacer"; size?: number }
   | { type: "pageBreak" };
+type Mode = "detail" | "summary";
 type Spec = { title: string; subtitle?: string; generatedAt?: string; blocks: Block[]; from: string; to: string };
 
 const KIND_ICON: Record<Kind, string> = {
@@ -80,7 +81,14 @@ function BlockView({ b }: { b: Block }) {
       return <h4 className="mt-4 text-sm font-semibold text-slate-800 dark:text-slate-200">{b.text}</h4>;
     }
     case "text":
-      return <p className={`whitespace-pre-wrap text-sm ${b.muted ? "text-slate-400" : "text-slate-700 dark:text-slate-300"} ${b.bold ? "font-semibold" : ""}`}>{b.text}</p>;
+      return (
+        <p
+          style={b.size && b.size > 11 ? { fontSize: `${Math.round(b.size * 1.25)}px` } : undefined}
+          className={`whitespace-pre-wrap text-sm ${b.muted ? "text-slate-400" : "text-slate-700 dark:text-slate-300"} ${b.bold ? "font-semibold" : ""}`}
+        >
+          {b.text}
+        </p>
+      );
     case "kv":
       return (
         <dl className="grid grid-cols-[minmax(110px,max-content)_1fr] gap-x-4 gap-y-1 text-sm">
@@ -152,6 +160,44 @@ function BlockView({ b }: { b: Block }) {
     case "pageBreak":
       return <hr className="my-4 border-dashed border-slate-200 dark:border-slate-700" />;
   }
+}
+
+/* ---------- tombol unduh PDF: pilih detail atau ringkas ---------- */
+function PdfMenu({ href, className, align = "left" }: { href: (mode: Mode) => string; className: string; align?: "left" | "right" }) {
+  const { t } = useLang();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+  const opts: { mode: Mode; title: string; hint: string }[] = [
+    { mode: "detail", title: t("lap.pdfDetail"), hint: t("lap.pdfDetailHint") },
+    { mode: "summary", title: t("lap.pdfSummary"), hint: t("lap.pdfSummaryHint") },
+  ];
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen(!open)} className={className} aria-expanded={open}>
+        📄 {t("lap.pdf")} ▾
+      </button>
+      {open && (
+        <div
+          className={`absolute z-20 mt-1 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900 ${align === "right" ? "right-0" : "left-0"}`}
+        >
+          {opts.map((o) => (
+            <a key={o.mode} href={href(o.mode)} onClick={() => setOpen(false)} className="block px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
+              <span className="block text-sm font-medium text-slate-800 dark:text-slate-100">{o.title}</span>
+              <span className="block text-[11px] text-slate-400">{o.hint}</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ---------- pemilih item per kategori ---------- */
@@ -253,6 +299,7 @@ export default function LaporanPage() {
   const [to, setTo] = useState("");
   const [spec, setSpec] = useState<Spec | null>(null);
   const [specLoading, setSpecLoading] = useState(false);
+  const [mode, setMode] = useState<Mode>("detail");
   const [today] = useState(() => ymd(new Date()));
 
   const load = useCallback(async () => {
@@ -329,11 +376,11 @@ export default function LaporanPage() {
     load();
   }
 
-  const fetchPreview = useCallback(async (id: string, f: string, tt: string) => {
+  const fetchPreview = useCallback(async (id: string, f: string, tt: string, m: Mode) => {
     setSpecLoading(true);
     setSpec(null);
     try {
-      const res = await fetch(`/api/reports/custom/${id}/preview?from=${f}&to=${tt}`);
+      const res = await fetch(`/api/reports/custom/${id}/preview?from=${f}&to=${tt}${m === "summary" ? "&mode=summary" : ""}`);
       const d = await res.json();
       if (d.ok) setSpec(d.data);
       else setMsg({ text: d.message ?? "Error", ok: false });
@@ -352,11 +399,16 @@ export default function LaporanPage() {
     setTo(tt);
     setViewId(id);
     setShowForm(false);
-    fetchPreview(id, f, tt);
+    fetchPreview(id, f, tt, mode);
+  }
+
+  function switchMode(m: Mode) {
+    setMode(m);
+    if (viewId) fetchPreview(viewId, from, to, m);
   }
 
   const viewing = reports.find((r) => r.id === viewId) ?? null;
-  const pdfHref = viewId ? `/api/reports/custom/${viewId}/pdf?from=${from}&to=${to}` : "#";
+  const pdfHref = (m: Mode) => (viewId ? `/api/reports/custom/${viewId}/pdf?from=${from}&to=${to}${m === "summary" ? "&mode=summary" : ""}` : "#");
 
   return (
     <div className="space-y-6">
@@ -462,12 +514,7 @@ export default function LaporanPage() {
                 <button onClick={() => openView(r.id, r.rangeDays)} className={btnGhost}>
                   👁 {t("lap.view")}
                 </button>
-                <a
-                  href={`/api/reports/custom/${r.id}/pdf`}
-                  className={btnGhost}
-                >
-                  📄 {t("lap.pdf")}
-                </a>
+                <PdfMenu href={(m) => `/api/reports/custom/${r.id}/pdf${m === "summary" ? "?mode=summary" : ""}`} className={btnGhost} />
                 <button onClick={() => openEdit(r)} className={btnGhost}>
                   {t("lap.edit")}
                 </button>
@@ -495,12 +542,28 @@ export default function LaporanPage() {
               <label className={label}>{t("lap.to")}</label>
               <input type="date" value={to} min={from} max={today} onChange={(e) => setTo(e.target.value)} className={`${input} mt-1 !py-1.5`} />
             </div>
-            <button onClick={() => fetchPreview(viewing.id, from, to)} disabled={specLoading} className={btnGhost}>
+            <div>
+              <span className={label}>{t("lap.mode")}</span>
+              <div className="mt-1 inline-flex rounded-lg border border-slate-300 p-0.5 dark:border-slate-600">
+                {(["detail", "summary"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => switchMode(m)}
+                    disabled={specLoading}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                      mode === m ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    {m === "detail" ? t("lap.modeDetail") : t("lap.modeSummary")}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button onClick={() => fetchPreview(viewing.id, from, to, mode)} disabled={specLoading} className={btnGhost}>
               {t("lap.show")}
             </button>
-            <a href={pdfHref} className={btnPrimary}>
-              📄 {t("lap.pdf")}
-            </a>
+            <PdfMenu href={pdfHref} className={btnPrimary} align="right" />
             <button onClick={() => setViewId(null)} className="text-xs text-slate-400 hover:text-slate-600">
               {t("lap.close")}
             </button>
